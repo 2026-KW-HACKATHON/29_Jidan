@@ -35,6 +35,8 @@
 ```text
 front-end/dev → front-end/feat/* 또는 front-end/fix/* → front-end/dev → main
 back-end/dev  → back-end/feat/* 또는 back-end/fix/*   → back-end/dev  → main
+front-end/hotfix/* → front-end/dev → main
+back-end/hotfix/*  → back-end/dev  → main
 main → front-end/dev, back-end/dev  (릴리즈 후 동기화)
 ```
 
@@ -44,10 +46,12 @@ main → front-end/dev, back-end/dev  (릴리즈 후 동기화)
 
 ## 긴급 수정
 
-1. `main`에서 해당 영역의 `hotfix/*` 브랜치를 생성한다.
-2. 수정과 검증 후 `main`을 대상으로 PR을 생성한다.
-3. 병합 후 `main`을 두 `dev`에 병합해 긴급 수정이 후속 릴리즈에서 누락되지 않도록 한다.
-4. 후속 반영을 확인하고 `hotfix/*` 브랜치를 삭제한다.
+1. 해당 영역의 `dev`에서 `hotfix/*` 브랜치를 생성한다.
+2. 수정과 검증 후 해당 영역의 `dev`를 대상으로 PR을 생성한다.
+3. `dev`에 병합하고 통합 검증한 뒤, 해당 `dev`에서 `main`으로 릴리즈 PR을 생성한다.
+4. 릴리즈 후 `main`을 두 `dev`에 병합하고 후속 반영을 확인한 다음 `hotfix/*` 브랜치를 삭제한다.
+
+긴급 수정도 반드시 `hotfix → dev → main` 순서를 따른다. `feat/*`, `fix/*`, `hotfix/*`에서 `main`으로 직접 병합하는 것은 금지한다. `dev`에 다른 미릴리즈 변경이 있다면 함께 릴리즈 가능한지 검증하고, 준비되지 않은 변경이 포함된 상태에서는 `main`으로 병합하지 않는다.
 
 ## 공통 작업
 
@@ -58,6 +62,7 @@ main → front-end/dev, back-end/dev  (릴리즈 후 동기화)
 ## PR 및 커밋 규칙
 
 - `main`과 두 `dev`의 변경은 PR을 통해 병합한다.
+- `feat/*`, `fix/*`, `hotfix/*` PR의 대상은 반드시 해당 영역의 `dev`여야 한다. `main`을 대상으로 만든 PR은 병합하지 않고 대상을 수정한다.
 - PR에는 변경 목적, 검증 결과, 관련 이슈를 기록한다. 이슈를 실제로 완료하는 PR에만 종료 키워드를 사용한다.
 - 독립적으로 설명·리뷰·되돌리기가 가능한 최소 변경을 완성하고 검증할 때마다 커밋한다.
 - 서로 다른 도메인, 공통 설정과 도메인 구현, 기존 테스트 보정과 신규 기능을 한 커밋에 섞지 않는다.
