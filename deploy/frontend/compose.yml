@@ -1,0 +1,13 @@
+services:
+  frontend:
+    image: ${IMAGE_REF:?IMAGE_REF is required}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${APP_PORT:?APP_PORT is required}:8080"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
