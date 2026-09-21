@@ -79,7 +79,11 @@ Nginx 설정 원본은 `deploy/nginx/`에 있고, 서버에서는 `/etc/nginx/si
 7. 오류·SIGINT·SIGTERM 종료 시 실행 중인 배포 명령을 멈추고 이전 Compose·이미지·환경 파일로 복구를 시도한다. 첫 배포라 이전 릴리즈가 없다면 실패한 컴포넌트를 내린다.
 8. 컨테이너 변경 전에 `pending` 기록을 남긴다. SIGKILL·전원 차단처럼 즉시 복구할 수 없는 경우에는 다음 배포 실행 시 먼저 복구한다. 복구 실패 시 기록을 유지하며 새 배포를 진행하지 않는다. Actions가 복구 도중 프로세스를 강제 종료하는 경우도 같은 절차를 따른다.
 
-릴리즈는 `/home/ubuntu/apps/jidan/<환경>/<frontend|backend>/releases/`에 보관한다. 백엔드 릴리즈에는 환경 파일 사본이 있으므로 해당 디렉터리도 비공개로 관리한다. 과거 릴리즈와 RPi4 빌드 캐시는 자동 삭제하지 않는다. 디스크 사용량을 확인하고 보관 정책을 정한다.
+릴리즈는 `/home/ubuntu/apps/jidan/<환경>/<frontend|backend>/releases/`에 보관한다. 백엔드 릴리즈에는 환경 파일 사본이 있으므로 해당 디렉터리도 비공개로 관리한다. 성공한 배포 뒤 해당 환경·컴포넌트의 검증된 최근 릴리즈 5개와 현재 릴리즈를 보관하고 나머지를 정리한다. 복구 중인 `pending` 기록이 있으면 릴리즈를 삭제하지 않는다.
+
+RPi4는 `jidan-ci` 전용 Buildx builder를 사용한다. 테스트 단계는 Docker 이미지로 내보내지 않고 전용 캐시에만 저장한다. 빌드 종료 시 해당 캐시를 최대 4GB·여유 공간 8GB 목표로 정리한다(정리 가능한 캐시에 한하므로 용량을 보장하는 quota는 아니다). FE/BE별 최근 이미지 참조 5개를 보관하며, 실행·정지된 컨테이너가 사용하는 이미지는 제외한다. RPi5에서는 보관 중인 모든 환경의 릴리즈 이미지도 보호한다. 다른 프로젝트의 이미지·builder와 Docker volume은 정리하지 않으며 `--force` 이미지 삭제를 사용하지 않는다. GHCR 원격 이미지에는 이 로컬 보관 정책을 적용하지 않는다.
+
+정리 단계가 실패하면 CI에 실패가 표시된다. 앱 배포 후의 정리 실패는 경고를 남기며, 이미 검증·확정된 앱 배포를 롤백하지 않는다.
 
 수동 재배포는 GitHub Actions에서 해당 frontend/backend 워크플로우의 Run workflow를 실행하고 `main` 또는 해당 `dev` 브랜치를 선택한다. 다른 브랜치는 배포하지 않는다.
 
@@ -97,7 +101,7 @@ Nginx 설정 원본은 `deploy/nginx/`에 있고, 서버에서는 `/etc/nginx/si
 ```bash
 # Linux / RPi4
 bash -n scripts/deploy.sh
-python3 -m unittest discover -s tests -v
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 
 # actionlint 설치 환경
 actionlint -shellcheck= -pyflakes= .github/workflows/*.yml

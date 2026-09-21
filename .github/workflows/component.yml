@@ -49,6 +49,12 @@ jobs:
             echo 'ready=false' >> "$GITHUB_OUTPUT"
             echo "Application directory $SOURCE is not initialized; application build and deployment skipped." >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Set up dedicated Jidan builder
+        id: builder
+        if: steps.source.outputs.ready == 'true'
+        run: |
+          docker buildx inspect jidan-ci >/dev/null 2>&1 || docker buildx create --name jidan-ci --driver docker-container
+          docker buildx inspect jidan-ci --bootstrap
       - name: Test and build ARM64 image
         if: steps.source.outputs.ready == 'true'
         env:
@@ -57,8 +63,8 @@ jobs:
         run: |
           set -euo pipefail
           image="ghcr.io/2026-kw-hackathon/29_jidan-${COMPONENT}:${GITHUB_SHA}"
-          docker build --pull --target test -f "deploy/$COMPONENT/Dockerfile" "$SOURCE"
-          docker build --target runtime -f "deploy/$COMPONENT/Dockerfile" -t "$image" "$SOURCE"
+          docker buildx build --builder jidan-ci --output=type=cacheonly --pull --target test -f "deploy/$COMPONENT/Dockerfile" "$SOURCE"
+          docker buildx build --builder jidan-ci --load --target runtime -f "deploy/$COMPONENT/Dockerfile" -t "$image" "$SOURCE"
       - name: Publish image
         id: image
         if: inputs.deploy && steps.source.outputs.ready == 'true'
@@ -75,6 +81,10 @@ jobs:
           docker push "$image"
           digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
           echo "image=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Retain Jidan images and cache
+        if: always() && steps.builder.outcome == 'success'
+        run: python3 scripts/retention.py build
 
   deploy:
     needs: build

@@ -6,7 +6,7 @@ on:
     paths:
       - 'back-end/**'
       - 'deploy/backend/**'
-      - 'scripts/deploy.sh'
+      - 'scripts/**'
       - 'tests/**'
       - '.github/workflows/component.yml'
       - '.github/workflows/backend.yml'
@@ -15,7 +15,7 @@ on:
     paths:
       - 'back-end/**'
       - 'deploy/backend/**'
-      - 'scripts/deploy.sh'
+      - 'scripts/**'
       - 'tests/**'
       - '.github/workflows/component.yml'
       - '.github/workflows/backend.yml'

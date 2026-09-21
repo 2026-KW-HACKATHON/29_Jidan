@@ -6,7 +6,7 @@ on:
     paths:
       - 'front-end/**'
       - 'deploy/frontend/**'
-      - 'scripts/deploy.sh'
+      - 'scripts/**'
       - 'tests/**'
       - '.github/workflows/component.yml'
       - '.github/workflows/frontend.yml'
@@ -15,7 +15,7 @@ on:
     paths:
       - 'front-end/**'
       - 'deploy/frontend/**'
-      - 'scripts/deploy.sh'
+      - 'scripts/**'
       - 'tests/**'
       - '.github/workflows/component.yml'
       - '.github/workflows/frontend.yml'

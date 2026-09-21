@@ -89,8 +89,13 @@ actual=$(docker inspect "$container" --format '{{.Image}}')
 if [[ "$component" == backend ]]; then health=/api/health; else health=/healthz; fi
 run curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$port$health" >/dev/null
 run curl --fail --silent --show-error --max-time 20 --retry 3 "$url" >/dev/null
+touch "$release/verified"
 ln -s "$release" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
 # Once current changes, recovery recognizes this release as committed.
 rm -f "$root/pending"
 echo "Deployed $environment/$component: $image"
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if ! run python3 "$script_dir/retention.py" deploy "$environment" "$component"; then
+  echo 'Retention cleanup failed; deployment remains committed.' >&2
+fi
