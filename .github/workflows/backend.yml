@@ -1,0 +1,40 @@
+name: backend CI/CD
+
+on:
+  pull_request:
+    branches: [main, back-end/dev]
+    paths:
+      - 'back-end/**'
+      - 'deploy/backend/**'
+      - 'scripts/deploy.sh'
+      - 'tests/**'
+      - '.github/workflows/component.yml'
+      - '.github/workflows/backend.yml'
+  push:
+    branches: [main, back-end/dev]
+    paths:
+      - 'back-end/**'
+      - 'deploy/backend/**'
+      - 'scripts/deploy.sh'
+      - 'tests/**'
+      - '.github/workflows/component.yml'
+      - '.github/workflows/backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: jidan-backend-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/back-end/dev'
+    uses: ./.github/workflows/component.yml
+    with:
+      component: backend
+      source: back-end
+      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+      deploy: ${{ github.event_name != 'pull_request' }}

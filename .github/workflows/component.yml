@@ -1,0 +1,108 @@
+name: Component pipeline
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        type: string
+        required: true
+      source:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+      deploy:
+        type: boolean
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, ARM64, jidan, build, rpi4]
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ready: ${{ steps.source.outputs.ready }}
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Verify deployment logic
+        run: |
+          bash -n scripts/deploy.sh
+          python3 -m unittest discover -s tests -v
+      - name: Check application initialization
+        id: source
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: |
+          if [ -d "$SOURCE" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo "Application directory $SOURCE is not initialized; application build and deployment skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Test and build ARM64 image
+        if: steps.source.outputs.ready == 'true'
+        env:
+          SOURCE: ${{ inputs.source }}
+          COMPONENT: ${{ inputs.component }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/2026-kw-hackathon/29_jidan-${COMPONENT}:${GITHUB_SHA}"
+          docker build --pull --target test -f "deploy/$COMPONENT/Dockerfile" "$SOURCE"
+          docker build --target runtime -f "deploy/$COMPONENT/Dockerfile" -t "$image" "$SOURCE"
+      - name: Publish image
+        id: image
+        if: inputs.deploy && steps.source.outputs.ready == 'true'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMPONENT: ${{ inputs.component }}
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-${{ github.run_id }}-${{ inputs.component }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$DOCKER_CONFIG"
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/2026-kw-hackathon/29_jidan-${COMPONENT}:${GITHUB_SHA}"
+          docker push "$image"
+          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+          echo "image=$digest" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build
+    if: inputs.deploy && needs.build.outputs.ready == 'true'
+    runs-on: [self-hosted, Linux, ARM64, jidan, deploy, rpi5]
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
+    # Keep frontend and backend pending deployments from replacing each other.
+    concurrency:
+      group: jidan-deploy-${{ inputs.environment }}-${{ inputs.component }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Deploy exact image
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          COMPONENT: ${{ inputs.component }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-${{ github.run_id }}-${{ inputs.component }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$DOCKER_CONFIG"
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          ./scripts/deploy.sh "$ENVIRONMENT" "$COMPONENT" "$IMAGE"

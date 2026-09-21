@@ -1,0 +1,2 @@
+self-hosted-runner:
+  labels: [jidan, build, deploy, rpi4, rpi5]
