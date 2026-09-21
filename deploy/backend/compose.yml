@@ -1,0 +1,25 @@
+services:
+  backend:
+    image: ${IMAGE_REF:?IMAGE_REF is required}
+    restart: unless-stopped
+    env_file:
+      - path: runtime.env
+        format: raw
+    environment:
+      FORWARDED_ALLOW_IPS: "*"
+    ports:
+      - "127.0.0.1:${APP_PORT:?APP_PORT is required}:8000"
+    networks:
+      - default
+      - shared-db
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+networks:
+  shared-db:
+    external: true
+    name: shared-mysql_default
