@@ -22,42 +22,75 @@ esac
 mkdir -p "$root/releases"
 exec 9>"$root/deploy.lock"
 flock -w 300 9
-previous=$(readlink -f "$root/current" 2>/dev/null || true)
+child=
+run() {
+  "$@" &
+  child=$!
+  local status=0
+  wait "$child" || status=$?
+  child=
+  return "$status"
+}
+compose() {
+  local directory=$1
+  shift
+  run docker compose -p "$project" --env-file "$directory/.env" -f "$directory/compose.yml" "$@"
+}
+# Persist intent before touching containers. SIGKILL/power loss is recovered on the next run.
+recover_pending() {
+  [[ -L "$root/pending" ]] || return 0
+  local candidate current
+  candidate=$(readlink -f "$root/pending")
+  current=$(readlink -f "$root/current" 2>/dev/null || true)
+  if [[ "$candidate" != "$current" ]]; then
+    echo 'Recovering interrupted deployment.' >&2
+    if [[ -n "$current" && -f "$current/compose.yml" ]]; then
+      compose "$current" up -d --wait --wait-timeout 90 || return 1
+    else
+      compose "$candidate" down || return 1
+    fi
+  fi
+  rm -f "$root/pending" "$root/current.next"
+}
+cleanup() {
+  local status=$?
+  trap - EXIT
+  trap '' INT TERM
+  if [[ -n "$child" ]]; then
+    kill -TERM "$child" 2>/dev/null || true
+    wait "$child" 2>/dev/null || true
+    child=
+  fi
+  if ! recover_pending; then
+    echo 'ROLLBACK FAILED: pending marker retained; retry deployment to recover.' >&2
+    status=1
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# Never overwrite evidence of an interrupted deployment before recovery succeeds.
+recover_pending
 release=$(mktemp -d "$root/releases/release.XXXXXXXX")
 cp "deploy/$component/compose.yml" "$release/compose.yml"
 printf 'IMAGE_REF=%s\nAPP_PORT=%s\n' "$image" "$port" > "$release/.env"
 if [[ "$component" == backend ]]; then
   install -m 600 "$root/runtime.env" "$release/runtime.env"
 fi
-compose() {
-  local directory=$1
-  shift
-  docker compose -p "$project" --env-file "$directory/.env" -f "$directory/compose.yml" "$@"
-}
-# A pull failure leaves the current deployment untouched.
 compose "$release" config --quiet
 compose "$release" pull
-rollback() {
-  local status=$?
-  trap - ERR
-  echo 'Deployment failed; restoring previous component release.' >&2
-  if [[ -n "$previous" && -f "$previous/compose.yml" ]]; then
-    compose "$previous" up -d --wait --wait-timeout 180 || echo 'ROLLBACK FAILED: manual intervention required' >&2
-  else
-    compose "$release" down || true
-  fi
-  exit "$status"
-}
-trap rollback ERR
+ln -s "$release" "$root/pending"
 compose "$release" up -d --wait --wait-timeout 180
 container=$(compose "$release" ps -q "$component")
 expected=$(docker image inspect "$image" --format '{{.Id}}')
 actual=$(docker inspect "$container" --format '{{.Image}}')
 [[ -n "$container" && "$expected" == "$actual" ]]
 if [[ "$component" == backend ]]; then health=/api/health; else health=/healthz; fi
-curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$port$health" >/dev/null
-curl --fail --silent --show-error --max-time 20 --retry 3 "$url" >/dev/null
+run curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$port$health" >/dev/null
+run curl --fail --silent --show-error --max-time 20 --retry 3 "$url" >/dev/null
 ln -s "$release" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
-trap - ERR
+# Once current changes, recovery recognizes this release as committed.
+rm -f "$root/pending"
 echo "Deployed $environment/$component: $image"

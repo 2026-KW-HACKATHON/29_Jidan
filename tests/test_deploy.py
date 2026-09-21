@@ -2,13 +2,15 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import signal
+import time
 import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/deploy.sh'
 IMAGE = 'ghcr.io/2026-kw-hackathon/29_jidan-frontend@sha256:' + 'a' * 64
 FAKE = '''#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, time
 from pathlib import Path
 args=sys.argv[1:]
 with open(os.environ['CALLS'], 'a') as f: f.write(json.dumps([Path(sys.argv[0]).name]+args)+'\\n')
@@ -18,6 +20,10 @@ if Path(sys.argv[0]).name == 'curl':
 if args[0] == 'compose':
     if 'pull' in args and mode == 'pull': sys.exit(1)
     if 'up' in args and mode == 'up' and '/previous/' not in ' '.join(args): sys.exit(1)
+    if 'up' in args and mode == 'rollback': sys.exit(1)
+    if 'up' in args and mode == 'wait' and '/previous/' not in ' '.join(args):
+        Path(os.environ['READY']).touch()
+        time.sleep(60)
     if 'ps' in args: print('container-id')
 elif args[:2] == ['image', 'inspect']: print('expected-id')
 elif args[0] == 'inspect': print('wrong-id' if mode == 'image' else 'expected-id')
@@ -40,7 +46,7 @@ class DeployTests(unittest.TestCase):
         self.root.mkdir(parents=True)
         self.calls = self.base / 'calls'
         self.env = dict(os.environ, PATH=f"{self.base / 'bin'}:{os.environ['PATH']}",
-                        JIDAN_APP_ROOT=str(self.base / 'apps'), CALLS=str(self.calls))
+                        JIDAN_APP_ROOT=str(self.base / 'apps'), CALLS=str(self.calls), READY=str(self.base / 'ready'))
 
     def previous(self):
         prev = self.root / 'previous'
@@ -95,6 +101,75 @@ class DeployTests(unittest.TestCase):
                 result, calls = self.run_deploy(**kwargs)
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(calls, [])
+
+    def interrupt(self, sig):
+        self.env['FAIL'] = 'wait'
+        proc = subprocess.Popen(['bash', str(SCRIPT), 'dev', 'frontend', IMAGE],
+                                cwd=self.base, env=self.env, start_new_session=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic() + 10
+            while not (self.base / 'ready').exists():
+                if proc.poll() is not None or time.monotonic() > deadline:
+                    self.fail('Deployment never reached container start')
+                time.sleep(0.02)
+            if sig == signal.SIGKILL:
+                os.killpg(proc.pid, sig)
+            else:
+                proc.send_signal(sig)
+            proc.communicate(timeout=10)
+            return proc.returncode
+        finally:
+            if proc.poll() is None:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.communicate()
+
+    def test_sigterm_restores_previous(self):
+        prev = self.previous()
+        self.assertEqual(self.interrupt(signal.SIGTERM), 143)
+        self.assertEqual((self.root / 'current').resolve(), prev)
+        self.assertFalse((self.root / 'pending').exists())
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        self.assertTrue(any('up' in c and str(prev / 'compose.yml') in c for c in calls))
+
+    def test_sigint_on_first_deployment_cleans_container(self):
+        self.assertEqual(self.interrupt(signal.SIGINT), 130)
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        self.assertTrue(any('down' in c for c in calls))
+        self.assertFalse((self.root / 'pending').exists())
+
+    def test_sigkill_is_recovered_before_next_deployment(self):
+        prev = self.previous()
+        self.assertEqual(self.interrupt(signal.SIGKILL), -signal.SIGKILL)
+        self.assertTrue((self.root / 'pending').exists())
+        self.calls.write_text('')
+        result, calls = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        starts = [c for c in calls if 'up' in c]
+        self.assertIn(str(prev / 'compose.yml'), starts[0])
+        self.assertFalse((self.root / 'pending').exists())
+
+    def test_failed_recovery_preserves_journal(self):
+        self.previous()
+        result, _ = self.run_deploy('rollback')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.root / 'pending').exists())
+        count = len(list((self.root / 'releases').iterdir()))
+        result, _ = self.run_deploy('rollback')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(list((self.root / 'releases').iterdir())), count)
+        result, _ = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_committed_journal_is_only_cleared(self):
+        prev = self.previous()
+        (self.root / 'pending').symlink_to(prev)
+        (self.root / 'current.next').symlink_to(prev)
+        result, calls = self.run_deploy('pull')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any('up' in c or 'down' in c for c in calls))
+        self.assertFalse((self.root / 'pending').exists())
+        self.assertFalse((self.root / 'current.next').exists())
 
 
 if __name__ == '__main__':
