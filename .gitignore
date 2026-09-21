@@ -1,0 +1,46 @@
+# OS metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Personal workspace and editor files
+/.local/
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# Local environment values (keep shared templates)
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.template
+
+# Logs
+*.log
+
+# Frontend dependencies, build output, and caches
+node_modules/
+dist/
+.next/
+.nuxt/
+.output/
+.vite/
+.turbo/
+.cache/
+coverage/
+*.tsbuildinfo
+
+# Backend and shared build output
+.gradle/
+build/
+target/
+out/
+*.class
+
+# Package lockfiles and Gradle/Maven wrappers are intentionally tracked.
