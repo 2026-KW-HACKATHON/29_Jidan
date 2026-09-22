@@ -19,3 +19,5 @@ python -m pytest
 
 `GET /api/health`는 인증 없이 상태를 반환한다. 실행·배포 계약은
 [CI/CD 운영 문서](../deploy/CI-CD.md)를 참고한다.
+
+로컬에서 DB 설정이 없으면 `database: not_configured`를 반환한다. `APP_ENV=dev|production`에서는 DB 설정이 필수이며, `/api/health`가 `SELECT 1`까지 확인한다. DB 장애 시 자격 증명을 노출하지 않고 503을 반환한다.
