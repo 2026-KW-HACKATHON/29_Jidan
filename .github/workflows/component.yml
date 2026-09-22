@@ -36,8 +36,8 @@ jobs:
           persist-credentials: false
       - name: Verify deployment logic
         run: |
-          bash -n scripts/deploy.sh
-          python3 -m unittest discover -s tests -v
+          bash -n deploy/scripts/deploy.sh
+          python3 -m unittest discover -s deploy/tests -v
       - name: Check application initialization
         id: source
         env:
@@ -84,7 +84,7 @@ jobs:
 
       - name: Retain Jidan images and cache
         if: always() && steps.builder.outcome == 'success'
-        run: python3 scripts/retention.py build
+        run: python3 deploy/scripts/retention.py build
 
   deploy:
     needs: build
@@ -115,4 +115,4 @@ jobs:
           mkdir -p "$DOCKER_CONFIG"
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          ./scripts/deploy.sh "$ENVIRONMENT" "$COMPONENT" "$IMAGE"
+          ./deploy/scripts/deploy.sh "$ENVIRONMENT" "$COMPONENT" "$IMAGE"

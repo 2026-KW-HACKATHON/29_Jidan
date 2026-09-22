@@ -6,8 +6,8 @@ on:
     paths:
       - 'front-end/**'
       - 'deploy/frontend/**'
-      - 'scripts/**'
-      - 'tests/**'
+      - 'deploy/scripts/**'
+      - 'deploy/tests/**'
       - '.github/workflows/component.yml'
       - '.github/workflows/frontend.yml'
   push:
@@ -15,8 +15,8 @@ on:
     paths:
       - 'front-end/**'
       - 'deploy/frontend/**'
-      - 'scripts/**'
-      - 'tests/**'
+      - 'deploy/scripts/**'
+      - 'deploy/tests/**'
       - '.github/workflows/component.yml'
       - '.github/workflows/frontend.yml'
   workflow_dispatch:
