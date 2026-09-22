@@ -13,7 +13,7 @@
 | `back-end/dev` | `dev` | `dev-jidan.leehyowon14.dev` | BE |
 | `main` | `production` | `jidan.leehyowon14.dev` | 변경된 FE/BE |
 
-PR은 테스트·빌드만 수행한다. 같은 저장소의 PR만 self-hosted runner에서 실행하며, fork PR은 자동 실행하지 않는다. `feat/fix/hotfix → dev → main` 병합 규칙은 [BRANCHING.md](BRANCHING.md)를 따른다.
+PR은 테스트·빌드만 수행한다. 같은 저장소의 PR만 self-hosted runner에서 실행하며, fork PR은 자동 실행하지 않는다. `feat/fix/hotfix → dev → main` 병합 규칙은 [BRANCHING.md](../BRANCHING.md)를 따른다.
 
 두 앱은 별도로 배포되므로 `main`의 FE·BE 배포는 원자적이지 않다. API 변경은 기존 클라이언트와 호환되도록 준비한다.
 
@@ -100,8 +100,8 @@ RPi4는 `jidan-ci` 전용 Buildx builder를 사용한다. 테스트 단계는 Do
 
 ```bash
 # Linux / RPi4
-bash -n scripts/deploy.sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+bash -n deploy/scripts/deploy.sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/tests -v
 
 # actionlint 설치 환경
 actionlint -shellcheck= -pyflakes= .github/workflows/*.yml
