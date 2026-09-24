@@ -14,3 +14,8 @@
 .auth-role-card .ds-button { min-height: 52px; width: 100%; }
 .auth-role-worker .ds-button { color: var(--ds-gray-80); }
 .auth-role-hint { font-size: var(--ds-small); color: var(--ds-secondary); }
+/* Figma: app bar 58px; role cards 214px at the 390px reference width. */
+.auth-role-selection .ds-app-bar h1 { line-height: 26px; }
+.auth-role-introduction p, .auth-role-card > p, .auth-role-card .ds-button { line-height: 23px; }
+.auth-role-heading h3 { line-height: 29px; }
+.auth-role-hint { line-height: 20px; }
