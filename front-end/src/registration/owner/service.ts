@@ -1,7 +1,7 @@
 import type { OwnerDraft, OwnerErrors } from './model'
 
 /** Server-owned identity. Never populate this from query parameters or draft storage. */
-export type OwnerIdentity = { draftScope: string; email: string; name?: string }
+export type OwnerIdentity = { draftScope: string; email: string; name?: string; receipt?: OwnerReceipt }
 export type OwnerReceipt = { id: string; ownerName: string; storeName: string; status: 'PENDING' }
 export type OwnerFailureCode = 'unavailable' | 'expired' | 'duplicate' | 'validation' | 'network'
 export class OwnerFailure extends Error {
