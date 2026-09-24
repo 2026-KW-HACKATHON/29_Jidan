@@ -26,3 +26,6 @@
 .owner-bottom-nav button { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0; background: none; border: 0; color: var(--ds-secondary); cursor: pointer; font-size: 13px; line-height: 20px; }
 .owner-bottom-nav button[aria-current] { color: var(--ds-primary-strong); }
 .owner-home-indicator { width: 130px; height: 4px; border-radius: 12px; background: var(--ds-text); }
+/* Figma's 19px/15px text boxes use rounded 29px/23px line heights. */
+.owner-pending .ds-modal-message h2 { line-height: 29px; }
+.owner-pending .ds-modal-message p { line-height: 23px; }
