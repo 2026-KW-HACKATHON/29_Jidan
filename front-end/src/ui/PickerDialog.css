@@ -1,0 +1,6 @@
+.ds-picker { width: calc(100% - 48px); max-width: 342px; max-height: calc(100dvh - 48px); margin: auto; padding: 24px; border: 0; border-radius: var(--ds-radius-dialog); background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.ds-picker[open] { display: flex; flex-direction: column; gap: 16px; }
+.ds-picker::backdrop { width: min(100%, var(--ds-mobile-width)); left: 50%; right: auto; transform: translateX(-50%); background: rgb(0 0 0 / 40%); }
+.ds-picker header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ds-picker h2 { font-size: var(--ds-heading); }
+.ds-picker-body { min-height: 0; overflow: auto; }
