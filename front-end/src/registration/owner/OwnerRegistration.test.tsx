@@ -114,3 +114,23 @@ it('언마운트 시 진행 요청을 취소한다', async () => {
   view.unmount()
   await waitFor(() => expect((submit.mock.calls[0] as unknown as [unknown, unknown, AbortSignal])[2].aborted).toBe(true))
 })
+it('중복 매장 거절 후 매장 수정으로 복귀하며 값을 유지한다', async () => {
+  ready(); setup({ identity: async () => identity, submit: async () => { throw new OwnerFailure('duplicate') } })
+  fireEvent.click(await screen.findByRole('button', { name: '매장 등록 신청' }))
+  fireEvent.click(await screen.findByRole('button', { name: '입력 수정' }))
+  expect(screen.getByLabelText('매장명 *')).toHaveValue(valid.storeName)
+})
+it('주소 선택 시 우편번호와 주소를 적용하고 이전 상세주소를 지운다', async () => {
+  ready(2)
+  render(<OwnerRegistration service={{ identity: async () => identity, submit: vi.fn() }} onBack={vi.fn()} onExpired={vi.fn()} addressSearch={async (_container, select) => { select({ postcode: '01890', address: '선택한 도로명 주소' }) }} />)
+  fireEvent.click(await screen.findByRole('button', { name: '주소 검색' }))
+  await waitFor(() => expect(screen.getByLabelText('매장 주소 *')).toHaveValue('선택한 도로명 주소'))
+  expect(screen.getByLabelText('우편번호')).toHaveValue('01890')
+  expect(screen.getByLabelText('상세주소')).toHaveValue('')
+})
+it('저장된 단계가 필수값을 우회하지 않는다', async () => {
+  saveDraft('ticket', { draft: emptyDraft, step: 3, requestKey: 'key' })
+  setup()
+  expect(await screen.findByLabelText('점주 성명 *')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '매장 등록 신청' })).not.toBeInTheDocument()
+})
