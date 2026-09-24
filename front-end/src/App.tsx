@@ -5,6 +5,7 @@ import { Button } from './ui/Button'
 import { MobileLayout } from './ui/MobileLayout'
 import { OwnerRegistration } from './registration/owner/OwnerRegistration'
 import { WorkerRegistration } from './registration/worker/WorkerRegistration'
+import { OwnerHome } from './home/OwnerHome'
 import HealthScreen from './health/HealthScreen'
 
 const authPaths: readonly string[] = ['/', '/login', '/signup', '/signup/owner', '/signup/worker', '/home']
@@ -37,7 +38,7 @@ export default function App() {
   if (!authPaths.includes(location.path)) return <MobileLayout header={<AppBar title="페이지를 찾을 수 없어요" onBack={() => navigate('/')} />}><Button onClick={() => navigate('/')}>처음으로</Button></MobileLayout>
 
   return <AuthFlow key={`${location.path}${location.search}:${revision}`} path={location.path as AuthPath} search={location.search} navigate={navigate}
-    renderHome={session => session.accountType === 'OWNER' ? <OwnerRegistration homeMode onBack={() => navigate('/login')} onExpired={() => navigate('/login?error=signup_expired', true)} /> : <PendingScreen title="지단" description="로그인됐어요. 홈 화면을 준비하고 있어요." onBack={() => navigate('/login')} />}
+    renderHome={session => session.accountType === 'OWNER' ? <OwnerHome displayName={session.displayName} /> : <PendingScreen title="지단" description="로그인됐어요. 홈 화면을 준비하고 있어요." onBack={() => navigate('/login')} />}
     renderRegistration={role => role === 'owner' ? <OwnerRegistration onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} /> : <WorkerRegistration onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} onHome={() => navigate('/home')} />} />
 }
 

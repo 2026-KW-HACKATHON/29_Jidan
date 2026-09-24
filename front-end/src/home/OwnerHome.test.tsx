@@ -1,0 +1,43 @@
+import { fireEvent, render, screen } from '@testing-library/react'
+import { expect, it } from 'vitest'
+import { OwnerHome } from './OwnerHome'
+
+it('uses session identity and shows honest empty states without API data', () => {
+  render(<OwnerHome displayName="이하늘" initialDate={new Date(2026, 8, 25)} />)
+  expect(screen.getByRole('heading', { name: '안녕하세요, 이하늘 점주님' })).toBeInTheDocument()
+  expect(screen.getByText('등록된 매장이 없어요.')).toBeInTheDocument()
+  expect(screen.getByText('모집 중인 공고가 없어요.')).toBeInTheDocument()
+  expect(screen.getByText('이 달에 일정이 없어요.')).toBeInTheDocument()
+  expect(screen.queryByText('명랑핫도그 광운대점')).not.toBeInTheDocument()
+  expect(screen.getByRole('navigation', { name: '주 메뉴' })).toBeInTheDocument()
+})
+
+it('updates the list for the visible month and narrows it to a touched date', () => {
+  render(<OwnerHome displayName="김민수" initialDate={new Date(2025, 6, 19)} data={{ events: [
+    { id: 'july-19', date: '2025-07-19', descriptions: ['오늘 일정'] },
+    { id: 'july-22', date: '2025-07-22', descriptions: ['대타 일정'], substitute: true },
+    { id: 'august-1', date: '2025-08-01', descriptions: ['8월 일정'] },
+  ] }} />)
+  expect(screen.getByText('오늘 일정')).toBeInTheDocument()
+  expect(screen.getByText('대타 일정')).toBeInTheDocument()
+  expect(screen.queryByText('8월 일정')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '2025년 7월 22일' }))
+  expect(screen.queryByText('오늘 일정')).not.toBeInTheDocument()
+  expect(screen.getByText('대타 일정')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '2025년 7월 23일' }))
+  expect(screen.getByText('선택한 날짜에 일정이 없어요.')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '다음 달' }))
+  expect(screen.getByText('8월 일정')).toBeInTheDocument()
+  expect(screen.queryByText('대타 일정')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '이전 달' }))
+  expect(screen.getByText('오늘 일정')).toBeInTheDocument()
+  expect(screen.getByText('대타 일정')).toBeInTheDocument()
+})
+
+it('renders an operating store, job applicants, and calendar marks from supplied data', () => {
+  render(<OwnerHome displayName="김민수" initialDate={new Date(2025, 6, 19)} data={{ store: { name: '광운 매장', status: 'operating' }, jobs: [{ id: 'job', title: '주말 대타', schedule: '7월 19일', applicants: 0 }], marks: [{ date: '2025-07-22' }] }} />)
+  expect(screen.getByText('광운 매장')).toBeInTheDocument()
+  expect(screen.getByText('운영 중')).toBeInTheDocument()
+  expect(screen.getByText('지원자 없음')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '2025년 7월 22일' })).toHaveClass('home-calendar-regular')
+})

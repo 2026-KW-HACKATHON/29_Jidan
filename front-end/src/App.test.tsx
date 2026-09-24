@@ -49,3 +49,15 @@ it('does not route arbitrary paths into an authenticated area', () => {
   expect(screen.getByRole('heading')).toHaveTextContent('페이지를 찾을 수 없어요')
   expect(fetch).not.toHaveBeenCalled()
 })
+
+it('routes an authenticated owner to the owner home without preview store data', async () => {
+  window.history.replaceState(null, '', '/home')
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: {
+    id: '123e4567-e89b-12d3-a456-426614174000', displayName: '이하늘', accountType: 'OWNER',
+    sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(), csrfToken: 'token',
+  } }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: '안녕하세요, 이하늘 점주님' })).toBeInTheDocument()
+  expect(screen.getByText('등록된 매장이 없어요.')).toBeInTheDocument()
+  expect(screen.queryByText('명랑핫도그 광운대점')).not.toBeInTheDocument()
+})
