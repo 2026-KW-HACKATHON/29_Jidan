@@ -16,7 +16,11 @@ type ModalProps = {
   onConfirm?: () => void | Promise<void>
 }
 
-export function Modal({ open, title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, onClose, onConfirm }: ModalProps) {
+export function Modal({ open, ...props }: ModalProps) {
+  return open ? <OpenModal {...props} /> : null
+}
+
+function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, onClose, onConfirm }: Omit<ModalProps, 'open'>) {
   const dialog = useRef<HTMLDialogElement>(null)
   const initialFocus = useRef<HTMLButtonElement>(null)
   const generation = useRef(0)
@@ -28,10 +32,6 @@ export function Modal({ open, title, description, state = 'information', confirm
 
   useEffect(() => {
     generation.current += 1
-    inFlight.current = false
-    setPending(false)
-    setFailed(false)
-    if (!open) return
     const element = dialog.current!
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
     element.showModal()
@@ -41,7 +41,7 @@ export function Modal({ open, title, description, state = 'information', confirm
       element.close()
       if (trigger?.isConnected) trigger.focus()
     }
-  }, [open])
+  }, [])
 
   async function confirm() {
     if (busy || inFlight.current) return
