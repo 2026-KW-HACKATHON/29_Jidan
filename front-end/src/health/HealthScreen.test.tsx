@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App from './App'
+import App from './HealthScreen'
 
 const healthy = { status: 'ok', environment: 'dev', database: 'ok' }
 function response(body: unknown = healthy, ok = true) {

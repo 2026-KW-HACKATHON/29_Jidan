@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import './App.css'
+import './HealthScreen.css'
 
 type Health = { status: 'ok'; environment: string; database: string }
 type State = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; health: Health }
@@ -12,7 +12,7 @@ function isHealth(value: unknown): value is Health {
     && ['ok', 'not_configured'].includes(String(health.database))
 }
 
-export default function App() {
+export default function HealthScreen() {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<State>({ kind: 'loading' })
 
