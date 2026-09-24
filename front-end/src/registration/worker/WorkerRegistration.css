@@ -48,3 +48,4 @@
 .worker-complete .worker-intro::before { content: ''; display: none; }
 .worker-complete .worker-card h3 { font-size: 19px; line-height: 29px; }
 .worker-status { width: 48px; height: 48px; border-radius: 9999px; background: var(--ds-information-surface); display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+.worker-fields-boundary { margin: 0; padding: 0; border: 0; min-width: 0; }
