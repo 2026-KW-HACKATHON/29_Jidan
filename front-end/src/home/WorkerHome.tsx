@@ -26,7 +26,7 @@ export function WorkerHome({ displayName, data = {}, initialDate }: {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const activity = data.activity || { applications: 0, favoriteStores: 0, regularStores: 0 }
   const jobs = data.recommendations || []
-  const shifts = eventsInView(data.shifts || [], visibleMonth, selectedDate)
+  const shifts = eventsInView(data.shifts || [], visibleMonth, selectedDate, selectedDate ? undefined : 3)
   return <>
     <HomeShell role="worker" notificationCount={data.notificationCount}>
       <div className="home-greeting"><h2>안녕하세요, {displayName}님</h2><p>원하는 공고를 찾아보세요.</p></div>

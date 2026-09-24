@@ -24,11 +24,15 @@ it('shows shifts for the visible month and narrows them to a touched date', () =
   render(<WorkerHome displayName="김지수" initialDate={new Date(2025, 6, 19)} data={{ shifts: [
     { id: 'july-19', date: '2025-07-19', storeName: '오늘의 매장', kind: 'regular' },
     { id: 'july-22', date: '2025-07-22', storeName: '대타 매장', kind: 'substitute' },
+    { id: 'july-26', date: '2025-07-26', storeName: '다음 매장', kind: 'regular' },
+    { id: 'july-30', date: '2025-07-30', storeName: '네 번째 매장', kind: 'regular' },
     { id: 'august', date: '2025-08-02', storeName: '다음 달 매장', kind: 'regular' },
   ], marks: [{ date: '2025-07-22', kind: 'substitute' }] }} />)
   expect(screen.getByRole('button', { name: '2025년 7월 19일' })).toHaveAttribute('aria-pressed', 'true')
   expect(screen.getByText('오늘의 매장')).toBeInTheDocument()
   expect(screen.getByText('대타 매장')).toBeInTheDocument()
+  expect(screen.getByText('다음 매장')).toBeInTheDocument()
+  expect(screen.queryByText('네 번째 매장')).not.toBeInTheDocument()
   expect(screen.queryByText('다음 달 매장')).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: '2025년 7월 22일' }))
@@ -39,7 +43,18 @@ it('shows shifts for the visible month and narrows them to a touched date', () =
   fireEvent.click(screen.getByRole('button', { name: '2025년 7월 23일' }))
   expect(screen.getByText('선택한 날짜에 근무가 없어요.')).toBeInTheDocument()
 
+  fireEvent.click(screen.getByRole('button', { name: '2025년 7월 30일' }))
+  expect(screen.getByText('네 번째 매장')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '2025년 7월 19일' }))
+  expect(screen.getByText('오늘의 매장')).toBeInTheDocument()
+  expect(screen.getByText('대타 매장')).toBeInTheDocument()
+  expect(screen.getByText('다음 매장')).toBeInTheDocument()
+  expect(screen.queryByText('네 번째 매장')).not.toBeInTheDocument()
+
   fireEvent.click(screen.getByRole('button', { name: '다음 달' }))
   expect(screen.getByText('다음 달 매장')).toBeInTheDocument()
   expect(screen.queryByText('대타 매장')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '이전 달' }))
+  expect(screen.getByText('오늘의 매장')).toBeInTheDocument()
+  expect(screen.queryByText('네 번째 매장')).not.toBeInTheDocument()
 })
