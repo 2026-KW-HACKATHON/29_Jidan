@@ -2,7 +2,6 @@ import chevron from './assets/chevron.svg'
 import { useRef, useState } from 'react'
 import { Button } from '../../ui/Button'
 import { Choice } from '../../ui/Choice'
-import { Checkbox } from '../../ui/Checkbox'
 import { SelectField } from '../../ui/Field'
 import { WorkerFrame } from './WorkerFrame'
 import { ValuePicker } from './ValuePicker'
@@ -16,10 +15,9 @@ export function AvailabilityEditor({ value, others, onBack, onSave }: { value: A
     <fieldset className="worker-group"><legend>가능한 요일 *</legend><div className="worker-row worker-days">{weekdays.map((day,i)=><Choice type="checkbox" key={day} checked={draft.days.includes(i)} onChange={()=>change({days:draft.days.includes(i)?draft.days.filter(d=>d!==i):[...draft.days,i]})}>{day}</Choice>)}</div>{errors.days&&<p role="alert" className="worker-error">{errors.days}</p>}</fieldset>
     <div className="worker-row worker-period">{(['start','end'] as const).map(key=><SelectField indicatorSrc={chevron} key={key} label={key==='start'?'시작 시간 *':'종료 시간 *'} onClick={()=>setPicker(key)}>{draft[key]<0?'시간 선택':clockText(draft[key])}</SelectField>)}</div>
     {errors.time&&<p role="alert" className="worker-error">{errors.time}</p>}
-    <label className="worker-check"><Checkbox checked={draft.overnight} onChange={e=>change({overnight:e.target.checked})} />다음 날 종료</label>
-    <p className="worker-notice">30분 단위로 등록해 주세요.<br />자정을 넘겨 일할 수 있다면 ‘다음 날 종료’를 선택하세요.</p>
+    <p className="worker-notice">30분 단위로 등록해 주세요.</p>
     {valid&&<article className="worker-card worker-time-card"><h3>매주 {daysText(draft.days)}</h3><p className="worker-muted">{rangeText(draft)} · 하루 {duration(draft)/60}시간</p></article>}
-    {picker&&<ValuePicker type="time" title={picker==='start'?'시작 시간':'종료 시간'} value={draft[picker]<0?'':String(draft[picker])} onClose={()=>setPicker(null)} onSave={v=>change({[picker]:Number(v)})} />}
+    {picker&&<ValuePicker type="time" title={picker==='start'?'시작 시간':'종료 시간'} value={draft[picker]<0?'':String(draft[picker])} onClose={()=>setPicker(null)} overnight={picker==='end'?draft.overnight:undefined} onSave={(v,nextDay)=>change({[picker]:Number(v),...(picker==='end'?{overnight:nextDay}: {})})} />}
   </WorkerFrame>
 }
 export function WorkerAvailability({ values, error, change, edit }: { values: Availability[]; error?: string; change:(values:Availability[])=>void; edit:(index:number)=>void }) {

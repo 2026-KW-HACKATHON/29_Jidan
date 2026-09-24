@@ -33,7 +33,7 @@ it('업종 확인, 기간 입력으로 경력을 추가하고 수정 값을 보�
  fireEvent.click(await screen.findByRole('button',{name:'+ 경력 추가'}))
  fireEvent.click(screen.getByRole('button',{name:'업종 *'}));fireEvent.click(screen.getByRole('radio',{name:'카페'}));fireEvent.click(screen.getByRole('button',{name:'선택 완료'}))
  fireEvent.change(screen.getByLabelText('담당 업무 *'),{target:{value:'음료 제조'}})
- fireEvent.click(screen.getByRole('button',{name:'시작 연월 *'}));fireEvent.change(screen.getByLabelText('시작 연월',{selector:'input'}),{target:{value:'2024-03'}});fireEvent.click(screen.getByRole('button',{name:'선택 완료'}))
+ fireEvent.click(screen.getByRole('button',{name:'시작 연월 *'}));fireEvent.keyDown(screen.getByRole('spinbutton',{name:'연도'}),{key:'End'});fireEvent.keyDown(screen.getByRole('spinbutton',{name:'월'}),{key:'Home'});fireEvent.click(screen.getByRole('button',{name:'선택 완료'}))
  fireEvent.click(screen.getByLabelText('현재 근무 중'));fireEvent.click(screen.getByRole('button',{name:'경력 저장'}))
  expect(screen.getByText('카페 · 음료 제조')).toBeInTheDocument()
  fireEvent.click(screen.getByRole('button',{name:'경력 수정'}));expect(screen.getByLabelText('담당 업무 *')).toHaveValue('음료 제조')
@@ -42,7 +42,7 @@ it('업종 확인, 기간 입력으로 경력을 추가하고 수정 값을 보�
 it('시간 추가에서 겹친 구간을 막고 취소하면 원래 시간을 유지한다',async()=>{
  setup(valid,3);fireEvent.click(await screen.findByRole('button',{name:'+ 시간 추가'}))
  fireEvent.click(screen.getByLabelText('월'))
- for(const [label,value] of [['시작 시간','540'],['종료 시간','600']]){fireEvent.click(screen.getByRole('button',{name:`${label} *`}));fireEvent.change(screen.getByLabelText(label,{selector:'select'}),{target:{value}});fireEvent.click(screen.getByRole('button',{name:'선택 완료'}))}
+ for(const [label,value] of [['시작 시간','540'],['종료 시간','600']]){fireEvent.click(screen.getByRole('button',{name:`${label} *`}));fireEvent.keyDown(screen.getByRole('spinbutton',{name:'시 · 24시간제'}),{key:'Home'});for(let h=0;h<Number(value)/60;h++)fireEvent.keyDown(screen.getByRole('spinbutton',{name:'시 · 24시간제'}),{key:'ArrowDown'});fireEvent.click(screen.getByRole('button',{name:'선택 완료'}))}
  fireEvent.click(screen.getByRole('button',{name:'시간 추가'}));expect(screen.getByRole('alert')).toHaveTextContent('겹쳐요')
  fireEvent.click(screen.getByRole('button',{name:'뒤로 가기'}));expect(screen.getByText('선택한 시간 · 주 15시간')).toBeInTheDocument()
 })
