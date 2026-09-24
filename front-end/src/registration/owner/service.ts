@@ -5,7 +5,9 @@ export type OwnerIdentity = { draftScope: string; email: string; name?: string }
 export type OwnerReceipt = { id: string; ownerName: string; storeName: string; status: 'PENDING' }
 export type OwnerFailureCode = 'unavailable' | 'expired' | 'duplicate' | 'validation' | 'network'
 export class OwnerFailure extends Error {
-  constructor(public code: OwnerFailureCode, public fields: OwnerErrors = {}) { super(code) }
+  code: OwnerFailureCode
+  fields: OwnerErrors
+  constructor(code: OwnerFailureCode, fields: OwnerErrors = {}) { super(code); this.code = code; this.fields = fields }
 }
 export type OwnerService = {
   identity: (signal: AbortSignal) => Promise<OwnerIdentity>
