@@ -38,7 +38,7 @@
   --ds-heading: 19px;
 }
 
-.ds-ui {
+:where(.ds-ui) {
   font: 400 var(--ds-body) / var(--ds-line-height) var(--ds-font);
   color: var(--ds-text);
   font-synthesis: none;
@@ -46,7 +46,7 @@
 }
 .ds-ui, .ds-ui * { box-sizing: border-box; }
 .ds-ui :where(h1, h2, h3, p) { margin: 0; }
-.ds-ui :where(button, input, textarea, select) { font: inherit; color: inherit; }
+:where(.ds-ui) :where(button, input, textarea, select) { font: inherit; color: inherit; }
 .ds-ui :where(button, input, textarea, select):focus-visible {
   outline: 2px solid var(--ds-primary-strong);
   outline-offset: 3px;
