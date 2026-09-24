@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Button } from '../../ui/Button'
-import warning from '../../ui/assets/warning.svg'
+import information from './assets/information.svg'
 import { careerPeriod, daysText, rangeText, weekHours, type WorkerDraft } from './model'
 export function WorkerReview({ draft, email, edit }: { draft: WorkerDraft; email:string; edit?:(step:1|2|3)=>void }) {
   function card(title:string,step:1|2|3,children:ReactNode) { return <article className="worker-card"><header><h3>{title}</h3>{edit&&<button type="button" aria-label={`${title} 수정`} className="worker-link" onClick={()=>edit(step)}>수정</button>}</header>{children}</article> }
@@ -13,4 +13,4 @@ export function WorkerReview({ draft, email, edit }: { draft: WorkerDraft; email
 export function WorkerCompleteContent({ draft, onProfile }: { draft:WorkerDraft;onProfile:()=>void }) {
   return <><article className="worker-card"><h3>{draft.name} 님의 근무 프로필</h3><p className="worker-muted">{draft.experience}</p>{draft.availability.map(a=><p className="worker-muted" key={a.id}>{daysText(a.days)}　{rangeText(a)}</p>)}</article><Button intent="secondary" onClick={onProfile}>내 프로필 보기</Button></>
 }
-export function WorkerStatusIcon() { return <div className="worker-status"><img src={warning} alt="" /></div> }
+export function WorkerStatusIcon() { return <div className="worker-status"><img src={information} alt="" width="21.7" height="21.7" /></div> }

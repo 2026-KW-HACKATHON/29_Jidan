@@ -51,6 +51,8 @@
 .worker-fields-boundary { margin: 0; padding: 0; border: 0; min-width: 0; }
 /* Figma uses integer line boxes in the 58px compact app bar. */
 .worker-signup .ds-app-bar h1 { line-height: 26px; }
+.worker-signup .ds-app-bar button img { position: absolute; left: -0.85px; top: -0.85px; width: 8.7px; height: 15.7px; max-width: none; }
+.worker-signup .ds-field-select img { width: 7.53333px; height: 13.3667px; margin-left: -0.85px; margin-right: -0.85px; max-width: none; }
 .worker-status { margin-bottom: 12px; }
 
 .worker-summary-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
