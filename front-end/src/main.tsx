@@ -13,6 +13,10 @@ if (import.meta.env.DEV && window.location.pathname === '/__ui') {
   void import('./dev/RoleSelectionPreview').then(({ default: RoleSelectionPreview }) => {
     root.render(<StrictMode><RoleSelectionPreview /></StrictMode>)
   })
+} else if (import.meta.env.DEV && window.location.pathname === '/__auth/owner') {
+  void import('./dev/OwnerRegistrationPreview').then(({ default: OwnerRegistrationPreview }) => {
+    root.render(<StrictMode><OwnerRegistrationPreview /></StrictMode>)
+  })
 } else {
   root.render(<StrictMode><App /></StrictMode>)
 }

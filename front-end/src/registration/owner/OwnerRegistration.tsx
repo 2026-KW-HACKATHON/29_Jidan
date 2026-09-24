@@ -22,8 +22,8 @@ const messages = {
   network: ['요청을 처리하지 못했어요', '입력 내용은 유지돼요. 잠시 후 다시 시도해 주세요.'],
 } as const
 
-export function OwnerRegistration({ onBack, onExpired, service = ownerService, addressSearch, homeMode = false }: {
-  onBack: () => void; onExpired: () => void; service?: OwnerService; addressSearch?: AddressSearch; homeMode?: boolean
+export function OwnerRegistration({ onBack, onExpired, service = ownerService, addressSearch, homeMode = false, storage = sessionStorage }: {
+  onBack: () => void; onExpired: () => void; service?: OwnerService; addressSearch?: AddressSearch; homeMode?: boolean; storage?: Storage
 }) {
   const [identity, setIdentity] = useState<OwnerIdentity | null>(null)
   const [state, setState] = useState(initialDraft)
@@ -47,8 +47,8 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
       if (!value.draftScope || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.email)) throw new OwnerFailure('unavailable')
       if (value.receipt && !isOwnerReceipt(value.receipt)) throw new OwnerFailure('unavailable')
       setIdentity(value)
-      if (value.receipt) { clearDraft(); setReceipt(value.receipt); return }
-      const restored = restoreDraft(value.draftScope)
+      if (value.receipt) { clearDraft(storage); setReceipt(value.receipt); return }
+      const restored = restoreDraft(value.draftScope, storage)
       const next = restored || initialDraft()
       if (!restored && value.name) next.draft.name = value.name
       // Stored progress is a UX hint, never evidence that required input is valid.
@@ -58,16 +58,16 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
     }).catch(error => {
       if (!controller.signal.aborted) {
         const reason = error instanceof OwnerFailure ? error : new OwnerFailure('network')
-        if (reason.code === 'expired') clearDraft()
+        if (reason.code === 'expired') clearDraft(storage)
         setFailure(reason)
       }
     }).finally(() => { clearTimeout(timer); if (!controller.signal.aborted) setChecking(false) })
     return () => { live.current = false; controller.abort(); submission.current?.abort(); clearTimeout(timer) }
-  }, [service, attempt])
+  }, [service, attempt, storage])
 
   useEffect(() => {
-    if (identity && !receipt && !homeMode) saveDraft(identity.draftScope, state)
-  }, [identity, receipt, state, homeMode])
+    if (identity && !receipt && !homeMode) saveDraft(identity.draftScope, state, storage)
+  }, [identity, receipt, state, homeMode, storage])
 
   useEffect(() => {
     if (!identity || receipt || homeMode) return
@@ -106,11 +106,11 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
       const result = await service.submit(normalizeDraft(state.draft), state.requestKey, controller.signal)
       if (!live.current || controller.signal.aborted) return
       if (!isOwnerReceipt(result)) throw new OwnerFailure('network')
-      clearDraft(); setReceipt(result); setFailure(null)
+      clearDraft(storage); setReceipt(result); setFailure(null)
     } catch (error) {
       if (!live.current || controller.signal.aborted) return
       const reason = error instanceof OwnerFailure ? error : new OwnerFailure('network')
-      if (reason.code === 'expired') clearDraft()
+      if (reason.code === 'expired') clearDraft(storage)
       if (reason.code === 'validation' && Object.keys(reason.fields).length) {
         move(reason.fields.name || reason.fields.phone ? 1 : 2); rejectInput(reason.fields)
       }
