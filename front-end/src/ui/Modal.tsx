@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Button } from './Button'
 import warningIcon from './assets/warning.svg'
+import errorIcon from './assets/error.svg'
+import informationIcon from './assets/information.svg'
 import './Modal.css'
 
 type ModalProps = {
@@ -29,6 +31,7 @@ function OpenModal({ title, description, state = 'information', confirmLabel = '
   const [failed, setFailed] = useState(false)
   const id = useId()
   const information = state === 'information'
+  const icon = state === 'warning' ? warningIcon : state === 'error' ? errorIcon : informationIcon
 
   useEffect(() => {
     generation.current += 1
@@ -76,7 +79,7 @@ function OpenModal({ title, description, state = 'information', confirmLabel = '
       buttons[next].focus()
     }}>
     <div className="ds-modal-content">
-      <div className={`ds-modal-icon ds-modal-icon-${state}`}><img src={warningIcon} alt="" /></div>
+      <div className={`ds-modal-icon ds-modal-icon-${state}`}><img src={icon} alt="" /></div>
       <div className="ds-modal-message">
         <h2 id={`${id}-title`}>{title}</h2>
         <p id={`${id}-description`}>{description}</p>

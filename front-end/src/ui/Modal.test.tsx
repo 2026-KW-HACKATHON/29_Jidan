@@ -18,6 +18,17 @@ afterEach(() => {
 const base = { title: '종료할까요?', description: '접근 권한이 종료됩니다.', state: 'warning' as const, confirmLabel: '접근 종료' }
 
 describe('Modal', () => {
+  it('uses a distinct Figma status icon for each overlay example', () => {
+    const { rerender } = render(<Modal {...base} open onClose={vi.fn()} />)
+    const icon = () => document.querySelector<HTMLImageElement>('.ds-modal-icon img')?.getAttribute('src')
+    const warning = icon()
+    rerender(<Modal {...base} state="error" open onClose={vi.fn()} />)
+    const error = icon()
+    rerender(<Modal {...base} state="information" open onClose={vi.fn()} />)
+    const information = icon()
+    expect(warning).toBeTruthy()
+    expect(new Set([warning, error, information]).size).toBe(3)
+  })
   it('focuses cancel, links its message, ignores background clicks, restores the trigger on close', () => {
     const close = vi.fn()
     const { rerender } = render(<><button>열기</button><Modal {...base} open={false} onClose={close} /></>)

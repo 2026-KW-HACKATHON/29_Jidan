@@ -11,7 +11,7 @@ Figma `ZaFHresnBXJ1h98Xl1AUDj`의 Design System 페이지를 기준으로 작성
 | InputField / SelectField | [347:1549](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=347-1549) | 기본 테두리 없이 level-1 그림자를 적용하고 오류는 안내 문구 색상으로 표현합니다. |
 | Choice | [347:1548](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=347-1548) | 기본·선택 상태, 12px padding, 15px bold를 적용합니다. |
 | Checkbox | [395:1535](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=395-1535) | 20×26px 배치 공간에 16px 체크박스와 원본 체크 아이콘을 적용합니다. |
-| Modal | [233:207](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=233-207) | Warning·Error·Information, 최대 너비 342px, padding 24px, radius 12px, 제목 19px를 적용합니다. |
+| Modal | [233:207](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=233-207) | Warning·Error·Information, 최대 너비 342px, padding 24px, radius 12px, 제목 19px를 적용합니다. [경고](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=233-208)·[오류](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=233-270)·[안내](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=233-332) 예시의 서로 다른 상태 아이콘을 사용합니다. |
 | AppBar | [347:1560](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=347-1560) | Regular·Compact, 7×14px 뒤로가기 아이콘, 제목 17px를 적용합니다. |
 | RegistrationProgress | [347:1550](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=347-1550) | 사장님·근무자의 3단계 라벨과 4px 진행 막대를 적용합니다. |
 

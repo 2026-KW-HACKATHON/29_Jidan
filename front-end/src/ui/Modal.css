@@ -20,7 +20,7 @@
 }
 .ds-modal-content { display: flex; flex-direction: column; gap: var(--ds-space-4); }
 .ds-modal-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: var(--ds-radius-round); flex: none; }
-.ds-modal-icon img { width: 22.583px; height: 24px; }
+.ds-modal-icon img { display: block; width: auto; height: 24px; }
 .ds-modal-icon-warning { background: var(--ds-warning-surface); }
 .ds-modal-icon-error { background: var(--ds-danger-surface); }
 .ds-modal-icon-information { background: var(--ds-information-surface); }
