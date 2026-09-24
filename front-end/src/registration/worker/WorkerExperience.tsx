@@ -11,7 +11,7 @@ import { careerPeriod, today, validateCareer, type Career, type WorkerDraft, typ
 export function WorkerExperience({ draft, errors, change, edit }: { draft: WorkerDraft; errors: Errors; change: (patch: Partial<WorkerDraft>)=>void; edit: (index: number)=>void }) {
   return <fieldset className="worker-group"><legend>근무 경력 *</legend><div className="worker-row">{(['신입','경력 있음'] as const).map(v=><Choice key={v} name="experience" checked={draft.experience===v} onChange={()=>change({experience:v})}>{v}</Choice>)}</div>
     {draft.experience==='신입' && <p className="worker-notice">처음이어도 괜찮아요.<br />배우고 싶은 일부터 시작해 보세요.</p>}
-    {draft.experience==='경력 있음' && <>{draft.careers.map((c,i)=><article className="worker-card" key={c.id}><h3>{c.industry} · {c.duties}</h3><p className="worker-muted">{careerPeriod(c)}</p><button type="button" className="worker-link" onClick={()=>edit(i)}>경력 수정</button></article>)}<Button intent="secondary" onClick={()=>edit(-1)}>+ 경력 추가</Button></>}
+    {draft.experience==='경력 있음' && <>{draft.careers.map((c,i)=><article className="worker-card" key={c.id}><h3>{c.industry} · {c.duties}</h3><div className="worker-summary-row"><p className="worker-muted">{careerPeriod(c)}</p><button type="button" className="worker-link" onClick={()=>edit(i)}>경력 수정</button></div></article>)}<Button intent="secondary" onClick={()=>edit(-1)}>+ 경력 추가</Button></>}
     {(errors.experience || errors.careers) && <p role="alert" className="worker-error">{errors.experience || errors.careers}</p>}
   </fieldset>
 }

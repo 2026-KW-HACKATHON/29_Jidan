@@ -52,3 +52,7 @@
 /* Figma uses integer line boxes in the 58px compact app bar. */
 .worker-signup .ds-app-bar h1 { line-height: 26px; }
 .worker-status { margin-bottom: 12px; }
+
+.worker-summary-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.worker-summary-row > p { min-width: 0; overflow-wrap: anywhere; }
+.worker-summary-row > button { flex-shrink: 0; }

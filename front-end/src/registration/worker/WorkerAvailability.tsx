@@ -45,6 +45,6 @@ export function WorkerAvailability({ values, error, change, edit }: { values: Av
       <p className="worker-grid-label">파란색 · 근무 가능한 시간</p>
     </div>
     {error&&<p role="alert" className="worker-error">{error}</p>}
-    <article className="worker-card"><h3>선택한 시간 · 주 {weekHours(values)}시간</h3>{values.map((a,i)=><div className="worker-fields" key={a.id}><p className="worker-muted">{daysText(a.days)}　{rangeText(a)}</p><button type="button" className="worker-link" onClick={()=>edit(i)}>시간 수정</button></div>)}</article>
+    <article className="worker-card"><h3>선택한 시간 · 주 {weekHours(values)}시간</h3>{values.map((a,i)=><div className="worker-summary-row" key={a.id}><p className="worker-muted">{a.days.map(d=>weekdays[d]).join(' / ')}　{rangeText(a)}</p><button type="button" className="worker-link" onClick={()=>edit(i)}>시간 수정</button></div>)}</article>
   </>
 }
