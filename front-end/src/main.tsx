@@ -25,6 +25,10 @@ if (import.meta.env.DEV && window.location.pathname === '/__ui') {
   void import('./dev/OwnerHomePreview').then(({ default: OwnerHomePreview }) => {
     root.render(<StrictMode><OwnerHomePreview /></StrictMode>)
   })
+} else if (import.meta.env.DEV && window.location.pathname === '/__home/worker') {
+  void import('./dev/WorkerHomePreview').then(({ default: WorkerHomePreview }) => {
+    root.render(<StrictMode><WorkerHomePreview /></StrictMode>)
+  })
 } else {
   root.render(<StrictMode><App /></StrictMode>)
 }
