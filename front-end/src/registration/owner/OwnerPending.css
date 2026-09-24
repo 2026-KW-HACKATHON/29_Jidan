@@ -1,0 +1,28 @@
+.owner-pending { background: var(--ds-primary-surface); }
+.owner-home-bar { height: 60px; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+.owner-home-bar h1 { flex: 1; color: var(--ds-primary-strong); font-size: 19px; line-height: 29px; }
+.owner-home-bar button { position: relative; border: 0; padding: 0; background: transparent; height: 24px; cursor: pointer; }
+.owner-home-bar button::after { content: ''; position: absolute; inset: -10px; }
+.owner-pending img { display: block; }
+.owner-pending .ds-mobile-body { padding: 8px 24px 24px; }
+.owner-pending-content { display: flex; flex-direction: column; gap: 24px; }
+.owner-managed { display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 12px; box-shadow: var(--ds-shadow); background: var(--ds-primary); }
+.owner-managed > p { font-size: 13px; line-height: 20px; color: #d6e3fd; }
+.owner-managed-title { display: flex; align-items: center; gap: 12px; }
+.owner-managed-title h3 { flex: 1; min-width: 0; font-size: 19px; line-height: 29px; color: var(--ds-white); }
+.owner-managed-title > span { flex: none; padding: 4px 8px; border-radius: 4px; color: var(--ds-white); background: #9c6e16; font-size: 13px; line-height: 20px; font-weight: 700; }
+.owner-managed-actions { display: flex; gap: 12px; }
+.owner-managed-actions > button { flex: 1; min-height: 52px; line-height: 23px; color: var(--ds-gray-80); }
+.owner-add-store { padding: 0; border: 0; text-align: left; background: transparent; color: var(--ds-primary-strong); font-weight: 700; line-height: 23px; cursor: pointer; }
+.owner-jobs-heading { display: flex; gap: 12px; align-items: center; }
+.owner-jobs-heading h3 { flex: 1; font-size: 19px; line-height: 29px; }
+.owner-jobs-heading span { color: var(--ds-primary-strong); font-weight: 700; line-height: 23px; }
+.owner-empty-jobs { display: flex; flex-direction: column; gap: 16px; padding: 20px; background: var(--ds-white); border-radius: 12px; box-shadow: var(--ds-shadow); line-height: 23px; }
+.owner-empty-jobs h4 { margin: 0; font-size: 15px; }
+.owner-empty-jobs p { color: var(--ds-secondary); }
+.owner-pending .ds-mobile-footer { padding: 0; }
+.owner-bottom-nav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0 max(4px, env(safe-area-inset-bottom, 0px)); background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.owner-bottom-nav > div { display: flex; width: 100%; }
+.owner-bottom-nav button { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0; background: none; border: 0; color: var(--ds-secondary); cursor: pointer; font-size: 13px; line-height: 20px; }
+.owner-bottom-nav button[aria-current] { color: var(--ds-primary-strong); }
+.owner-home-indicator { width: 130px; height: 4px; border-radius: 12px; background: var(--ds-text); }
