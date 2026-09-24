@@ -20,7 +20,7 @@
 - `main/`이 아닌 `main`을 사용한다.
 - `feat/`, `fix/`, `hotfix/`는 이름 접두사이며, 그 자체로 브랜치를 생성하지 않는다.
 - 작업명은 소문자 영문과 하이픈을 사용한다. 예: `front-end/feat/12-login-page`.
-- 문서·관리 작업도 먼저 이슈를 발급하고 작업 브랜치에 이슈 번호를 포함합니다. 예: `chore/16-collaboration-guide`.
+- 이슈가 없는 단순 문서·관리 작업은 번호를 생략할 수 있다. 예: `chore/branching-docs`.
 
 ## 개발 및 릴리즈 흐름
 
@@ -59,8 +59,6 @@ main → front-end/dev, back-end/dev  (릴리즈 후 동기화)
 별도 릴리즈 검증 기간이나 여러 버전의 동시 유지가 필요해지면 `release/*` 도입을 검토한다. 현재는 추가하지 않는다.
 
 ## PR 및 커밋 규칙
-
-이슈 발급, Assignee 할당, PR 생성 및 리뷰어 지정 순서는 [협업 방법](COLLABORATING.md)을 따릅니다.
 
 - `main`과 두 `dev`의 변경은 PR을 통해 병합한다.
 - `feat/*`, `fix/*`, `hotfix/*` PR의 대상은 반드시 해당 영역의 `dev`여야 한다. `main`을 대상으로 만든 PR은 병합하지 않고 대상을 수정한다.
