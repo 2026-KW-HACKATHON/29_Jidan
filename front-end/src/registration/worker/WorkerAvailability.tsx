@@ -33,8 +33,6 @@ export function WorkerAvailability({ values, error, change, edit }: { values: Av
   }
   function finish() {const d=drag.current;if(!d)return;const next=preview(d.last);drag.current=null;setPaint(null);if(next)change(availabilityFromSlots(next))}
   return <>
-    <Button intent="secondary" onClick={()=>edit(-1)}>+ 시간 추가</Button>
-    <p className="worker-time-help">드래그해 30분 단위로 선택할 수 있어요.<br />심야 시간은 시간 추가에서 입력 가능해요.</p>
     <div className="worker-grid" onPointerMove={e=>{if(!drag.current)return;const cell=document.elementFromPoint(e.clientX,e.clientY)?.closest<HTMLElement>('[data-half]');if(cell && Number(cell.dataset.day)===drag.current.day)preview(Number(cell.dataset.half))}} onPointerUp={finish} onPointerCancel={()=>{drag.current=null;setPaint(null)}}>
       <div className="worker-grid-header"><span>시간</span>{weekdays.map(d=><span key={d}>{d}</span>)}</div>
       {Array.from({length:36},(_,row)=>{const half=row+12;return <div className="worker-grid-row" key={half}><span>{row%2===0?String(half/2).padStart(2,'0'):''}</span>{weekdays.map((day,i)=><button type="button" className="worker-cell" key={day} data-half={half} data-day={i} aria-label={`${day} ${clockText(half*30)}–${clockText((half+1)*30)}`} aria-pressed={(paint||selected).has(i*48+half)}
@@ -44,5 +42,7 @@ export function WorkerAvailability({ values, error, change, edit }: { values: Av
     </div>
     {error&&<p role="alert" className="worker-error">{error}</p>}
     <article className="worker-card"><h3>선택한 시간 · 주 {weekHours(values)}시간</h3>{values.map((a,i)=><div className="worker-summary-row" key={a.id}><p className="worker-muted">{a.days.map(d=>weekdays[d]).join(' / ')}　{rangeText(a)}</p><button type="button" className="worker-link" onClick={()=>edit(i)}>시간 수정</button></div>)}</article>
+    <Button intent="secondary" onClick={()=>edit(-1)}>+ 시간 추가</Button>
+    <p className="worker-time-help">드래그해 30분 단위로 선택할 수 있어요.<br />심야 시간은 시간 추가에서 입력 가능해요.</p>
   </>
 }
