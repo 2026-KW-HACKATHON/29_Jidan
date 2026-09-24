@@ -12,8 +12,9 @@
 
 ## 영역별 문서
 
-- [프론트엔드 안내](front-end/README.md)
-- [백엔드 안내](back-end/README.md)
+- 현재 브랜치에 `front-end/`가 있으면 `front-end/README.md`를 확인합니다.
+- 현재 브랜치에 `back-end/`가 있으면 `back-end/README.md`를 확인합니다.
+- `main`은 두 영역을, 각 `dev`는 자신의 영역만 보유합니다.
 
 ## 작업 원칙
 
