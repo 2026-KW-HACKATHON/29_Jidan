@@ -28,3 +28,10 @@ it('010 번호는 정확히 11자리이며 지역번호는 지원 목록을 검�
   expect(validateOwner({ ...emptyDraft, name: '김민수', phone: '01012345678' }, 1)).toEqual({})
   for (const storePhone of ['0351234567', '0451234567', '0651234567', '0101234567']) expect(validateOwner({ ...emptyDraft, storePhone }, 2).storePhone).toBeTruthy()
 })
+
+  it('외국인 성명의 공백, 하이픈, 아포스트로피와 비라틴 문자를 허용한다', () => {
+    for (const name of ["Alex Kim", "Anne-Marie O'Neill", 'José García', '王小明', '김하늘빛사랑해', 'A'.repeat(50)]) {
+      expect(validateOwner({ ...emptyDraft, name, phone: '01012345678' }, 1).name).toBeUndefined()
+    }
+    expect(validateOwner({ ...emptyDraft, name: 'A'.repeat(51) }, 1).name).toBeTruthy()
+  })
