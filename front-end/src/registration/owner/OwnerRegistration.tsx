@@ -147,7 +147,10 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
   if (receipt) return <OwnerPending receipt={receipt} />
   const titles = ['점주님의 정보를 알려주세요', '우리 매장을 등록해 주세요', '입력한 내용을 확인해 주세요']
   const descriptions = ['매장 운영에 사용할 기본 정보를 입력해 주세요.', '월계1동에 있는 매장만 등록할 수 있어요.', '확인 후 매장 등록을 신청해 주세요.']
-  const fields = { draft: state.draft, errors, onChange: change }
+  const fields = { draft: state.draft, errors, onChange: change, onBlur: (key: keyof OwnerDraft) => {
+    const fieldErrors = validateOwner(state.draft, key === 'name' || key === 'phone' ? 1 : 2)
+    setErrors(previous => ({ ...previous, [key]: fieldErrors[key] }))
+  } }
   return <>
     {identity && !homeMode ? <OwnerStep step={state.step} title={titles[state.step - 1]} description={descriptions[state.step - 1]} action={state.step === 3 ? '매장 등록 신청' : state.step === 2 || editing ? '입력 내용 확인' : '다음'} busy={busy} onBack={back} onNext={next}>
       {state.step === 1 ? <OwnerBasic {...fields} email={identity.email} /> : state.step === 2 ? <OwnerStore {...fields} addressSearch={addressSearch} /> : <OwnerReview draft={state.draft} email={identity.email} busy={busy} onEdit={step => { setEditing(true); move(step) }} />}
