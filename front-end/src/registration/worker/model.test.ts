@@ -29,3 +29,10 @@ it('중복 요일을 거부하고 신입 제출 시 보존된 경력을 제외�
   expect(validateAvailability({id:'a',days:[0,0],start:0,end:30,overnight:false}).days).toBeTruthy()
   expect(normalizedWorker({...emptyWorker,experience:'신입',careers:[emptyCareer]}).careers).toEqual([])
 })
+it('그리드 편집은 심야 슬롯을 보존하고 동일한 일간 시간대를 묶는다', async () => {
+  const { availabilityFromSlots, slots } = await import('./model')
+  const values=[{id:'n',days:[6],start:1380,end:60,overnight:true},{id:'d',days:[0,2,4],start:540,end:840,overnight:false}]
+  const selected=new Set(values.flatMap(slots))
+  expect(new Set(availabilityFromSlots(selected).flatMap(slots))).toEqual(selected)
+  expect(weekHours(availabilityFromSlots(selected))).toBe(17)
+})

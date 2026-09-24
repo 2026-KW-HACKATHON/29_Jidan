@@ -68,3 +68,17 @@ export function careerPeriod(c: Career) {
 export function normalizedWorker(d: WorkerDraft): WorkerDraft {
   return { ...d, name: d.name.trim(), phone: d.phone.replace(/[\s-]/g,''), careers: d.experience === '신입' ? [] : d.careers.map(c => ({ ...c, duties: c.duties.trim(), store: c.store.trim(), end: c.current ? '' : c.end })) }
 }
+/** Rebuild daily contiguous runs after grid painting; preserve all off-screen overnight slots. */
+export function availabilityFromSlots(selected: Set<number>): Availability[] {
+  const groups = new Map<string,Availability>()
+  for(let day=0;day<7;day++) for(let half=0;half<48;half++) {
+    if(!selected.has(day*48+half)) continue
+    const start=half*30
+    while(half<48 && selected.has(day*48+half)) half++
+    const end=half===48?0:half*30, overnight=half===48, key=`${start}:${end}:${overnight}`
+    const existing=groups.get(key)
+    if(existing) existing.days.push(day)
+    else groups.set(key,{id:`grid-${day}-${start}`,days:[day],start,end,overnight})
+  }
+  return [...groups.values()]
+}
