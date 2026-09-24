@@ -1,3 +1,4 @@
+import chevron from './assets/chevron.svg'
 import { useRef, useState } from 'react'
 import { Button } from '../../ui/Button'
 import { Choice } from '../../ui/Choice'
@@ -13,7 +14,7 @@ export function AvailabilityEditor({ value, others, onBack, onSave }: { value: A
   const valid=!Object.keys(validateAvailability(draft)).length
   return <WorkerFrame title={value.id?'가능 시간 수정':'가능 시간 추가'} heading="요일과 시간을 선택해 주세요" description="같은 시간을 여러 요일에 한 번에 적용할 수 있어요." action={value.id?'시간 저장':'시간 추가'} onBack={onBack} onNext={save}>
     <fieldset className="worker-group"><legend>가능한 요일 *</legend><div className="worker-row worker-days">{weekdays.map((day,i)=><Choice type="checkbox" key={day} checked={draft.days.includes(i)} onChange={()=>change({days:draft.days.includes(i)?draft.days.filter(d=>d!==i):[...draft.days,i]})}>{day}</Choice>)}</div>{errors.days&&<p role="alert" className="worker-error">{errors.days}</p>}</fieldset>
-    <div className="worker-row worker-period">{(['start','end'] as const).map(key=><SelectField key={key} label={key==='start'?'시작 시간 *':'종료 시간 *'} onClick={()=>setPicker(key)}>{draft[key]<0?'시간 선택':clockText(draft[key])}</SelectField>)}</div>
+    <div className="worker-row worker-period">{(['start','end'] as const).map(key=><SelectField indicatorSrc={chevron} key={key} label={key==='start'?'시작 시간 *':'종료 시간 *'} onClick={()=>setPicker(key)}>{draft[key]<0?'시간 선택':clockText(draft[key])}</SelectField>)}</div>
     {errors.time&&<p role="alert" className="worker-error">{errors.time}</p>}
     <label className="worker-check"><Checkbox checked={draft.overnight} onChange={e=>change({overnight:e.target.checked})} />다음 날 종료</label>
     <p className="worker-notice">30분 단위로 등록해 주세요.<br />자정을 넘겨 일할 수 있다면 ‘다음 날 종료’를 선택하세요.</p>

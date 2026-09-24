@@ -1,3 +1,4 @@
+import chevron from './assets/chevron.svg'
 import { useState } from 'react'
 import { Choice } from '../../ui/Choice'
 import { Button } from '../../ui/Button'
@@ -19,10 +20,10 @@ export function CareerEditor({ value, birth, onBack, onSave }: { value: Career; 
   const change=(patch:Partial<Career>)=>{setDraft(d=>({...d,...patch}));setErrors({})}
   const save=()=>{const e=validateCareer(draft,birth);setErrors(e);if(!Object.keys(e).length) onSave({...draft,id:draft.id||crypto.randomUUID()})}
   return <WorkerFrame title={value.id?'경력 수정':'경력 추가'} heading="해보신 일을 알려주세요" description="업종과 담당 업무를 중심으로 작성해 주세요." action="경력 저장" onBack={onBack} onNext={save}>
-    <SelectField label="업종 *" error={errors.industry} onClick={()=>setPicker('industry')}>{draft.industry||'업종을 선택해 주세요'}</SelectField>
+    <SelectField indicatorSrc={chevron} label="업종 *" error={errors.industry} onClick={()=>setPicker('industry')}>{draft.industry||'업종을 선택해 주세요'}</SelectField>
     <InputField label="담당 업무 *" placeholder="예: 음료 제조, 고객 응대" value={draft.duties} maxLength={200} error={errors.duties} onChange={e=>change({duties:e.target.value})} />
     <InputField label="매장명 · 선택" placeholder="근무했던 매장명" value={draft.store} maxLength={100} error={errors.store} onChange={e=>change({store:e.target.value})} />
-    <div className="worker-row worker-period"><SelectField label="시작 연월 *" error={errors.start} onClick={()=>setPicker('start')}>{draft.start.replace('-','. ')||'연월 선택'}</SelectField><SelectField label="종료 연월 *" disabled={draft.current} error={errors.end} onClick={()=>setPicker('end')}>{draft.current?'현재 근무 중':draft.end.replace('-','. ')||'연월 선택'}</SelectField></div>
+    <div className="worker-row worker-period"><SelectField indicatorSrc={chevron} label="시작 연월 *" error={errors.start} onClick={()=>setPicker('start')}>{draft.start.replace('-','. ')||'연월 선택'}</SelectField><SelectField indicatorSrc={chevron} label="종료 연월 *" disabled={draft.current} error={errors.end} onClick={()=>setPicker('end')}>{draft.current?'현재 근무 중':draft.end.replace('-','. ')||'연월 선택'}</SelectField></div>
     <label className="worker-check"><Checkbox checked={draft.current} onChange={e=>change({current:e.target.checked})} />현재 근무 중</label>
     <p className="worker-notice">다른 업종의 경험도 등록할 수 있어요.<br />여러 경력은 한 건씩 추가해 주세요.</p>
     {picker==='industry' && <IndustryPicker value={draft.industry} onClose={()=>setPicker(null)} onConfirm={industry=>{change({industry});setPicker(null)}} />}
