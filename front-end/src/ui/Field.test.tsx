@@ -41,6 +41,7 @@ describe('fields', () => {
     expect(field).toHaveAttribute('type', 'button')
     fireEvent.click(field)
     expect(open).toHaveBeenCalledOnce()
+    expect(field).toHaveFocus()
     rerender(<SelectField label="업종" disabled onClick={open}>카페</SelectField>)
     fireEvent.click(field)
     expect(open).toHaveBeenCalledOnce()
