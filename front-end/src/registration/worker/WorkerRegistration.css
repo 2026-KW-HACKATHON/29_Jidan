@@ -49,3 +49,6 @@
 .worker-complete .worker-card h3 { font-size: 19px; line-height: 29px; }
 .worker-status { width: 48px; height: 48px; border-radius: 9999px; background: var(--ds-information-surface); display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
 .worker-fields-boundary { margin: 0; padding: 0; border: 0; min-width: 0; }
+/* Figma uses integer line boxes in the 58px compact app bar. */
+.worker-signup .ds-app-bar h1 { line-height: 26px; }
+.worker-status { margin-bottom: 12px; }
