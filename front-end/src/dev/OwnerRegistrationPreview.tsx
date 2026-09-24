@@ -1,5 +1,5 @@
 import { OwnerRegistration } from '../registration/owner/OwnerRegistration'
-import { saveDraft } from '../registration/owner/draft'
+import { restoreDraft, saveDraft } from '../registration/owner/draft'
 import type { OwnerService } from '../registration/owner/service'
 
 // Development-only fixture. Never writes authentication cookies or shares real drafts.
@@ -13,7 +13,7 @@ const previewStorage: Storage = {
 }
 const receipt = { id: 'preview-receipt', ownerName: '김민수', storeName: '명랑핫도그 광운대점', status: 'PENDING' as const }
 const step = new URLSearchParams(location.search).get('step')
-saveDraft('owner-preview', { step: step === 'store' ? 2 : step === 'review' ? 3 : 1, requestKey: 'preview-request', draft: {
+if (step || !restoreDraft('owner-preview', previewStorage)) saveDraft('owner-preview', { step: step === 'store' ? 2 : step === 'review' ? 3 : 1, requestKey: 'preview-request', draft: {
   name: '김민수', phone: '010-1234-5678', storeName: receipt.storeName, industry: '음식점', postcode: '01897', address: '서울 노원구 광운로 20', detailAddress: '1층', businessNumber: '220-81-62517', storePhone: '02-123-4567',
 } }, previewStorage)
 const service: OwnerService = {
