@@ -3,16 +3,6 @@
 .worker-value-picker header > button { width: 56px; flex: none; padding-inline: 0; background: var(--ds-surface); }
 .worker-picker-content { display: flex; flex-direction: column; gap: 12px; }
 .worker-picker-columns { display: flex; gap: 12px; }
-.worker-wheel-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.worker-wheel-column > p { text-align: center; color: var(--ds-secondary); font-weight: 700; line-height: 23px; }
-.worker-wheel-shell { position: relative; border-radius: 8px; overflow: hidden; background: var(--ds-surface); }
-.worker-wheel-shell::before, .worker-wheel-shell::after { content: ''; position: absolute; z-index: 1; left: 0; right: 0; height: 32px; pointer-events: none; }
-.worker-wheel-shell::before { top: 0; background: linear-gradient(var(--ds-surface), transparent); }
-.worker-wheel-shell::after { bottom: 0; background: linear-gradient(transparent, var(--ds-surface)); }
-.worker-wheel { height: 120px; overflow-y: auto; scrollbar-width: none; scroll-snap-type: y mandatory; padding-block: 40px; overscroll-behavior: contain; }
-.worker-wheel::-webkit-scrollbar { display: none; }
-.worker-wheel > div { height: 40px; display: flex; align-items: center; justify-content: center; scroll-snap-align: center; font-size: 17px; color: var(--ds-secondary); cursor: pointer; }
-.worker-wheel .is-selected { background: #d6e3fd; color: #0a2c93; border-radius: 8px; font-size: 19px; font-weight: 700; }
 .worker-minute-choices { height: 120px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--ds-surface); border-radius: 8px; }
 .worker-minute-choices button { min-height: 44px; padding: 8px 12px; }
 .worker-minute-choices button[aria-pressed=true] { background: #d6e3fd; color: #0a2c93; }
