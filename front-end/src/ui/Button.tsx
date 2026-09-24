@@ -7,7 +7,8 @@ export type ButtonProps = ComponentProps<'button'> & {
   busy?: boolean
 }
 
-export function Button({ intent = 'primary', busy = false, disabled, type = 'button', className = '', children, ...props }: ButtonProps) {
+export function Button({ intent = 'primary', busy = false, disabled, type = 'button', className = '', children, onClick, ...props }: ButtonProps) {
   return <button {...props} type={type} className={`ds-ui ds-button ds-button-${intent} ${className}`}
-    disabled={disabled || busy} aria-busy={busy || undefined}>{children}</button>
+    disabled={disabled || busy} aria-busy={busy || undefined}
+    onClick={event => { event.currentTarget.focus(); onClick?.(event) }}>{children}</button>
 }

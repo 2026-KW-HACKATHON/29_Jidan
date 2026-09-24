@@ -8,6 +8,7 @@ describe('Button', () => {
     render(<form onSubmit={event => { event.preventDefault(); submit() }}><Button>취소</Button><Button type="submit">저장</Button></form>)
     fireEvent.click(screen.getByRole('button', { name: '취소' }))
     expect(submit).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '취소' })).toHaveFocus()
     fireEvent.click(screen.getByRole('button', { name: '저장' }))
     expect(submit).toHaveBeenCalledOnce()
   })
