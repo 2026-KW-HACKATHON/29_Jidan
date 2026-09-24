@@ -1,0 +1,9 @@
+import { WorkerRegistration } from '../registration/worker/WorkerRegistration'
+import { emptyWorker, type WorkerDraft } from '../registration/worker/model'
+import type { WorkerService } from '../registration/worker/service'
+const step=new URLSearchParams(location.search).get('step')
+const fixture:WorkerDraft={name:'김지수',phone:'010-1234-5678',birth:'2001-03-14',gender:'여성',experience:step==='career'?'경력 있음':'신입',careers:step==='career'?[{id:'sample-career',industry:'카페',duties:'음료 제조 / 고객 응대',store:'',start:'2024-03',end:'2025-02',current:false}]:[],availability:[{id:'sample-time',days:[0,2,4],start:540,end:840,overnight:false}]}
+const page=step==='work'||step==='career'?2:step==='time'?3:step==='review'?'review':step==='complete'?'complete':1
+const service:WorkerService={identity:async()=>({email:'member@example.com'}),submit:async()=>({id:'preview-worker-receipt',status:'COMPLETE'})}
+/** DEV-only fixtures never set cookies or send registration requests. Normal entry starts empty. */
+export default function WorkerRegistrationPreview(){return <WorkerRegistration service={service} initialDraft={step?fixture:emptyWorker} initialPage={page} onBack={()=>location.assign('/__auth/signup')} onExpired={()=>location.assign('/__auth/signup')} onHome={()=>location.assign('/home')} />}
