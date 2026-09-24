@@ -17,3 +17,8 @@
 .auth-sign-in .ds-button { width: 100%; min-height: 52px; }
 .auth-sign-in p { font-size: var(--ds-small); color: var(--ds-secondary); }
 .auth-login-footer { font-size: var(--ds-small); color: var(--ds-muted); }
+/* Match Figma's rounded text boxes rather than accumulating fractional line heights. */
+.auth-introduction p { line-height: 26px; }
+.auth-onboarding-badge, .auth-sign-in p, .auth-login-footer { line-height: 20px; }
+.auth-onboarding h2 { line-height: 29px; }
+.auth-onboarding-row p, .auth-sign-in .ds-button { line-height: 23px; }
