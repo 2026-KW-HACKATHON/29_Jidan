@@ -16,22 +16,34 @@ it('updates the list for the visible month and narrows it to a touched date', ()
   render(<OwnerHome displayName="김민수" initialDate={new Date(2025, 6, 19)} data={{ events: [
     { id: 'july-19', date: '2025-07-19', descriptions: ['오늘 일정'] },
     { id: 'july-22', date: '2025-07-22', descriptions: ['대타 일정'], substitute: true },
+    { id: 'july-26', date: '2025-07-26', descriptions: ['다음 일정'] },
+    { id: 'july-30', date: '2025-07-30', descriptions: ['네 번째 일정'] },
     { id: 'august-1', date: '2025-08-01', descriptions: ['8월 일정'] },
   ] }} />)
   expect(screen.getByText('오늘 일정')).toBeInTheDocument()
   expect(screen.getByText('대타 일정')).toBeInTheDocument()
+  expect(screen.getByText('다음 일정')).toBeInTheDocument()
+  expect(screen.queryByText('네 번째 일정')).not.toBeInTheDocument()
   expect(screen.queryByText('8월 일정')).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '2025년 7월 22일' }))
   expect(screen.queryByText('오늘 일정')).not.toBeInTheDocument()
   expect(screen.getByText('대타 일정')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '2025년 7월 23일' }))
   expect(screen.getByText('선택한 날짜에 일정이 없어요.')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '2025년 7월 30일' }))
+  expect(screen.getByText('네 번째 일정')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '2025년 7월 19일' }))
+  expect(screen.getByText('오늘 일정')).toBeInTheDocument()
+  expect(screen.getByText('대타 일정')).toBeInTheDocument()
+  expect(screen.getByText('다음 일정')).toBeInTheDocument()
+  expect(screen.queryByText('네 번째 일정')).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '다음 달' }))
   expect(screen.getByText('8월 일정')).toBeInTheDocument()
   expect(screen.queryByText('대타 일정')).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '이전 달' }))
   expect(screen.getByText('오늘 일정')).toBeInTheDocument()
   expect(screen.getByText('대타 일정')).toBeInTheDocument()
+  expect(screen.queryByText('네 번째 일정')).not.toBeInTheDocument()
 })
 
 it('renders an operating store, job applicants, and calendar marks from supplied data', () => {

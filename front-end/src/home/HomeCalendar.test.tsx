@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { HomeCalendar } from './HomeCalendar'
 import { monthCells } from './calendarGrid'
 
@@ -20,7 +20,8 @@ it('moves across December and January and keeps event marks scoped to their date
 })
 
 it('shows today in blue by default, then highlights the touched date and restores today on return', () => {
-  render(<HomeCalendar label="매장 캘린더" initialDate={new Date(2025, 6, 19)} marks={[{ date: '2025-07-22', kind: 'substitute' }]} />)
+  const onDateSelect = vi.fn()
+  render(<HomeCalendar label="매장 캘린더" initialDate={new Date(2025, 6, 19)} marks={[{ date: '2025-07-22', kind: 'substitute' }]} onDateSelect={onDateSelect} />)
   const today = screen.getByRole('button', { name: '2025년 7월 19일' })
   const substitute = screen.getByRole('button', { name: '2025년 7월 22일' })
   expect(today).toHaveAttribute('aria-current', 'date')
@@ -31,6 +32,11 @@ it('shows today in blue by default, then highlights the touched date and restore
   expect(today).toHaveAttribute('aria-pressed', 'false')
   expect(substitute).toHaveAttribute('aria-pressed', 'true')
   expect(substitute).toHaveAttribute('data-user-selected', 'true')
+  expect(onDateSelect).toHaveBeenLastCalledWith('2025-07-22')
+  fireEvent.click(today)
+  expect(today).toHaveAttribute('aria-pressed', 'true')
+  expect(today).not.toHaveAttribute('data-user-selected')
+  expect(onDateSelect).toHaveBeenLastCalledWith(null)
   fireEvent.click(screen.getByRole('button', { name: '다음 달' }))
   expect(screen.getByRole('button', { name: '2025년 8월 1일' })).toHaveAttribute('aria-pressed', 'false')
   fireEvent.click(screen.getByRole('button', { name: '이전 달' }))

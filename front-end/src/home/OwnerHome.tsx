@@ -26,7 +26,7 @@ export function OwnerHome({ displayName, data = {}, initialDate }: {
   const [visibleMonth, setVisibleMonth] = useState(() => isoMonth(today.getFullYear(), today.getMonth()))
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const jobs = data.jobs || []
-  const events = eventsInView(data.events || [], visibleMonth, selectedDate)
+  const events = eventsInView(data.events || [], visibleMonth, selectedDate, selectedDate ? undefined : 3)
   return <>
     <HomeShell role="owner" notificationCount={data.notificationCount}>
       <div className="home-greeting"><h2>안녕하세요, {displayName} 점주님</h2><p>오늘의 매장 운영 현황을 확인하세요.</p></div>

@@ -14,7 +14,7 @@ export function HomeCalendar({ marks = [], initialDate = new Date(), label, role
   label: string
   role?: HomeRole
   onMonthChange?: (year: number, month: number) => void
-  onDateSelect?: (date: string) => void
+  onDateSelect?: (date: string | null) => void
 }) {
   const [today] = useState(initialDate)
   const [visible, setVisible] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
@@ -33,8 +33,9 @@ export function HomeCalendar({ marks = [], initialDate = new Date(), label, role
   }
   function select(day: number) {
     const date = isoDate(year, month, day)
-    setSelected(date)
-    onDateSelect?.(date)
+    const next = date === todayKey ? null : date
+    setSelected(next)
+    onDateSelect?.(next)
   }
 
   return <div className="home-calendar home-card" aria-label={label}>
