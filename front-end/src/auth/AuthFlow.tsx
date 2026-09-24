@@ -55,12 +55,12 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
     request.current = controller
     try {
       const session = await readSession(controller.signal)
-      if (!active.current) return
+      if (!active.current || controller.signal.aborted) return
       if (session) accept(session)
       else startSso(SSO_START_PATH)
       // Remain locked during full-page navigation; pageshow remounts on bfcache return.
     } catch {
-      if (active.current) {
+      if (active.current && !controller.signal.aborted) {
         locked.current = false
         setStarting(false)
         setStatus({ kind: 'unavailable' })
@@ -81,6 +81,6 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
       title={message === 'cancelled' ? '로그인이 취소됐어요' : message === 'expired' ? '다시 로그인해 주세요' : '로그인에 연결하지 못했어요'}
       description={message === 'cancelled' ? '원하실 때 SSO 계정으로 다시 시작할 수 있어요.' : message === 'expired' ? '가입을 계속하려면 SSO 인증을 다시 진행해 주세요.' : '잠시 후 다시 시도해 주세요.'}
       cancelLabel="닫기" confirmLabel={message === 'cancelled' ? '확인' : '다시 시도'}
-      onClose={() => setMessage(null)} onConfirm={message === 'cancelled' ? undefined : () => start(true)} />
+      onClose={() => { request.current?.abort(); locked.current = false; setStarting(false); setMessage(null) }} onConfirm={message === 'cancelled' ? undefined : () => start(true)} />
   </>
 }

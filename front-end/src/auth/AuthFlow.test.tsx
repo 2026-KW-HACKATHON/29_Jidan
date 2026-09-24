@@ -99,6 +99,23 @@ describe('AuthFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: '확인' }))
     expect(startSso).not.toHaveBeenCalled()
   })
+  it('cancels a pending retry without following a late successful response', async () => {
+    let resolve!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockImplementationOnce(() => new Promise<Response>(done => { resolve = done })))
+    const { startSso } = setup('/')
+    const button = screen.getByRole('button', { name: 'SSO 계정으로 시작하기' })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    fireEvent.click(await screen.findByRole('button', { name: '다시 시도' }))
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+    await act(async () => resolve(anonymous()))
+    expect(startSso).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(button).toBeEnabled()
+  })
   it('ignores an initial session result after unmount', async () => {
     let resolve!: (response: Response) => void
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(done => { resolve = done })))
