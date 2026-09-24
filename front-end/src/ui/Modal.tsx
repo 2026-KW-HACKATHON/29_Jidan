@@ -65,7 +65,16 @@ function OpenModal({ title, description, state = 'information', confirmLabel = '
   return <dialog ref={dialog} className="ds-ui ds-modal" role={information ? 'dialog' : 'alertdialog'}
     aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`}
     aria-busy={busy || pending || undefined} tabIndex={-1}
-    onCancel={event => { event.preventDefault(); onClose() }}>
+    onCancel={event => { event.preventDefault(); onClose() }}
+    onKeyDown={event => {
+      if (event.key !== 'Tab') return
+      const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+      event.preventDefault()
+      if (!buttons.length) { event.currentTarget.focus(); return }
+      const index = buttons.findIndex(button => button === document.activeElement)
+      const next = index < 0 ? (event.shiftKey ? buttons.length - 1 : 0) : (index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length
+      buttons[next].focus()
+    }}>
     <div className="ds-modal-content">
       <div className={`ds-modal-icon ds-modal-icon-${state}`}><img src={warningIcon} alt="" /></div>
       <div className="ds-modal-message">
