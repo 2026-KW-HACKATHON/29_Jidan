@@ -1,6 +1,20 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
+
+// jsdom has no top layer. Focus trapping must additionally be checked in a browser.
+const original = Object.getOwnPropertyDescriptors(HTMLDialogElement.prototype)
+beforeEach(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.setAttribute('open', '') } })
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value(this: HTMLDialogElement) { this.removeAttribute('open') } })
+})
+afterEach(() => {
+  cleanup()
+  for (const key of ['showModal', 'close']) {
+    if (original[key]) Object.defineProperty(HTMLDialogElement.prototype, key, original[key])
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, key)
+  }
+})
 
 beforeEach(() => {
   window.history.replaceState(null, '', '/')
@@ -17,7 +31,7 @@ it('connects signup roles to distinct entry paths and back without creating an a
   expect(window.location.pathname).toBe('/signup/owner')
   fireEvent.click(screen.getByRole('button', { name: '뒤로 가기' }))
   fireEvent.click(await screen.findByRole('button', { name: '일반회원으로 가입' }))
-  expect(await screen.findByRole('heading', { name: '일반회원 가입' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '프로필 등록' })).toBeInTheDocument()
   expect(window.location.pathname).toBe('/signup/worker')
   expect(vi.mocked(fetch).mock.calls.every(([url]) => url === '/api/me')).toBe(true)
 })

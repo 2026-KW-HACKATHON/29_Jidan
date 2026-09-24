@@ -4,6 +4,7 @@ import { AppBar } from './ui/AppBar'
 import { Button } from './ui/Button'
 import { MobileLayout } from './ui/MobileLayout'
 import { OwnerRegistration } from './registration/owner/OwnerRegistration'
+import { WorkerRegistration } from './registration/worker/WorkerRegistration'
 import HealthScreen from './health/HealthScreen'
 
 const authPaths: readonly string[] = ['/', '/login', '/signup', '/signup/owner', '/signup/worker', '/home']
@@ -37,7 +38,7 @@ export default function App() {
 
   return <AuthFlow key={`${location.path}${location.search}:${revision}`} path={location.path as AuthPath} search={location.search} navigate={navigate}
     renderHome={session => session.accountType === 'OWNER' ? <OwnerRegistration homeMode onBack={() => navigate('/login')} onExpired={() => navigate('/login?error=signup_expired', true)} /> : <PendingScreen title="지단" description="로그인됐어요. 홈 화면을 준비하고 있어요." onBack={() => navigate('/login')} />}
-    renderRegistration={role => role === 'owner' ? <OwnerRegistration onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} /> : <PendingScreen title="일반회원 가입" description="가입 화면을 준비하고 있어요." onBack={() => navigate('/signup')} />} />
+    renderRegistration={role => role === 'owner' ? <OwnerRegistration onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} /> : <WorkerRegistration onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} onHome={() => navigate('/home')} />} />
 }
 
 /** Replaced by the dependent screen issues; never marks registration complete. */
