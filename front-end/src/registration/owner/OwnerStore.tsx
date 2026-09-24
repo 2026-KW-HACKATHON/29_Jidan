@@ -2,11 +2,10 @@ import { NumberField } from './NumberField'
 import { useState } from 'react'
 import { InputField, SelectField } from '../../ui/Field'
 import { Button } from '../../ui/Button'
-import { PickerDialog } from '../../ui/PickerDialog'
+import { IndustryPicker } from './IndustryPicker'
 import { AddressPicker } from '../AddressPicker'
 import type { AddressSearch } from '../postcode'
 import { OwnerNotice } from './OwnerStep'
-import { industries } from './model'
 import type { OwnerFieldsProps } from './OwnerBasic'
 
 export function OwnerStore({ draft, errors, onChange, onBlur, addressSearch }: OwnerFieldsProps & { addressSearch?: AddressSearch }) {
@@ -22,7 +21,7 @@ export function OwnerStore({ draft, errors, onChange, onBlur, addressSearch }: O
     <NumberField format="business" id="owner-businessNumber" onBlur={() => onBlur?.('businessNumber')} label="사업자 번호 *" required value={draft.businessNumber} error={errors.businessNumber} placeholder="예: 000-00-00000" onValueChange={value => onChange('businessNumber', value)} />
     <NumberField format="telephone" id="owner-storePhone" onBlur={() => onBlur?.('storePhone')} label="매장 연락처 *" required value={draft.storePhone} error={errors.storePhone} placeholder="예: 02-123-4567" onValueChange={value => onChange('storePhone', value)} />
     <OwnerNotice>운영자가 매장 소재지와 관리 권한을 확인해요. 이미 등록된 매장은 중복 등록하지 않고 운영자에게 관리 권한을 문의해 주세요.</OwnerNotice>
-    {picker === 'industry' && <PickerDialog title="업종 선택" onClose={() => setPicker(null)}><div className="owner-industry-options">{industries.map(industry => <Button key={industry} intent={draft.industry === industry ? 'primary' : 'secondary'} aria-pressed={draft.industry === industry} onClick={() => { onChange('industry', industry); setPicker(null) }}>{industry}</Button>)}</div></PickerDialog>}
+    {picker === 'industry' && <IndustryPicker value={draft.industry} onClose={() => setPicker(null)} onConfirm={industry => { onChange('industry', industry); setPicker(null) }} />}
     {picker === 'address' && <AddressPicker search={addressSearch} onClose={() => setPicker(null)} onSelect={result => {
       onChange('postcode', result.postcode); onChange('address', result.address); onChange('detailAddress', ''); setPicker(null)
       requestAnimationFrame(() => document.getElementById('owner-detailAddress')?.focus())
