@@ -30,3 +30,6 @@
 .ds-modal-message .ds-modal-failure { color: var(--ds-danger-strong); }
 .ds-modal-actions { display: flex; gap: var(--ds-space-3); }
 .ds-modal-actions > button { flex: 1; }
+
+/* Figma overlay examples: Elevation/Vivid/level-1 for cancel and close. */
+.ds-modal-actions > .ds-button-secondary { box-shadow: 0 0 2px rgb(0 0 0 / 12%), 0 1px 2px rgb(0 0 0 / 12%); }
