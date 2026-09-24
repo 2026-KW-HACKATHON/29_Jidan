@@ -9,6 +9,10 @@ if (import.meta.env.DEV && window.location.pathname === '/__ui') {
   void import('./dev/ComponentPreview').then(({ default: ComponentPreview }) => {
     root.render(<StrictMode><ComponentPreview /></StrictMode>)
   })
+} else if (import.meta.env.DEV && window.location.pathname === '/__auth/signup') {
+  void import('./dev/RoleSelectionPreview').then(({ default: RoleSelectionPreview }) => {
+    root.render(<StrictMode><RoleSelectionPreview /></StrictMode>)
+  })
 } else {
   root.render(<StrictMode><App /></StrictMode>)
 }
