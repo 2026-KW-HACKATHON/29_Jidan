@@ -16,7 +16,8 @@ npm run test:ci
 npm run build
 ```
 
-초기 화면은 API·DB 연결 상태만 확인한다. 제품 기능은 후속 작업에서 구현한다.
+기본 경로는 로그인 화면이며 API·DB 연결 상태는 `/status`에서 확인합니다.
+[로그인·가입 유형 선택의 연동 계약과 검증 범위](src/auth/README.md)를 확인합니다.
 [CI/CD 운영 문서](../deploy/CI-CD.md)
 
 ## 공통 UI
