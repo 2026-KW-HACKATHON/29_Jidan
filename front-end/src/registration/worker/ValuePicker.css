@@ -7,11 +7,12 @@
 .worker-minute-choices button { min-height: 44px; padding: 8px 12px; }
 .worker-minute-choices button[aria-pressed=true] { background: #d6e3fd; color: #0a2c93; }
 .worker-picker-action { padding-top: 4px; }
-.worker-picker-overnight { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px; min-height: 50px; background: var(--ds-surface); border-radius: 8px; box-shadow: var(--ds-shadow); font-weight: 700; cursor: pointer; }
-.worker-picker-overnight input { position: absolute; opacity: 0; width: 20px; height: 26px; }
+.worker-picker-option { position: relative; display: flex; align-items: center; gap: 8px; padding: 12px; min-height: 50px; background: var(--ds-surface); border-radius: 8px; font-weight: 700; cursor: pointer; }
+.worker-picker-option:has(input:checked) { background: #d6e3fd; color: #0a2c93; }
+.worker-picker-option input { position: absolute; opacity: 0; width: 20px; height: 26px; }
 .worker-picker-checkbox { width: 20px; height: 26px; display: flex; align-items: center; justify-content: center; }
 .worker-picker-checkbox::before { content: ''; width: 16px; height: 16px; border: 1px solid var(--ds-muted); border-radius: 2px; }
-.worker-picker-overnight input:checked + span::before { background: var(--ds-primary) url('./assets/picker-check.svg') center no-repeat; border-color: var(--ds-primary); }
-.worker-picker-overnight input:focus-visible + span { outline: 2px solid var(--ds-primary); outline-offset: 2px; }
+.worker-picker-option input:checked + span::before { background: var(--ds-primary) url('./assets/picker-check.svg') center no-repeat; border-color: var(--ds-primary); }
+.worker-picker-option input:focus-visible + span { outline: 2px solid var(--ds-primary); outline-offset: 2px; }
 
 .worker-picker-action > button { width: 100%; }

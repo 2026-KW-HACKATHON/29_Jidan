@@ -31,8 +31,6 @@
 .worker-link { background: none; border: 0; padding: 0; color: var(--ds-primary-strong) !important; font-size: 13px !important; font-weight: 700 !important; text-align: left; cursor: pointer; line-height: 20px !important; }
 .worker-muted { color: var(--ds-secondary); }
 .worker-error { color: var(--ds-danger-strong); font-size: 13px; line-height: 20px; }
-.worker-check { display: inline-flex; align-self: flex-start; gap: 4px; align-items: center; background: white; border-radius: 8px; padding: 12px; min-height: 47px; box-shadow: var(--ds-shadow); font-weight: 700; color: var(--ds-secondary); }
-.worker-check .ds-checkbox { width: 12px; height: 12px; }
 .worker-time-card { margin-top: 0; }
 .worker-grid { background: white; border-radius: 12px; padding: 12px; box-shadow: var(--ds-shadow); }
 .worker-grid-header, .worker-grid-row { display: grid; grid-template-columns: 32px repeat(7,minmax(0,1fr)); gap: 4px; }

@@ -34,7 +34,7 @@ it('업종 확인, 기간 입력으로 경력을 추가하고 수정 값을 보�
  fireEvent.click(screen.getByRole('button',{name:'업종 *'}));fireEvent.click(screen.getByRole('radio',{name:'카페'}));fireEvent.click(screen.getByRole('button',{name:'선택 완료'}))
  fireEvent.change(screen.getByLabelText('담당 업무 *'),{target:{value:'음료 제조'}})
  fireEvent.click(screen.getByRole('button',{name:'시작 연월 *'}));fireEvent.keyDown(screen.getByRole('spinbutton',{name:'연도'}),{key:'End'});fireEvent.keyDown(screen.getByRole('spinbutton',{name:'월'}),{key:'Home'});fireEvent.click(screen.getByRole('button',{name:'선택 완료'}))
- fireEvent.click(screen.getByLabelText('현재 근무 중'));fireEvent.click(screen.getByRole('button',{name:'경력 저장'}))
+ fireEvent.click(screen.getByRole('button',{name:'종료 연월 *'}));fireEvent.click(screen.getByRole('checkbox',{name:'현재 근무 중'}));fireEvent.click(screen.getByRole('button',{name:'선택 완료'}));fireEvent.click(screen.getByRole('button',{name:'경력 저장'}))
  expect(screen.getByText('카페 · 음료 제조')).toBeInTheDocument()
  fireEvent.click(screen.getByRole('button',{name:'경력 수정'}));expect(screen.getByLabelText('담당 업무 *')).toHaveValue('음료 제조')
  fireEvent.click(screen.getByRole('button',{name:'뒤로 가기'}));expect(screen.getByText('카페 · 음료 제조')).toBeInTheDocument()

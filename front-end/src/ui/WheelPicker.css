@@ -10,3 +10,6 @@
 .ds-wheel::-webkit-scrollbar { display: none; }
 .ds-wheel > div { height: 40px; display: flex; align-items: center; justify-content: center; scroll-snap-align: center; font-size: 17px; color: var(--ds-secondary); cursor: pointer; }
 .ds-wheel .is-selected { background: #d6e3fd; color: #0a2c93; border-radius: 8px; font-size: 19px; font-weight: 700; }
+.ds-wheel-column.is-disabled > p, .ds-wheel-column.is-disabled .ds-wheel > div { color: #8c949d; }
+.ds-wheel-column.is-disabled .ds-wheel { overflow-y: hidden; pointer-events: none; }
+.ds-wheel-column.is-disabled .ds-wheel .is-selected { background: #e6e8ea; color: #8c949d; }

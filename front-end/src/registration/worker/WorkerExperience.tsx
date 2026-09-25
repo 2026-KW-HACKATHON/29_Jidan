@@ -2,7 +2,6 @@ import chevron from './assets/chevron.svg'
 import { useState } from 'react'
 import { Choice } from '../../ui/Choice'
 import { Button } from '../../ui/Button'
-import { Checkbox } from '../../ui/Checkbox'
 import { InputField, SelectField } from '../../ui/Field'
 import { IndustryPicker } from '../owner/IndustryPicker'
 import { WorkerFrame } from './WorkerFrame'
@@ -23,10 +22,9 @@ export function CareerEditor({ value, birth, onBack, onSave }: { value: Career; 
     <SelectField indicatorSrc={chevron} label="업종 *" error={errors.industry} onClick={()=>setPicker('industry')}>{draft.industry||'업종을 선택해 주세요'}</SelectField>
     <InputField label="담당 업무 *" placeholder="예: 음료 제조, 고객 응대" value={draft.duties} maxLength={200} error={errors.duties} onChange={e=>change({duties:e.target.value})} />
     <InputField label="매장명 · 선택" placeholder="근무했던 매장명" value={draft.store} maxLength={100} error={errors.store} onChange={e=>change({store:e.target.value})} />
-    <div className="worker-row worker-period"><SelectField indicatorSrc={chevron} label="시작 연월 *" error={errors.start} onClick={()=>setPicker('start')}>{draft.start.replace('-','. ')||'연월 선택'}</SelectField><SelectField indicatorSrc={chevron} label="종료 연월 *" disabled={draft.current} error={errors.end} onClick={()=>setPicker('end')}>{draft.current?'현재 근무 중':draft.end.replace('-','. ')||'연월 선택'}</SelectField></div>
-    <label className="worker-check"><Checkbox checked={draft.current} onChange={e=>change({current:e.target.checked})} />현재 근무 중</label>
+    <div className="worker-row worker-period"><SelectField indicatorSrc={chevron} label="시작 연월 *" error={errors.start} onClick={()=>setPicker('start')}>{draft.start.replace('-','. ')||'연월 선택'}</SelectField><SelectField indicatorSrc={chevron} label="종료 연월 *" error={errors.end} onClick={()=>setPicker('end')}>{draft.current?'현재 근무 중':draft.end.replace('-','. ')||'연월 선택'}</SelectField></div>
     <p className="worker-notice">다른 업종의 경험도 등록할 수 있어요.<br />여러 경력은 한 건씩 추가해 주세요.</p>
     {picker==='industry' && <IndustryPicker value={draft.industry} onClose={()=>setPicker(null)} onConfirm={industry=>{change({industry});setPicker(null)}} />}
-    {(picker==='start'||picker==='end') && <ValuePicker title={picker==='start'?'시작 연월':'종료 연월'} type="month" value={draft[picker]} min={picker==='start'?birth.slice(0,7):draft.start} max={today().slice(0,7)} onClose={()=>setPicker(null)} onSave={v=>change({[picker]:v})} />}
+    {(picker==='start'||picker==='end') && <ValuePicker title={picker==='start'?'시작 연월':'종료 연월'} type="month" value={draft[picker]} min={picker==='start'?birth.slice(0,7):draft.start} max={today().slice(0,7)} current={picker==='end'?draft.current:undefined} onClose={()=>setPicker(null)} onSave={(v,current)=>picker==='end'?change({end:current?'':v,current:!!current}):change({start:v})} />}
   </WorkerFrame>
 }
