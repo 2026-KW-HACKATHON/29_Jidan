@@ -14,6 +14,7 @@
 .owner-home-job h4 { flex: 1; min-width: 0; margin: 0; font-size: 15px; line-height: 23px; }
 .owner-home-job > p { color: var(--ds-secondary); font-size: 13px; line-height: 20px; }
 .owner-home-job > div > span { flex: none; padding: 4px 8px; border-radius: 4px; font-size: 13px; font-weight: 700; line-height: 20px; }
+.owner-home-more { align-self: flex-end; padding: 0; border: 0; background: transparent; color: #474c52; font-size: 15px; line-height: 23px; cursor: pointer; }
 .owner-home-applicants { background: var(--ds-primary-surface); color: var(--ds-primary-strong); }
 .owner-home-no-applicants { background: var(--ds-surface); color: var(--ds-secondary); }
 .owner-home-events { display: flex; flex-direction: column; gap: 16px; padding: 16px; }

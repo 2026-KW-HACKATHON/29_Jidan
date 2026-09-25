@@ -53,3 +53,11 @@ it('renders an operating store, job applicants, and calendar marks from supplied
   expect(screen.getByText('지원자 없음')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '2025년 7월 22일' })).toHaveClass('home-calendar-regular')
 })
+it('모집 중 공고 전체 건수를 표시하고 처음 세 건만 미리 보여준다', () => {
+  const jobs = Array.from({ length: 4 }, (_, index) => ({ id: String(index), title: `${index + 1}번째 공고`, schedule: '7월 19일', applicants: index }))
+  render(<OwnerHome displayName="김민수" data={{ jobs }} initialDate={new Date(2025, 6, 19)} />)
+  expect(screen.getByText('4건')).toBeInTheDocument()
+  expect(screen.getByText('3번째 공고')).toBeInTheDocument()
+  expect(screen.queryByText('4번째 공고')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '+ 공고 모두 보기' })).toBeInTheDocument()
+})
