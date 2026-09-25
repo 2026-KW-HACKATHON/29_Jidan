@@ -21,4 +21,6 @@
 .owner-home-event { display: flex; align-items: flex-start; gap: 16px; min-width: 0; color: var(--ds-gray-80); font-size: 13px; line-height: 20px; }
 .owner-home-event strong { flex: none; width: 41px; color: var(--ds-primary-strong); }
 .owner-home-event > div { flex: 1; min-width: 0; }
+.owner-home-event > div p { text-decoration: underline; text-underline-position: from-font; }
 .owner-home-event > span { flex: none; display: grid; place-items: center; width: 73px; height: 28px; border-radius: 12px; background: #faeac6; color: var(--ds-primary-strong); }
+.owner-home-add-event { padding: 0; border: 0; background: transparent; color: var(--ds-primary-strong); font-size: 15px; font-weight: 700; line-height: 23px; cursor: pointer; }

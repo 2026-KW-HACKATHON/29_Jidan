@@ -43,7 +43,7 @@ export function OwnerHome({ displayName, data = {}, initialDate }: {
         {jobs.length > 3 && <button type="button" className="owner-home-more" onClick={() => setUnavailable('공고 모두 보기')}>+ 공고 모두 보기</button>}
       </section>
       <section className="home-section" aria-labelledby="owner-home-calendar-title">
-        <div className="home-section-heading"><h3 id="owner-home-calendar-title">매장 캘린더</h3></div>
+        <div className="home-section-heading"><h3 id="owner-home-calendar-title">매장 캘린더</h3><button type="button" className="owner-home-add-event" onClick={() => setUnavailable('일정 등록')}>+ 일정 등록</button></div>
         <HomeCalendar label="매장 캘린더" marks={data.marks} initialDate={today} onMonthChange={(year, month) => { setVisibleMonth(isoMonth(year, month)); setSelectedDate(null) }} onDateSelect={setSelectedDate} />
         {events.length ? <div className="owner-home-events home-card">{events.map(event => <div className="owner-home-event" key={event.id}><strong>{shortDate(event.date)}</strong><div>{event.descriptions.map((line, index) => <p key={`${event.id}-${index}`}>{line}</p>)}</div>{event.substitute && <span>대타 근무</span>}</div>)}</div> : <p className="home-empty home-card">{selectedDate ? '선택한 날짜에 일정이 없어요.' : '이 달에 일정이 없어요.'}</p>}
       </section>
