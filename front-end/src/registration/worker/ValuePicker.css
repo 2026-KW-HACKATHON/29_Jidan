@@ -6,6 +6,8 @@
 .worker-minute-choices { height: 120px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--ds-surface); border-radius: 8px; }
 .worker-minute-choices button { min-height: 44px; padding: 8px 12px; }
 .worker-minute-choices button[aria-pressed=true] { background: #d6e3fd; color: #0a2c93; }
+.worker-minute-choices button:disabled { opacity: 1; background: var(--ds-surface); color: #8c949d; }
+.worker-minute-choices button:disabled[aria-pressed=true] { background: #e6e8ea; }
 .worker-picker-action { padding-top: 4px; }
 .worker-picker-option { position: relative; display: flex; align-items: center; gap: 8px; padding: 12px; min-height: 50px; background: var(--ds-surface); border-radius: 8px; font-weight: 700; cursor: pointer; }
 .worker-picker-option:has(input:checked) { background: #d6e3fd; color: #0a2c93; }
