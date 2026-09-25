@@ -13,6 +13,7 @@
 .worker-home-job > div { display: flex; align-items: center; gap: 8px; }
 .worker-home-job h4 { flex: 1; min-width: 0; margin: 0; font-size: 15px; line-height: 23px; }
 .worker-home-job > div > span { flex: none; padding: 4px 8px; border-radius: 4px; background: var(--ds-primary-surface); color: var(--ds-primary-strong); font-size: 13px; font-weight: 700; line-height: 20px; }
+.worker-home-job > div > span.worker-home-no-applicants { background: var(--ds-surface); color: var(--ds-secondary); }
 .worker-home-job > p { color: var(--ds-secondary); font-size: 13px; line-height: 20px; }
 .worker-home-more { align-self: flex-end; padding: 0; border: 0; background: transparent; color: #474c52; font-size: 15px; line-height: 23px; cursor: pointer; }
 .worker-home-shifts { display: flex; flex-direction: column; gap: 16px; padding: 16px; }

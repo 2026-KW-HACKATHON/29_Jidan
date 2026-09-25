@@ -19,6 +19,14 @@ it('renders activity, recommendations, and shift types from supplied data', () =
   expect(screen.getByText('대타 근무')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '2025년 7월 22일' })).toHaveClass('home-calendar-substitute')
 })
+it('지원자가 없는 추천 공고는 중립 배지로 표시한다', () => {
+  render(<WorkerHome displayName="김지수" data={{ recommendations: [
+    { id: 'none', title: '국수천왕 광운대본점', status: '지원자 없음', schedule: '7월 22일' },
+    { id: 'three', title: '컴포즈커피', status: '지원자 3명', schedule: '7월 19일' },
+  ] }} />)
+  expect(screen.getByText('지원자 없음')).toHaveClass('worker-home-no-applicants')
+  expect(screen.getByText('지원자 3명')).not.toHaveClass('worker-home-no-applicants')
+})
 
 it('shows shifts for the visible month and narrows them to a touched date', () => {
   render(<WorkerHome displayName="김지수" initialDate={new Date(2025, 6, 19)} data={{ shifts: [
