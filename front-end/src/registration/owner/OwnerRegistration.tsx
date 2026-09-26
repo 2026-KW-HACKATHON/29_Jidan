@@ -34,6 +34,7 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
   const [busy, setBusy] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [checking, setChecking] = useState(true)
+  const [expired, setExpired] = useState(false)
   const locked = useRef(false)
   const submission = useRef<AbortController | null>(null)
   const live = useRef(true)
@@ -58,7 +59,9 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
     }).catch(error => {
       if (!controller.signal.aborted) {
         const reason = error instanceof OwnerFailure ? error : new OwnerFailure('network')
-        if (reason.code === 'expired') clearDraft(storage)
+        if (reason.code === 'expired') {
+          clearDraft(storage); setIdentity(null); setState(initialDraft()); setExpired(true)
+        }
         setFailure(reason)
       }
     }).finally(() => { clearTimeout(timer); if (!controller.signal.aborted) setChecking(false) })
@@ -110,7 +113,9 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
     } catch (error) {
       if (!live.current || controller.signal.aborted) return
       const reason = error instanceof OwnerFailure ? error : new OwnerFailure('network')
-      if (reason.code === 'expired') clearDraft(storage)
+      if (reason.code === 'expired') {
+        clearDraft(storage); setIdentity(null); setState(initialDraft()); setExpired(true)
+      }
       if (reason.code === 'validation' && Object.keys(reason.fields).length) {
         move(reason.fields.name || reason.fields.phone ? 1 : 2); rejectInput(reason.fields)
       }
@@ -134,7 +139,7 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
   }
   function closeError() { setFailure(null) }
   function retry() {
-    if (failure?.code === 'expired') { setFailure(null); onExpired(); return }
+    if (expired) { setFailure(null); onExpired(); return }
     const reason = failure
     setFailure(null)
     if (!identity) { setChecking(true); setAttempt(value => value + 1) }
@@ -154,7 +159,7 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
   return <>
     {identity && !homeMode ? <OwnerStep step={state.step} title={titles[state.step - 1]} description={descriptions[state.step - 1]} action={state.step === 3 ? '매장 등록 신청' : state.step === 2 || editing ? '입력 내용 확인' : '다음'} busy={busy} onBack={back} onNext={next}>
       {state.step === 1 ? <OwnerBasic {...fields} email={identity.email} /> : state.step === 2 ? <OwnerStore {...fields} addressSearch={addressSearch} /> : <OwnerReview draft={state.draft} email={identity.email} busy={busy} onEdit={step => { setEditing(true); move(step) }} />}
-    </OwnerStep> : <MobileLayout className="owner-signup" header={<AppBar title={homeMode ? '지단' : '점주 가입'} onBack={onBack} />}><p role="status">{identity ? '점주 홈을 준비하고 있어요.' : checking ? '가입 정보를 확인하고 있어요.' : '가입 정보를 불러오지 못했어요.'}</p>{!identity && !checking && <Button onClick={retry}>다시 시도</Button>}</MobileLayout>}
+    </OwnerStep> : <MobileLayout className="owner-signup" header={<AppBar title={homeMode ? '지단' : '점주 가입'} onBack={onBack} />}><p role="status">{identity ? '점주 홈을 준비하고 있어요.' : expired ? '가입 세션이 만료됐어요. 다시 로그인해 주세요.' : checking ? '가입 정보를 확인하고 있어요.' : '가입 정보를 불러오지 못했어요.'}</p>{!identity && !checking && <Button onClick={retry}>{expired ? '다시 로그인' : '다시 시도'}</Button>}</MobileLayout>}
     <Modal open={failure !== null} state="error" title={messages[failure?.code || 'network'][0]} description={messages[failure?.code || 'network'][1]} cancelLabel="닫기" confirmLabel={failure?.code === 'expired' ? '다시 로그인' : failure?.code === 'duplicate' || failure?.code === 'validation' ? '입력 수정' : '다시 시도'} onClose={closeError} onConfirm={retry} />
   </>
 }
