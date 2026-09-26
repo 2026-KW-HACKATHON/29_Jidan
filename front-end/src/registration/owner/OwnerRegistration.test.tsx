@@ -84,7 +84,7 @@ it('서버 필드 오류는 해당 기본 정보 단계로 복귀한다', async 
 it('만료 시 임시 입력을 폐기하고 재로그인으로 이동한다', async () => {
   ready(); const { onExpired } = setup({ identity: async () => identity, submit: async () => { throw new OwnerFailure('expired') } })
   fireEvent.click(await screen.findByRole('button', { name: '매장 등록 신청' }))
-  fireEvent.click(await screen.findByRole('button', { name: '다시 로그인' }))
+  fireEvent.click((await screen.findByRole('alertdialog')).querySelectorAll('button')[1])
   expect(onExpired).toHaveBeenCalledOnce()
   expect(sessionStorage.getItem('jidan.owner-draft.v1')).toBeNull()
 })
@@ -153,4 +153,33 @@ it('전화번호 자동 형식과 blur 오류 및 입력 한도를 적용한다'
   expect(store).toHaveValue('02-1234-5678')
   fireEvent.change(business, { target: { value: '0000000000' } }); fireEvent.blur(business)
   expect(business).toHaveAttribute('aria-invalid', 'true')
+})
+
+
+it('만료 오류를 닫아도 입력을 폐기하고 재로그인 전 저장과 제출을 막는다', async () => {
+  ready()
+  const submit = vi.fn().mockRejectedValue(new OwnerFailure('expired'))
+  const { onExpired } = setup({ identity: async () => identity, submit })
+  fireEvent.click(await screen.findByRole('button', { name: '매장 등록 신청' }))
+  await screen.findByRole('alertdialog')
+  fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+  expect(sessionStorage.getItem('jidan.owner-draft.v1')).toBeNull()
+  expect(screen.queryByText(valid.name)).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '점주 정보 수정' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '매장 등록 신청' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '다시 로그인' }))
+  expect(onExpired).toHaveBeenCalledOnce()
+  expect(submit).toHaveBeenCalledTimes(1)
+  expect(sessionStorage.getItem('jidan.owner-draft.v1')).toBeNull()
+})
+
+it('최초 가입 정보 조회가 만료되면 오류를 닫아도 재로그인으로만 진행한다', async () => {
+  ready()
+  const load = vi.fn().mockRejectedValue(new OwnerFailure('expired'))
+  const { onExpired } = setup({ identity: load, submit: vi.fn() })
+  fireEvent.click((await screen.findByRole('alertdialog')).querySelectorAll('button')[0])
+  expect(sessionStorage.getItem('jidan.owner-draft.v1')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '다시 로그인' }))
+  expect(onExpired).toHaveBeenCalledOnce()
+  expect(load).toHaveBeenCalledTimes(1)
 })
