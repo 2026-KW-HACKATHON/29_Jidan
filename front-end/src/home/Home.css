@@ -1,0 +1,40 @@
+.home-screen { background: var(--ds-primary-surface); }
+.home-screen .ds-mobile-body { padding: 8px 24px 24px; }
+.home-screen .ds-mobile-footer { padding: 0; }
+.home-app-bar { display: flex; align-items: center; gap: 12px; height: 60px; padding: 16px 24px; }
+.home-app-bar h1 { flex: 1; color: var(--ds-primary-strong); font-size: 19px; line-height: 29px; }
+.home-notification { display: flex; align-items: center; gap: 4px; min-height: 24px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.home-notification img, .home-bottom-nav img { display: block; }
+.home-notification-badge { display: grid; place-items: center; width: 104px; border-radius: 12px; background: #e43d5f; color: var(--ds-white); font-size: 13px; line-height: 24px; white-space: nowrap; }
+.home-content { display: flex; flex-direction: column; gap: 32px; }
+.home-greeting { display: flex; flex-direction: column; gap: 8px; }
+.home-greeting h2 { font-size: 24px; font-weight: 700; line-height: 36px; letter-spacing: 1px; }
+.home-greeting p { color: var(--ds-secondary); font-size: 15px; line-height: 23px; }
+.home-section { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.home-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 19px; line-height: 29px; }
+.home-section-heading h3 { font: inherit; font-weight: 700; }
+.home-section-heading span { color: var(--ds-primary-strong); font-size: 15px; font-weight: 700; line-height: 23px; }
+.home-card { width: 100%; border-radius: 12px; background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.home-empty { padding: 20px; color: var(--ds-secondary); font-size: 15px; line-height: 23px; }
+.home-bottom-nav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0 max(4px, env(safe-area-inset-bottom, 0px)); background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.home-worker .home-bottom-nav { border-top: 1px solid #e6e8ea; box-shadow: none; }
+.home-nav-items { display: flex; width: 100%; }
+.home-nav-items button { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ds-secondary); cursor: pointer; font-size: 13px; line-height: 20px; }
+.home-nav-items button[aria-current] { color: var(--ds-primary-strong); }
+.home-indicator { display: block; width: 130px; height: 4px; border-radius: 12px; background: var(--ds-text); }
+.home-calendar { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.home-calendar-heading { display: flex; align-items: center; gap: 12px; min-height: 26px; }
+.home-calendar-heading strong { flex: 1; font-size: 17px; line-height: 26px; }
+.home-worker .home-calendar-heading strong { font-size: 15px; line-height: 23px; }
+.home-calendar-heading button { display: grid; place-items: center; width: 8px; height: 24px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.home-calendar-heading img { display: block; }
+.home-calendar-weekdays, .home-calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; }
+.home-calendar-weekdays { color: var(--ds-secondary); font-size: 13px; line-height: 20px; }
+.home-calendar-days { row-gap: 12px; }
+.home-calendar-days > button, .home-calendar-days > span { display: grid; place-items: center; min-width: 0; height: 32px; padding: 0; border: 0; background: none; font-size: 13px; line-height: 20px; }
+.home-calendar-days > button { cursor: pointer; }
+.home-calendar-days > button > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 12px; }
+.home-calendar-days > button.home-calendar-regular > span { background: var(--ds-primary-surface); color: var(--ds-primary-strong); }
+.home-calendar-days > button.home-calendar-substitute > span { background: #faeac6; color: var(--ds-primary-strong); }
+.home-calendar-days > button[aria-pressed='true'] > span { background: var(--ds-primary); color: var(--ds-white); }
+.home-calendar-days > button.home-calendar-substitute[data-user-selected='true'] > span { background: #ffc83d; color: var(--ds-primary-strong); }
