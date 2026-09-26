@@ -1,0 +1,20 @@
+.owner-signup { background: var(--ds-primary-surface); }
+.owner-signup .ds-mobile-body { padding: 8px 24px 24px; }
+.owner-signup .ds-mobile-footer { padding: 16px 24px max(24px, env(safe-area-inset-bottom, 0px)); }
+.owner-step { display: flex; flex-direction: column; gap: 20px; }
+.owner-intro { display: flex; flex-direction: column; gap: 8px; }
+.owner-intro h2 { font-size: 24px; line-height: 36px; letter-spacing: 1px; font-weight: 700; }
+.owner-intro p { color: var(--ds-secondary); line-height: 23px; }
+.owner-notice { padding: 12px; font-size: 13px; line-height: 20px; color: var(--ds-secondary); }
+.owner-signup .ds-progress li, .owner-signup .ds-field-hint { line-height: 20px; }
+.owner-signup .ds-field > label { line-height: 23px; }
+.owner-signup .ds-field-control { height: 48px; }
+.owner-signup .ds-button { line-height: 23px; }
+.owner-section-heading { font-size: 19px; line-height: 29px; }
+.owner-summary { display: flex; flex-direction: column; gap: 16px; padding: 20px; background: var(--ds-white); border-radius: var(--ds-radius-dialog); box-shadow: var(--ds-shadow); }
+.owner-summary h3 { font-size: 19px; line-height: 29px; }
+.owner-summary dl { display: flex; flex-direction: column; gap: 16px; margin: 0; }
+.owner-summary dl div { display: flex; flex-direction: column; gap: 4px; }
+.owner-summary dt { font-size: 13px; line-height: 20px; color: var(--ds-secondary); }
+.owner-summary dd { margin: 0; line-height: 23px; overflow-wrap: anywhere; }
+.owner-industry-options { display: flex; flex-direction: column; gap: 12px; }

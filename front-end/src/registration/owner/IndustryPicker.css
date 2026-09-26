@@ -1,0 +1,12 @@
+.owner-industry-picker[open] { gap: 20px; }
+.owner-industry-picker h2 { font-size: 22px; line-height: 33px; }
+.owner-industry-picker header .ds-button { width: 56px; flex-shrink: 0; padding: 12px 0; background: var(--ds-surface); box-shadow: none; }
+.owner-industry-picker .ds-picker-body { display: flex; flex-direction: column; gap: 20px; }
+.owner-industry-picker .ds-picker-body > p { color: var(--ds-secondary); line-height: 23px; }
+.owner-industry-picker .owner-industry-options { display: flex; flex-direction: column; gap: 8px; }
+.owner-industry-picker .ds-choice { width: 100%; }
+.owner-industry-picker .ds-choice > span { justify-content: space-between; min-height: 48px; padding: 12px 16px; background: var(--ds-surface); color: var(--ds-text); }
+.owner-industry-picker .ds-choice > input:checked + span { background: #d6e3fd; color: #0a2c93; }
+.owner-industry-picker .ds-choice img { flex-shrink: 0; }
+.owner-industry-action { padding-top: 12px; }
+.owner-industry-action .ds-button { width: 100%; }

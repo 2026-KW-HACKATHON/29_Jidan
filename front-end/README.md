@@ -18,6 +18,7 @@ npm run build
 
 기본 경로는 로그인 화면이며 API·DB 연결 상태는 `/status`에서 확인합니다.
 [로그인·가입 유형 선택의 연동 계약과 검증 범위](src/auth/README.md)를 확인합니다.
+[점주 가입 흐름 및 서버 연동 경계](src/registration/owner/README.md)를 확인합니다.
 [CI/CD 운영 문서](../deploy/CI-CD.md)
 
 ## 공통 UI
