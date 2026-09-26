@@ -1,0 +1,24 @@
+.auth-login { background: var(--ds-white); }
+.auth-login .ds-mobile-body { padding: max(64px, env(safe-area-inset-top, 0px)) 24px max(32px, env(safe-area-inset-bottom, 0px)); }
+.auth-login-content { display: flex; flex-direction: column; gap: 40px; }
+.auth-brand { display: flex; align-items: center; gap: var(--ds-space-3); font-size: 28px; font-weight: 700; letter-spacing: 1px; }
+.auth-brand-symbol { display: grid; place-items: center; width: 56px; height: 56px; flex: none; background: var(--ds-primary); border-radius: var(--ds-radius-dialog); }
+.auth-brand-symbol img { display: block; }
+.auth-introduction { display: flex; flex-direction: column; gap: var(--ds-space-3); }
+.auth-introduction h1 { font-size: 32px; font-weight: 700; letter-spacing: 1px; }
+.auth-introduction p { font-size: 17px; color: var(--ds-secondary); }
+.auth-onboarding { display: flex; flex-direction: column; gap: var(--ds-space-4); padding: var(--ds-space-5); background: var(--ds-primary-surface); border-radius: var(--ds-radius-dialog); box-shadow: var(--ds-shadow); }
+.auth-onboarding-badge { align-self: flex-start; padding: 4px 8px; border-radius: 4px; font-size: var(--ds-small); font-weight: 700; color: var(--ds-primary-strong); }
+.auth-onboarding h2 { font-size: var(--ds-heading); font-weight: 700; }
+.auth-onboarding-row { display: flex; align-items: center; gap: var(--ds-space-2); padding: 8px 12px; background: var(--ds-white); border-radius: var(--ds-radius-dialog); }
+.auth-onboarding-row img { display: block; flex: none; }
+.auth-onboarding-row p { min-width: 0; }
+.auth-sign-in { display: flex; flex-direction: column; gap: var(--ds-space-3); }
+.auth-sign-in .ds-button { width: 100%; min-height: 52px; }
+.auth-sign-in p { font-size: var(--ds-small); color: var(--ds-secondary); }
+.auth-login-footer { font-size: var(--ds-small); color: var(--ds-muted); }
+/* Match Figma's rounded text boxes rather than accumulating fractional line heights. */
+.auth-introduction p { line-height: 26px; }
+.auth-onboarding-badge, .auth-sign-in p, .auth-login-footer { line-height: 20px; }
+.auth-onboarding h2 { line-height: 29px; }
+.auth-onboarding-row p, .auth-sign-in .ds-button { line-height: 23px; }
