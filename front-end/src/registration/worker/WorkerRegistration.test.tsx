@@ -86,3 +86,24 @@ it('빈 가입 폼에서 신입과 시간을 입력해 확인 및 완료까지 �
  await screen.findByText('프로필 등록이 완료됐어요')
  expect(service.submit).toHaveBeenCalledWith(expect.objectContaining({name:'Alex Kim',birth:'2000-03-01',phone:'01012345678',experience:'신입'}),expect.any(String),expect.any(AbortSignal))
 })
+
+it.each(['identity', 'submit'] as const)('%s 만료 안내를 닫아도 재인증 없이 가입을 계속할 수 없다', async stage => {
+  const onExpired = vi.fn()
+  const identity = vi.fn().mockImplementation(async () => {
+    if (stage === 'identity') throw new WorkerFailure('expired')
+    return { email: 'member@example.com' }
+  })
+  const submit = vi.fn().mockRejectedValue(new WorkerFailure('expired'))
+  render(<WorkerRegistration service={{ identity, submit }} initialDraft={valid} initialPage="review" onBack={vi.fn()} onExpired={onExpired} onHome={vi.fn()} />)
+  if (stage === 'submit') fireEvent.click(await screen.findByRole('button', { name: '프로필 등록 완료' }))
+  await screen.findByRole('alertdialog')
+  fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+  expect(screen.queryByRole('button', { name: '기본 정보 수정' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '프로필 등록 완료' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
+  expect(screen.queryByText('member@example.com', { exact: false })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '다시 로그인' }))
+  expect(onExpired).toHaveBeenCalledOnce()
+  expect(identity).toHaveBeenCalledTimes(1)
+  expect(submit).toHaveBeenCalledTimes(stage === 'submit' ? 1 : 0)
+})
