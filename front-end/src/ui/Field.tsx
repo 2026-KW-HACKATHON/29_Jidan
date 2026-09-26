@@ -31,13 +31,13 @@ export function TextareaField({ label, helper, error, id, className = '', 'aria-
   </FieldFrame>
 }
 /** Figma State=Select opens a separate picker rather than an editable input. */
-export function SelectField({ label, helper, error, id, children, onClick, className = '', 'aria-describedby': description, ...props }: Omit<ComponentProps<'button'>, 'type'> & FieldText) {
+export function SelectField({ label, helper, error, id, children, onClick, className = '', indicatorSrc = chevron, 'aria-describedby': description, ...props }: Omit<ComponentProps<'button'>, 'type'> & FieldText & { indicatorSrc?: string }) {
   const generated = useId()
   const fieldId = id || generated
   return <FieldFrame id={fieldId} label={label} helper={helper} error={error}>
     <button {...props} id={fieldId} type="button" onClick={event => { event.currentTarget.focus(); onClick?.(event) }} className={`ds-field-control ds-field-select ${className}`}
       aria-invalid={error ? true : props['aria-invalid']} aria-describedby={describedBy(fieldId, error || helper, description)}>
-      <span>{children}</span><img src={chevron} alt="" width="5.833" height="11.667" />
+      <span>{children}</span><img src={indicatorSrc} alt="" width="5.833" height="11.667" />
     </button>
   </FieldFrame>
 }

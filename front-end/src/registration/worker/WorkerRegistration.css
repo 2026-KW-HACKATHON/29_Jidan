@@ -1,0 +1,58 @@
+.worker-signup { background: var(--ds-primary-surface); }
+.worker-signup .ds-mobile-body { padding: 8px 24px 24px; }
+.worker-signup .ds-mobile-footer { padding: 16px 24px max(24px, env(safe-area-inset-bottom)); }
+.worker-content { display: flex; flex-direction: column; gap: 20px; }
+.worker-intro { display: flex; flex-direction: column; gap: 8px; }
+.worker-intro h2 { font-size: 22px; line-height: 33px; }
+.worker-intro p { color: var(--ds-secondary); line-height: 23px; }
+.worker-signup .ds-field > label { line-height: 23px; }
+.worker-signup .ds-progress li { line-height: 20px; }
+.worker-signup .ds-choice > span { line-height: 23px; }
+.worker-fields { display: flex; flex-direction: column; gap: 16px; }
+.worker-group { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.worker-group > legend { font-weight: 700; padding: 0; margin-bottom: 12px; line-height: 23px; }
+.worker-basic-gender { gap: 8px; }
+.worker-basic-gender > legend { margin-bottom: 8px; }
+.worker-row { display: flex; gap: 8px; }
+.worker-row > * { flex: 1; min-width: 0; }
+.worker-period { gap: 12px; }
+.worker-days { gap: 4px; }
+.worker-days .ds-choice > span { padding-inline: 4px; }
+.worker-notice { padding: 12px; font-size: 13px; line-height: 20px; color: var(--ds-secondary); }
+.worker-card { display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 12px; background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.worker-card h3 { font-size: 15px; line-height: 23px; }
+.worker-card p { line-height: 23px; }
+.worker-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.worker-card dl { margin: 0; display: flex; flex-direction: column; gap: 16px; }
+.worker-card dl > div { display: flex; justify-content: space-between; gap: 16px; }
+.worker-card dt { color: var(--ds-secondary); flex-shrink: 0; }
+.worker-card dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.worker-card small { font-size: 13px; color: var(--ds-secondary); line-height: 20px; }
+.worker-link { background: none; border: 0; padding: 0; color: var(--ds-primary-strong) !important; font-size: 13px !important; font-weight: 700 !important; text-align: left; cursor: pointer; line-height: 20px !important; }
+.worker-muted { color: var(--ds-secondary); }
+.worker-error { color: var(--ds-danger-strong); font-size: 13px; line-height: 20px; }
+.worker-time-card { margin-top: 0; }
+.worker-grid { background: white; border-radius: 12px; padding: 12px; box-shadow: var(--ds-shadow); }
+.worker-grid-header, .worker-grid-row { display: grid; grid-template-columns: 32px repeat(7,minmax(0,1fr)); gap: 4px; }
+.worker-grid-header { font-size: 13px; line-height: 20px; margin-bottom: 8px; text-align: center; font-weight: 700; }
+.worker-grid-header > :first-child { color: var(--ds-muted); font-weight: 400; text-align: left; }
+.worker-grid-row { height: 12px; }
+.worker-grid-row > span { font-size: 13px; line-height: 20px; color: var(--ds-muted); pointer-events: none; }
+.worker-cell { border: 0; padding: 0; height: 12px; border-radius: 2px; background: var(--ds-surface); touch-action: none; }
+.worker-cell[aria-pressed=true] { background: var(--ds-primary); }
+.worker-grid-label { color: var(--ds-primary-strong); font-size: 13px; font-weight: 700; line-height: 20px; margin-top: 8px !important; }
+.worker-time-help { font-size: 13px; line-height: 20px; color: var(--ds-secondary); }
+.worker-complete .ds-mobile-body { padding-top: 48px; }
+.worker-complete .worker-intro::before { content: ''; display: none; }
+.worker-complete .worker-card h3 { font-size: 19px; line-height: 29px; }
+.worker-status { width: 48px; height: 48px; border-radius: 9999px; background: var(--ds-information-surface); display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+.worker-fields-boundary { margin: 0; padding: 0; border: 0; min-width: 0; }
+/* Figma uses integer line boxes in the 58px compact app bar. */
+.worker-signup .ds-app-bar h1 { line-height: 26px; }
+.worker-signup .ds-app-bar button img { position: absolute; left: -0.85px; top: -0.85px; width: 8.7px; height: 15.7px; max-width: none; }
+.worker-signup .ds-field-select img { width: 7.53333px; height: 13.3667px; margin-left: -0.85px; margin-right: -0.85px; max-width: none; }
+.worker-status { margin-bottom: 12px; }
+
+.worker-summary-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.worker-summary-row > p { min-width: 0; overflow-wrap: anywhere; }
+.worker-summary-row > button { flex-shrink: 0; }
