@@ -1,0 +1,54 @@
+@font-face {
+  font-family: 'Pretendard GOV';
+  src: url('/fonts/PretendardGOVVariable.woff2') format('woff2');
+  font-weight: 45 920;
+  font-display: swap;
+}
+
+/* Figma Design System (1:2). Shared values for product screens and dialogs. */
+:root {
+  --ds-font: 'Pretendard GOV', sans-serif;
+  --ds-white: #fff;
+  --ds-surface: #f4f5f6;
+  --ds-border: #ced1d5;
+  --ds-muted: #6f7881;
+  --ds-secondary: #5a6169;
+  --ds-text: #1f2124;
+  --ds-primary: #255cf5;
+  --ds-primary-strong: #103fd1;
+  --ds-danger: #c44037;
+  --ds-danger-strong: #a52d26;
+  --ds-danger-surface: #feefed;
+  --ds-warning-surface: #f9f2e8;
+  --ds-information-surface: #ecf4fd;
+  --ds-space-1: 4px;
+  --ds-space-2: 8px;
+  --ds-space-3: 12px;
+  --ds-space-4: 16px;
+  --ds-space-5: 20px;
+  --ds-space-6: 24px;
+  --ds-radius-control: 8px;
+  --ds-radius-dialog: 12px;
+  --ds-radius-round: 9999px;
+  --ds-shadow: 0 0 2px rgb(0 0 0 / 5%), 0 1px 2px rgb(0 0 0 / 5%);
+  --ds-mobile-width: 390px;
+  --ds-line-height: 1.5;
+  --ds-small: 13px;
+  --ds-body: 15px;
+  --ds-heading: 19px;
+}
+
+:where(.ds-ui) {
+  font: 400 var(--ds-body) / var(--ds-line-height) var(--ds-font);
+  color: var(--ds-text);
+  font-synthesis: none;
+  -webkit-text-size-adjust: 100%;
+}
+.ds-ui, .ds-ui * { box-sizing: border-box; }
+.ds-ui :where(h1, h2, h3, p) { margin: 0; }
+:where(.ds-ui) :where(button, input, textarea, select) { font: inherit; color: inherit; }
+.ds-ui :where(button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--ds-primary-strong);
+  outline-offset: 3px;
+}
+.ds-ui :where(button, input, textarea, select):disabled { cursor: not-allowed; opacity: .45; }

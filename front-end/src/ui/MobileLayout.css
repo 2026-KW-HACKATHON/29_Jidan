@@ -1,0 +1,24 @@
+.ds-mobile {
+  width: 100%;
+  max-width: var(--ds-mobile-width);
+  height: 100dvh;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--ds-surface);
+}
+.ds-mobile-header { flex: none; padding-top: env(safe-area-inset-top, 0px); }
+.ds-mobile-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding: var(--ds-space-6);
+}
+.ds-mobile-footer {
+  flex: none;
+  padding: var(--ds-space-4) var(--ds-space-6);
+  padding-bottom: max(var(--ds-space-4), env(safe-area-inset-bottom, 0px));
+}
+.ds-mobile-footer > * { width: 100%; }

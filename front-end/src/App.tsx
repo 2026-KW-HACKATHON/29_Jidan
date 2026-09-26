@@ -40,7 +40,7 @@ export default function App() {
   }, [attempt])
 
   return (
-    <main>
+    <main className="health-page">
       <p className="brand">Jidan</p>
       <h1>서비스를 준비하고 있어요.</h1>
       <p className="description">프론트엔드와 API 연결 상태를 확인할 수 있어요.</p>

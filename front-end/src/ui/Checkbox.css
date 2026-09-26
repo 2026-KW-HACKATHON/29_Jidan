@@ -1,0 +1,18 @@
+.ds-checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 5px 2px;
+  vertical-align: middle;
+  border: 1px solid var(--ds-muted);
+  border-radius: 2px;
+  background: var(--ds-white);
+  cursor: pointer;
+}
+.ds-checkbox:checked {
+  border-color: var(--ds-primary-strong);
+  background: var(--ds-primary) url('./assets/check.svg') center / 10.5px 7.5px no-repeat;
+}
+.ds-checkbox:disabled { opacity: .45; cursor: not-allowed; }
+.ds-checkbox:focus-visible { outline: 2px solid var(--ds-primary-strong); outline-offset: 3px; }

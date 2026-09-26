@@ -1,0 +1,32 @@
+.ds-modal {
+  width: calc(100% - 48px);
+  max-width: calc(var(--ds-mobile-width) - 48px);
+  max-height: calc(100dvh - 48px);
+  margin: auto;
+  padding: var(--ds-space-6);
+  border: 0;
+  border-radius: var(--ds-radius-dialog);
+  background: var(--ds-white);
+  box-shadow: var(--ds-shadow);
+  overscroll-behavior: contain;
+}
+.ds-modal[open] { display: flex; flex-direction: column; gap: var(--ds-space-6); }
+.ds-modal::backdrop {
+  width: min(100%, var(--ds-mobile-width));
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  background: rgb(0 0 0 / 40%);
+}
+.ds-modal-content { display: flex; flex-direction: column; gap: var(--ds-space-4); }
+.ds-modal-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: var(--ds-radius-round); flex: none; }
+.ds-modal-icon img { display: block; width: auto; height: 24px; }
+.ds-modal-icon-warning { background: var(--ds-warning-surface); }
+.ds-modal-icon-error { background: var(--ds-danger-surface); }
+.ds-modal-icon-information { background: var(--ds-information-surface); }
+.ds-modal-message { display: flex; flex-direction: column; gap: var(--ds-space-2); overflow-wrap: anywhere; }
+.ds-modal-message h2 { font-size: var(--ds-heading); font-weight: 700; }
+.ds-modal-message p { color: var(--ds-secondary); white-space: pre-line; }
+.ds-modal-message .ds-modal-failure { color: var(--ds-danger-strong); }
+.ds-modal-actions { display: flex; gap: var(--ds-space-3); }
+.ds-modal-actions > button { flex: 1; }
