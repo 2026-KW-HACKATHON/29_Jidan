@@ -40,9 +40,19 @@ it('업종 확인, 기간 입력으로 경력을 추가하고 수정 값을 보�
  fireEvent.click(screen.getByRole('button',{name:'뒤로 가기'}));expect(screen.getByText('카페 · 음료 제조')).toBeInTheDocument()
 })
 it('시간 추가에서 겹친 구간을 막고 취소하면 원래 시간을 유지한다',async()=>{
- setup(valid,3);fireEvent.click(await screen.findByRole('button',{name:'+ 시간 추가'}))
+ setup(valid,3)
+ const addTime = await screen.findByText('+ 시간 추가', { selector: 'button' })
+ expect(addTime).toBeVisible()
+ fireEvent.click(addTime)
  fireEvent.click(screen.getByLabelText('월'))
- for(const [label,value] of [['시작 시간','540'],['종료 시간','600']]){fireEvent.click(screen.getByRole('button',{name:`${label} *`}));fireEvent.keyDown(screen.getByRole('spinbutton',{name:'시 · 24시간제'}),{key:'Home'});for(let h=0;h<Number(value)/60;h++)fireEvent.keyDown(screen.getByRole('spinbutton',{name:'시 · 24시간제'}),{key:'ArrowDown'});fireEvent.click(screen.getByRole('button',{name:'선택 완료'}))}
+ for (const [label, hour] of [['시작 시간', 9], ['종료 시간', 10]] as const) {
+   fireEvent.click(screen.getByRole('button', { name: `${label} *` }))
+   const hourPicker = screen.getByRole('spinbutton', { name: '시 · 24시간제' })
+   fireEvent.keyDown(hourPicker, { key: 'Home' })
+   for (let h = 0; h < hour; h++) fireEvent.keyDown(hourPicker, { key: 'ArrowDown' })
+   expect(hourPicker).toHaveAttribute('aria-valuenow', String(hour))
+   fireEvent.click(screen.getByRole('button', { name: '선택 완료' }))
+ }
  fireEvent.click(screen.getByRole('button',{name:'시간 추가'}));expect(screen.getByRole('alert')).toHaveTextContent('겹쳐요')
  fireEvent.click(screen.getByRole('button',{name:'뒤로 가기'}));expect(screen.getByText('선택한 시간 · 주 15시간')).toBeInTheDocument()
 })
