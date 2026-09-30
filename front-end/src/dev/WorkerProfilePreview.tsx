@@ -1,0 +1,3 @@
+import { WorkerProfile } from '../profile/WorkerProfile'
+import { emptyWorker } from '../registration/worker/model'
+export default function ProfilePreview(){let failures=0;return <WorkerProfile initialProfile={{email:'member@example.com',draft:{...emptyWorker,name:'김지수',phone:'010-1234-5678',birth:'2001-03-14',gender:'여성',experience:'신입',availability:[{id:'sample',days:[0,2,4],start:540,end:840,overnight:false}]}}} service={{read:async()=>{throw Error()},save:async()=>{if(new URLSearchParams(location.search).has('fail')&&failures++===0)throw Error('MOCK_FAILURE')}}} onBack={()=>location.assign('/__home/worker')}/>}
