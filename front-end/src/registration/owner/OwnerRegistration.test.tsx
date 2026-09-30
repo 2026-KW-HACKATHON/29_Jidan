@@ -60,7 +60,7 @@ it('중복 제출을 막고 확인된 접수 후 임시 입력을 지운다', as
   expect(button).toBeDisabled()
   expect(screen.getByRole('button', { name: '점주 정보 수정' })).toBeDisabled()
   await act(async () => resolve(receipt))
-  expect(screen.getByText('승인 대기중')).toBeInTheDocument()
+  expect(screen.getByText('승인 대기 중')).toBeInTheDocument()
   expect(sessionStorage.getItem('jidan.owner-draft.v1')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '매장 관리' }))
   expect(screen.getByRole('dialog', { name: '매장 승인 후 이용할 수 있어요' })).toBeInTheDocument()
@@ -71,7 +71,7 @@ it('실패 재시도는 동일 요청 키를 사용하고 입력을 보존한다
   setup({ identity: async () => identity, submit })
   fireEvent.click(await screen.findByRole('button', { name: '매장 등록 신청' }))
   fireEvent.click(await screen.findByRole('button', { name: '다시 시도' }))
-  await screen.findByText('승인 대기중')
+  await screen.findByText('승인 대기 중')
   expect(submit.mock.calls.map(call => call[1])).toEqual(['same-key', 'same-key'])
 })
 it('서버 필드 오류는 해당 기본 정보 단계로 복귀한다', async () => {
@@ -90,7 +90,7 @@ it('만료 시 임시 입력을 폐기하고 재로그인으로 이동한다', a
 })
 it('새로고침 시 서버 접수 결과가 있으면 가입 폼을 다시 열지 않는다', async () => {
   ready(); setup({ identity: async () => ({ ...identity, receipt }), submit: vi.fn() })
-  await screen.findByText('승인 대기중')
+  await screen.findByText('승인 대기 중')
   expect(screen.queryByRole('button', { name: '매장 등록 신청' })).not.toBeInTheDocument()
 })
 it('로드 실패 재시도는 뒤로 이동하지 않고 복구한다', async () => {
@@ -105,7 +105,7 @@ it('손상된 성공 응답을 승인 대기 완료로 표시하지 않는다', 
   ready(); setup({ identity: async () => identity, submit: vi.fn().mockResolvedValue({ status: 'PENDING' }) })
   fireEvent.click(await screen.findByRole('button', { name: '매장 등록 신청' }))
   await screen.findByText('요청을 처리하지 못했어요')
-  expect(screen.queryByText('승인 대기중')).not.toBeInTheDocument()
+  expect(screen.queryByText('승인 대기 중')).not.toBeInTheDocument()
 })
 it('언마운트 시 진행 요청을 취소한다', async () => {
   ready(); const submit = vi.fn(() => new Promise<typeof receipt>(() => {}))
