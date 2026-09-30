@@ -5,32 +5,9 @@ import App from './App'
 
 const root = createRoot(document.getElementById('root')!)
 
-if (import.meta.env.DEV && window.location.pathname === '/__store/employment') {
-  void import('./dev/EmploymentPreview').then(({default: Preview})=>root.render(<StrictMode><Preview /></StrictMode>))
-} else if (import.meta.env.DEV && window.location.pathname === '/__ui') {
-  void import('./dev/ComponentPreview').then(({ default: ComponentPreview }) => {
-    root.render(<StrictMode><ComponentPreview /></StrictMode>)
-  })
-} else if (import.meta.env.DEV && window.location.pathname === '/__auth/signup') {
-  void import('./dev/RoleSelectionPreview').then(({ default: RoleSelectionPreview }) => {
-    root.render(<StrictMode><RoleSelectionPreview /></StrictMode>)
-  })
-} else if (import.meta.env.DEV && window.location.pathname === '/__auth/owner') {
-  void import('./dev/OwnerRegistrationPreview').then(({ default: OwnerRegistrationPreview }) => {
-    root.render(<StrictMode><OwnerRegistrationPreview /></StrictMode>)
-  })
-} else if (import.meta.env.DEV && window.location.pathname === '/__auth/worker') {
-  void import('./dev/WorkerRegistrationPreview').then(({ default: WorkerRegistrationPreview }) => {
-    root.render(<StrictMode><WorkerRegistrationPreview /></StrictMode>)
-  })
-} else if (import.meta.env.DEV && window.location.pathname === '/__home/owner') {
-  void import('./dev/OwnerHomePreview').then(({ default: OwnerHomePreview }) => {
-    root.render(<StrictMode><OwnerHomePreview /></StrictMode>)
-  })
-} else if (import.meta.env.DEV && window.location.pathname === '/__home/worker') {
-  void import('./dev/WorkerHomePreview').then(({ default: WorkerHomePreview }) => {
-    root.render(<StrictMode><WorkerHomePreview /></StrictMode>)
-  })
+// Vite folds this build-time boundary; production has no preview imports.
+if ((import.meta.env.DEV || import.meta.env.VITE_ENABLE_PREVIEW === 'true') && window.location.pathname.startsWith('/__')) {
+  void import('./dev/PreviewApp').then(({default: PreviewApp})=>root.render(<StrictMode><PreviewApp /></StrictMode>))
 } else {
   root.render(<StrictMode><App /></StrictMode>)
 }

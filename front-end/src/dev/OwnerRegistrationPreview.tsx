@@ -22,9 +22,11 @@ if (step || !restoreDraft('owner-preview', previewStorage)) saveDraft('owner-pre
     name: '김민수', phone: '010-1234-5678', storeName: receipt.storeName, industry: '음식점', postcode: '01897', address: '서울 노원구 광운로 20', detailAddress: '1층', businessNumber: '220-81-62517', storePhone: '02-123-4567',
   } : step === 'store' ? { ...emptyDraft, name: '김민수', phone: '010-1234-5678' } : { ...emptyDraft },
 }, previewStorage)
+let calls=0
 const service: OwnerService = {
   identity: async () => ({ draftScope: 'owner-preview', email: 'owner@example.com', ...(step === 'pending' ? { receipt } : {}) }),
   submit: async draft => {
+    if (new URLSearchParams(location.search).has('fail') && calls++ === 0) throw Error('MOCK_FAILURE')
     history.replaceState(null, '', '/__auth/owner?step=pending')
     return { ...receipt, ownerName: draft.name, storeName: draft.storeName }
   },
