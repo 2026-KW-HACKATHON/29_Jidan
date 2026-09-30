@@ -3,7 +3,7 @@ import chevron from './assets/chevron.svg'
 import './tokens.css'
 import './Field.css'
 
-type FieldText = { label: string; helper?: string; error?: string }
+type FieldText = { label: ReactNode; helper?: string; error?: string }
 function FieldFrame({ id, label, helper, error, children }: FieldText & { id: string; children: ReactNode }) {
   return <div className="ds-ui ds-field">
     <label htmlFor={id}>{label}</label>

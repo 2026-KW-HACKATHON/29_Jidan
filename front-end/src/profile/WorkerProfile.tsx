@@ -59,7 +59,7 @@ export function WorkerProfile({ initialProfile, onBack, service = profileService
   if (draft && editor?.kind === 'time') return <AvailabilityEditor key={editor.index} value={draft.availability[editor.index] || emptyAvailability} others={draft.availability.filter((_,i) => i !== editor.index)} onBack={() => setEditor(null)} onSave={value => { change({ availability: editor.index < 0 ? [...draft.availability,value] : draft.availability.map((a,i) => i === editor.index ? value : a) }); setEditor(null) }} />
   if (section && draft) return <WorkerFrame title={descriptions[section][0]} heading={descriptions[section][1]} description={descriptions[section][2]} action="변경 사항 저장" busy={busy} onBack={cancel} onNext={() => void save()}>
     <fieldset disabled={busy} className="worker-fields-boundary">
-      {section === 1 && <WorkerBasic draft={draft} email={profile.email} errors={errors} change={change} blur={key => setErrors(e => ({ ...e, [key]: validateWorker(draft,1)[key] || '' }))} />}
+      {section === 1 && <WorkerBasic reserveEmailSpace={false} draft={draft} email={profile.email} errors={errors} change={change} blur={key => setErrors(e => ({ ...e, [key]: validateWorker(draft,1)[key] || '' }))} />}
       {section === 2 && <WorkerExperience draft={draft} errors={errors} change={change} edit={index => setEditor({ kind:'career',index })} />}
       {section === 3 && <WorkerAvailability values={draft.availability} error={errors.availability} change={availability => change({ availability })} edit={index => setEditor({ kind:'time',index })} />}
     </fieldset>
