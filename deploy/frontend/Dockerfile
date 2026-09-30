@@ -6,7 +6,7 @@ COPY . .
 
 FROM dependencies AS test
 ENV CI=true
-RUN npm run lint && npm run test:ci
+RUN npm run lint && npm run test:ci && node scripts/verify-preview-build.mjs
 
 FROM dependencies AS build
 # Preview is opt-in for dev only. Never embed secrets in VITE_* variables.
