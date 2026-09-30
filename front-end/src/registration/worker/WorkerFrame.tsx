@@ -12,7 +12,8 @@ export function WorkerFrame({ title = '프로필 등록', heading, description, 
   return <MobileLayout className={`worker-signup ${complete ? 'worker-complete' : ''}`} header={<AppBar backIcon={back} compact title={title} onBack={onBack} />} footer={<Button form="worker-form" type="submit" busy={busy}>{action}</Button>}>
     <form id="worker-form" noValidate onSubmit={e=>{e.preventDefault();if(!busy) onNext()}} className="worker-content">
       {step && <RegistrationProgress step={step} />}
-      <div className="worker-intro">{complete && <WorkerStatusIcon />}<h2>{heading}</h2><p>{description}</p></div>
+      {complete && <WorkerStatusIcon />}
+      <div className="worker-intro"><h2>{heading}</h2><p>{description}</p></div>
       {children}
     </form>
   </MobileLayout>
