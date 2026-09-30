@@ -1,3 +1,4 @@
+import { Brand } from '../../brand/Brand'
 import { useState } from 'react'
 import { MobileLayout } from '../../ui/MobileLayout'
 import { Button } from '../../ui/Button'
@@ -12,7 +13,7 @@ import './OwnerPending.css'
 
 export function OwnerPending({ receipt }: { receipt: OwnerReceipt }) {
   const [message, setMessage] = useState<'approval' | 'notifications' | 'add' | null>(null)
-  return <MobileLayout className="owner-pending" header={<header className="owner-home-bar"><h1>지단</h1><button aria-label="알림" onClick={() => setMessage('notifications')}><img src={bell} alt="" /></button></header>}
+  return <MobileLayout className="owner-pending" header={<header className="owner-home-bar"><h1><Brand /></h1><button aria-label="알림" onClick={() => setMessage('notifications')}><img src={bell} alt="" /></button></header>}
     footer={<nav className="owner-bottom-nav" aria-label="주 메뉴"><div>{[
       ['홈', home], ['매뉴얼', book], ['공고 관리', brief],
     ].map(([label, icon], index) => <button key={label} aria-current={index === 0 ? 'page' : undefined} onClick={() => { if (index) setMessage('approval') }}><img src={icon} alt="" /><span>{label}</span></button>)}</div><span className="owner-home-indicator" aria-hidden="true" /></nav>}>

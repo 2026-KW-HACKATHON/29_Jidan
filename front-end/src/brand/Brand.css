@@ -1,0 +1,6 @@
+.jidan-brand { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.jidan-brand > img { display: block; flex: none; max-width: none; }
+.jidan-brand-login { gap: 12px; height: 56px; }
+.jidan-brand-character { position: relative; width: 56px; height: 56px; overflow: hidden; flex: none; border-radius: 12px; }
+.jidan-brand-character img { position: absolute; display: block; width: 64px; height: 64px; max-width: none; top: -4px; left: -4px; transform: scaleX(-1); }
+.jidan-brand-appbar { height: 29px; }
