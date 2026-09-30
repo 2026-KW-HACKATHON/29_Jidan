@@ -21,10 +21,11 @@ const ownerItems = [
   { label: '공고 관리', icon: brief },
 ]
 
-export function HomeShell({ role, children, notificationCount = 0 }: {
+export function HomeShell({ role, children, notificationCount = 0, onProfile }: {
   role: HomeRole
   children: ReactNode
   notificationCount?: number
+  onProfile?: () => void
 }) {
   const [unavailable, setUnavailable] = useState<string | null>(null)
   const items = role === 'owner' ? ownerItems : [
@@ -37,7 +38,7 @@ export function HomeShell({ role, children, notificationCount = 0 }: {
         {notificationCount > 0 && <span className="home-notification-badge">미확인 알림 {notificationCount}개</span>}
         <img src={role === 'owner' ? bell : memberBell} alt="" />
       </button></div>}
-      footer={<nav className="home-bottom-nav" aria-label="주 메뉴"><div className="home-nav-items">{items.map(({ label, icon }, index) => <button type="button" key={label} aria-current={index === 0 ? 'page' : undefined} onClick={() => { if (index) setUnavailable(label) }}>
+      footer={<nav className="home-bottom-nav" aria-label="주 메뉴"><div className="home-nav-items">{items.map(({ label, icon }, index) => <button type="button" key={label} aria-current={index === 0 ? 'page' : undefined} onClick={() => { if (label === '프로필' && onProfile) onProfile(); else if (index) setUnavailable(label) }}>
         <img src={icon} alt="" /><span>{label}</span>
       </button>)}</div><span className="home-indicator" aria-hidden="true" /></nav>}>
       <div className="home-content">{children}</div>
