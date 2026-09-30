@@ -18,3 +18,6 @@
 .employment-end { display:flex; flex-direction:column; gap:24px; }
 .employment-end p { font-size:13px; line-height:20px; color:var(--ds-secondary); }
 .employment .employment-end-button { min-height:52px; background:#fadcd7; color:#a52d26; }
+
+.employment-permission strong { display:flex; align-items:center; gap:8px; }
+.employment-permission strong img { width:10.5px; height:7.5px; }
