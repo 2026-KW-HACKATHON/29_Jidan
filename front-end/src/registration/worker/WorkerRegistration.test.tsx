@@ -63,7 +63,7 @@ it('중복 제출을 막고 성공 응답 후에만 완료 화면을 표시한�
  fireEvent.click(button);fireEvent.click(button);expect(submit).toHaveBeenCalledTimes(1)
  expect(screen.queryByText('프로필 등록이 완료됐어요')).not.toBeInTheDocument()
  await act(async()=>resolve({id:'receipt',status:'COMPLETE'}));expect(screen.getByText('프로필 등록이 완료됐어요')).toBeInTheDocument()
- fireEvent.click(screen.getByRole('button',{name:'내 프로필 보기'}));expect(screen.getByText('김지수')).toBeInTheDocument()
+ fireEvent.click(screen.getByRole('button',{name:'내 프로필 보기'}));expect(screen.getByText('김지수 님')).toBeInTheDocument()
 })
 it('실패 재시도는 같은 키를 쓰고 수정하면 새 키를 쓴다',async()=>{
  const submit=vi.fn().mockRejectedValue(new WorkerFailure('network'));setup(valid,'review',submit)

@@ -15,10 +15,11 @@ export type WorkerHomeData = {
   notificationCount?: number
 }
 
-export function WorkerHome({ displayName, data = {}, initialDate }: {
+export function WorkerHome({ displayName, data = {}, initialDate, onProfile }: {
   displayName: string
   data?: WorkerHomeData
   initialDate?: Date
+  onProfile?: () => void
 }) {
   const [unavailable, setUnavailable] = useState<string | null>(null)
   const [today] = useState(() => initialDate ?? new Date())
@@ -28,7 +29,7 @@ export function WorkerHome({ displayName, data = {}, initialDate }: {
   const jobs = data.recommendations || []
   const shifts = eventsInView(data.shifts || [], visibleMonth, selectedDate, selectedDate ? undefined : 3)
   return <>
-    <HomeShell role="worker" notificationCount={data.notificationCount}>
+    <HomeShell role="worker" notificationCount={data.notificationCount} onProfile={onProfile}>
       <div className="home-greeting"><h2>안녕하세요, {displayName}님</h2><p>원하는 공고를 찾아보세요.</p></div>
       <section className="worker-home-activity home-card" aria-label="나의 활동"><h3>나의 활동</h3><div>
         <div><span>신청 중 공고</span><strong>{activity.applications}건</strong></div>
