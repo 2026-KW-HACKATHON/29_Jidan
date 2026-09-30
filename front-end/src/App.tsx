@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AuthFlow, type AuthPath } from './auth/AuthFlow'
+import type { AuthService } from './auth/session'
 import { AppBar } from './ui/AppBar'
 import { Button } from './ui/Button'
 import { MobileLayout } from './ui/MobileLayout'
@@ -12,7 +13,7 @@ import HealthScreen from './health/HealthScreen'
 const authPaths: readonly string[] = ['/', '/login', '/signup', '/signup/owner', '/signup/worker', '/home']
 const locationSnapshot = () => ({ path: window.location.pathname, search: window.location.search })
 
-export default function App() {
+export default function App({ authService }: { authService?: AuthService } = {}) {
   const [location, setLocation] = useState(locationSnapshot)
   const [revision, setRevision] = useState(0)
   const navigate = useCallback((path: string, replace = false) => {
@@ -38,7 +39,7 @@ export default function App() {
   if (location.path === '/status') return <HealthScreen />
   if (!authPaths.includes(location.path)) return <MobileLayout header={<AppBar title="페이지를 찾을 수 없어요" onBack={() => navigate('/')} />}><Button onClick={() => navigate('/')}>처음으로</Button></MobileLayout>
 
-  return <AuthFlow key={`${location.path}${location.search}:${revision}`} path={location.path as AuthPath} search={location.search} navigate={navigate}
+  return <AuthFlow key={`${location.path}${location.search}:${revision}`} service={authService} path={location.path as AuthPath} search={location.search} navigate={navigate}
     renderHome={session => session.accountType === 'OWNER' ? <OwnerHome displayName={session.displayName} /> : <WorkerHome displayName={session.displayName} />}
     renderRegistration={role => role === 'owner' ? <OwnerRegistration onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} /> : <WorkerRegistration onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} onHome={() => navigate('/home')} />} />
 }
