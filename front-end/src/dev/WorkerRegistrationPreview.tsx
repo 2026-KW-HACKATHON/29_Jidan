@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { createProfilePreviewService } from './profilePreviewService'
 import { WorkerRegistration } from '../registration/worker/WorkerRegistration'
 import { emptyWorker, type WorkerDraft } from '../registration/worker/model'
 import type { WorkerService } from '../registration/worker/service'
@@ -7,4 +9,4 @@ const page=step==='work'||step==='career'?2:step==='time'?3:step==='review'?'rev
 let calls=0
 const service:WorkerService={identity:async()=>({email:'member@example.com'}),submit:async()=>{if(new URLSearchParams(location.search).has('fail')&&calls++===0)throw Error('MOCK_FAILURE');return {id:'preview-worker-receipt',status:'COMPLETE'}}}
 /** DEV-only fixtures never set cookies or send registration requests. Normal entry starts empty. */
-export default function WorkerRegistrationPreview(){return <WorkerRegistration service={service} profileService={{read:async()=>({draft:fixture,email:"member@example.com"}),save:async()=>{}}} initialDraft={step?fixture:emptyWorker} initialPage={page} onBack={()=>location.assign('/__auth/signup')} onExpired={()=>location.assign('/__auth/signup')} onHome={()=>location.assign('/__home/worker')} />}
+export default function WorkerRegistrationPreview(){const [profileService]=useState(()=>createProfilePreviewService({draft:fixture,email:"member@example.com"}));return <WorkerRegistration service={service} profileService={profileService} initialDraft={step?fixture:emptyWorker} initialPage={page} onBack={()=>location.assign('/__auth/signup')} onExpired={()=>location.assign('/__auth/signup')} onHome={()=>location.assign('/__home/worker')} />}
