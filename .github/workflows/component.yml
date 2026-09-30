@@ -60,11 +60,14 @@ jobs:
         env:
           SOURCE: ${{ inputs.source }}
           COMPONENT: ${{ inputs.component }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -euo pipefail
+          preview=false
+          if [ "$COMPONENT" = frontend ] && [ "$ENVIRONMENT" = dev ]; then preview=true; fi
           image="ghcr.io/2026-kw-hackathon/29_jidan-${COMPONENT}:${GITHUB_SHA}"
           docker buildx build --builder jidan-ci --output=type=cacheonly --pull --target test -f "deploy/$COMPONENT/Dockerfile" "$SOURCE"
-          docker buildx build --builder jidan-ci --load --target runtime -f "deploy/$COMPONENT/Dockerfile" -t "$image" "$SOURCE"
+          docker buildx build --builder jidan-ci --load --target runtime --build-arg "VITE_ENABLE_PREVIEW=$preview" -f "deploy/$COMPONENT/Dockerfile" -t "$image" "$SOURCE"
       - name: Publish image
         id: image
         if: inputs.deploy && steps.source.outputs.ready == 'true'

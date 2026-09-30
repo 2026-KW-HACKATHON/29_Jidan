@@ -8,8 +8,9 @@ FROM dependencies AS test
 RUN npm run lint && npm run test:ci
 
 FROM dependencies AS build
-# API calls use same-origin /api; never embed secrets in VITE_* variables.
-ENV VITE_API_BASE_URL=/api
+# Preview is opt-in for dev only. Never embed secrets in VITE_* variables.
+ARG VITE_ENABLE_PREVIEW=false
+ENV VITE_ENABLE_PREVIEW=$VITE_ENABLE_PREVIEW
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:stable-alpine AS runtime
