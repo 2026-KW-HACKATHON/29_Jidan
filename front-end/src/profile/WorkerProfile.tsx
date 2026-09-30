@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { DeadlineExceeded, withDeadline } from '../async/deadline'
 import { AppBar } from '../ui/AppBar'
 import { Button } from '../ui/Button'
 import { MobileLayout } from '../ui/MobileLayout'
@@ -48,11 +49,11 @@ export function WorkerProfile({ initialProfile, onBack, service = profileService
     locked.current = true; setBusy(true); setFailure('')
     const controller = new AbortController(); request.current = controller
     try {
-      await service.save(structuredClone(next), controller.signal)
+      await withDeadline(signal => service.save(structuredClone(next), signal), controller)
       if (controller.signal.aborted) return
       setProfile(next); cancel()
-    } catch { if (!controller.signal.aborted) setFailure('변경 사항을 저장하지 못했어요. 다시 시도해 주세요.') }
-    finally { if (!controller.signal.aborted) { locked.current = false; setBusy(false) } }
+    } catch (failure) { if (!controller.signal.aborted || failure instanceof DeadlineExceeded) setFailure('변경 사항을 저장하지 못했어요. 다시 시도해 주세요.') }
+    finally { if (request.current === controller && (!controller.signal.aborted || controller.signal.reason instanceof DeadlineExceeded)) { locked.current = false; setBusy(false) } }
   }
   if (draft && editor?.kind === 'career') return <CareerEditor key={editor.index} value={draft.careers[editor.index] || emptyCareer} birth={draft.birth} onBack={() => setEditor(null)} onSave={career => { change({ careers: editor.index < 0 ? [...draft.careers, career] : draft.careers.map((c,i) => i === editor.index ? career : c) }); setEditor(null) }} />
   if (draft && editor?.kind === 'time') return <AvailabilityEditor key={editor.index} value={draft.availability[editor.index] || emptyAvailability} others={draft.availability.filter((_,i) => i !== editor.index)} onBack={() => setEditor(null)} onSave={value => { change({ availability: editor.index < 0 ? [...draft.availability,value] : draft.availability.map((a,i) => i === editor.index ? value : a) }); setEditor(null) }} />
