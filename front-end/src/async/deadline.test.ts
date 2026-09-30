@@ -1,0 +1,6 @@
+import { afterEach, expect, it, vi } from 'vitest'
+import { DeadlineExceeded, withDeadline } from './deadline'
+afterEach(()=>vi.useRealTimers())
+it('성공과 거절을 전달하고 타이머를 정리한다',async()=>{vi.useFakeTimers();const controller=new AbortController();expect(await withDeadline(async()=>42,controller)).toBe(42);await expect(withDeadline(async()=>{throw Error('failure')},controller)).rejects.toThrow('failure');expect(vi.getTimerCount()).toBe(0)})
+it('응답이 없으면 중단하고 늦은 응답도 결과를 바꾸지 않는다',async()=>{vi.useFakeTimers();const controller=new AbortController();let resolve!:(value:number)=>void;const result=withDeadline(()=>new Promise<number>(r=>{resolve=r}),controller);const assertion=expect(result).rejects.toBeInstanceOf(DeadlineExceeded);await vi.advanceTimersByTimeAsync(10000);await assertion;resolve(42);expect(controller.signal.aborted).toBe(true);expect(vi.getTimerCount()).toBe(0)})
+it('사용자 취소와 이미 중단된 요청은 작업을 진행하지 않는다',async()=>{vi.useFakeTimers();const controller=new AbortController();const result=withDeadline(()=>new Promise(()=>{}),controller);const assertion=expect(result).rejects.toHaveProperty('name','AbortError');controller.abort();await assertion;const operation=vi.fn();await expect(withDeadline(operation,controller)).rejects.toHaveProperty('name','AbortError');expect(operation).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(0)})
