@@ -4,3 +4,7 @@
 .preview-dashboard section { display:flex; flex-direction:column; gap:12px; }
 .preview-dashboard h2 { font-size:19px; }
 .preview-dashboard a { color:#1744c0; background:white; padding:12px; border-radius:8px; }
+
+.preview-host { height:100dvh; display:flex; flex-direction:column; }
+.preview-host > .preview-banner { flex:none; width:100%; box-sizing:border-box; }
+.preview-host > .ds-mobile { height:auto; flex:1; min-height:0; }

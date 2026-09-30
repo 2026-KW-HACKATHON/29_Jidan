@@ -29,5 +29,5 @@ export default function PreviewApp(){const path=location.pathname;let content
  else if(path==='/__profile/worker')content=<ProfilePreview/>
  else if(path==='/__store/employment')content=<Employment/>
  else content=<MobileLayout header={<AppBar title="화면 탐색" onBack={()=>location.assign("/__preview")}/>}><div className="preview-dashboard"><p>샘플 데이터로 구현된 화면을 확인합니다. 실제 로그인·등록·권한 변경은 수행하지 않습니다.</p>{groups.map(group=><section key={group.title}><h2>{group.title}</h2>{group.links.map(([title,url])=><a key={url} href={url}>{title}</a>)}</section>)}</div></MobileLayout>
- return <><aside className="preview-banner"><a href="/__preview">미리보기 · 화면 목록</a><span>샘플 데이터 / API 미연결</span></aside>{content}</>
+ return <div className="preview-host"><aside className="preview-banner"><a href="/__preview">미리보기 · 화면 목록</a><span>샘플 데이터 / API 미연결</span></aside>{content}</div>
 }
