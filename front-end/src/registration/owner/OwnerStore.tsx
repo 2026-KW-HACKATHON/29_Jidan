@@ -18,7 +18,7 @@ export function OwnerStore({ draft, errors, onChange, onBlur, addressSearch }: O
     <InputField label="우편번호" readOnly value={draft.postcode} placeholder="주소 검색으로 입력해 주세요" />
     <Button intent="secondary" onClick={() => setPicker('address')}>주소 검색</Button>
     <InputField id="owner-address" label="매장 주소 *" readOnly required value={draft.address} error={errors.address} placeholder="월계1동 소재 매장 주소" />
-    <InputField id="owner-detailAddress" onBlur={() => onBlur?.('detailAddress')} label="상세주소" value={draft.detailAddress} maxLength={100} error={errors.detailAddress} placeholder="예: 1층 101호" onChange={event => onChange('detailAddress', event.target.value)} />
+    <InputField id="owner-detailAddress" onBlur={() => onBlur?.('detailAddress')} label="상세주소" value={draft.detailAddress} maxLength={100} error={errors.detailAddress} placeholder="층·호수 등 상세주소" onChange={event => onChange('detailAddress', event.target.value)} />
     <NumberField format="business" id="owner-businessNumber" onBlur={() => onBlur?.('businessNumber')} label="사업자 번호 *" required value={draft.businessNumber} error={errors.businessNumber} placeholder="예: 000-00-00000" onValueChange={value => onChange('businessNumber', value)} />
     <NumberField format="telephone" id="owner-storePhone" onBlur={() => onBlur?.('storePhone')} label="매장 연락처 *" required value={draft.storePhone} error={errors.storePhone} placeholder="예: 02-123-4567" onValueChange={value => onChange('storePhone', value)} />
     <OwnerNotice><ResponsiveSentences lines={["운영자가 매장 소재지와 관리 권한을 확인해요.","이미 등록된 매장은 중복 등록하지 말고 운영자에게 관리 권한을 문의해 주세요."]}/></OwnerNotice>
