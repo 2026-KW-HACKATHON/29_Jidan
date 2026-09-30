@@ -32,7 +32,7 @@ export function OwnerHome({ displayName, data = {}, initialDate }: {
       <div className="home-greeting"><h2>안녕하세요, {displayName} 점주님</h2><p>오늘의 매장 운영 현황을 확인하세요.</p></div>
       <section className="home-section owner-home-store-section" aria-label="관리 매장">
         <div className="owner-home-store home-card"><p>관리 매장</p>
-          {data.store ? <><div className="owner-home-store-title"><h3>{data.store.name}</h3><span className={data.store.status === 'operating' ? 'owner-home-operating' : 'owner-home-pending'}>{data.store.status === 'operating' ? '운영 중' : '승인 대기중'}</span></div>
+          {data.store ? <><div className="owner-home-store-title"><h3>{data.store.name}</h3><span className={data.store.status === 'operating' ? 'owner-home-operating' : 'owner-home-pending'}>{data.store.status === 'operating' ? '운영 중' : '승인 대기 중'}</span></div>
             <div className="owner-home-store-actions"><Button intent="secondary" onClick={() => setUnavailable('매장 관리')}>매장 관리</Button><Button intent="secondary" onClick={() => setUnavailable('공고 등록')}>공고 등록</Button></div></> : <div className="owner-home-no-store">등록된 매장이 없어요.</div>}
         </div>
         <button type="button" className="owner-home-add-store" onClick={() => setUnavailable('매장 추가')}>+ 매장 추가</button>
