@@ -1,3 +1,4 @@
+import { Brand } from '../brand/Brand'
 import { useState, type ReactNode } from 'react'
 import { MobileLayout } from '../ui/MobileLayout'
 import { Modal } from '../ui/Modal'
@@ -32,7 +33,7 @@ export function HomeShell({ role, children, notificationCount = 0 }: {
 
   return <>
     <MobileLayout className={`home-screen home-${role}`}
-      header={<div className="home-app-bar"><h1>지단</h1><button type="button" className="home-notification" aria-label="알림" onClick={() => setUnavailable('알림')}>
+      header={<div className="home-app-bar"><h1><Brand /></h1><button type="button" className="home-notification" aria-label="알림" onClick={() => setUnavailable('알림')}>
         {notificationCount > 0 && <span className="home-notification-badge">미확인 알림 {notificationCount}개</span>}
         <img src={role === 'owner' ? bell : memberBell} alt="" />
       </button></div>}

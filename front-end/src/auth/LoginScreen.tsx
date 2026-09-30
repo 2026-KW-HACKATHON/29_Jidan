@@ -1,13 +1,13 @@
 import { Button } from '../ui/Button'
 import { MobileLayout } from '../ui/MobileLayout'
 import check from './assets/check-onboarding.svg'
-import brand from './assets/store-brand.svg'
+import { Brand } from '../brand/Brand'
 import './LoginScreen.css'
 
 export function LoginScreen({ onStart, busy = false }: { onStart: () => void; busy?: boolean }) {
   return <MobileLayout className="auth-login">
     <div className="auth-login-content">
-      <div className="auth-brand"><span className="auth-brand-symbol"><img src={brand} alt="" /></span><span>지단</span></div>
+      <Brand variant="login" />
       <div className="auth-introduction">
         <h1>매장의 시작을,<br />더 단단하게.</h1>
         <p>첫 출근부터 매장 운영까지<br />함께하는 AI 온보딩</p>
