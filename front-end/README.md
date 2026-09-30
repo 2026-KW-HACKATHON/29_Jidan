@@ -25,3 +25,15 @@ npm run build
 
 [Figma 원본 매핑 및 사용법](src/ui/README.md)을 확인합니다.
 개발 서버의 `/__ui`에서 컴포넌트 상태와 키보드 동작을 확인합니다. 해당 경로는 production build에 포함되지 않습니다.
+
+## dev 배포 화면 탐색
+
+- 로컬: `npm run dev -- --host 127.0.0.1 --port 5184` 실행 후 `http://127.0.0.1:5184/__preview` 접속합니다.
+- dev 배포: 이 변경을 `front-end/dev`에 병합하여 배포한 뒤 `https://dev-jidan.leehyowon14.dev/__preview`에서 확인합니다. Draft PR 생성만으로 배포하지 않습니다.
+- 직접 주소 접근과 새로고침은 기존 nginx SPA fallback을 사용합니다.
+- 검수용 배포 빌드: `VITE_ENABLE_PREVIEW=true npm run build`. 운영 빌드는 플래그를 생략하거나 `false`로 설정합니다.
+- CI는 frontend + dev 조합에만 Docker build arg를 `true`로 전달합니다. backend와 production은 `false`입니다.
+- `node scripts/verify-preview-build.mjs`로 두 빌드의 미리보기 청크와 mock 데이터 포함 여부를 검증합니다. 마지막 산출물은 운영 빌드입니다.
+- 미리보기는 API 미연결 표시와 샘플 서비스만 사용합니다. 실제 인증 쿠키나 계정 데이터를 만들지 않습니다. 점주 초안은 `preview.v2.*` 전용 sessionStorage 영역에 저장합니다.
+- 접근 종료의 `?fail=1`은 첫 요청 실패 후 재시도 성공을 재현합니다. 프로필·등록 실패 경로도 목록에서 선택할 수 있습니다.
+- 실제 MVP 인증·진입 흐름을 검증한 후 #53에서 이 임시 기능과 빌드 플래그를 제거합니다.
