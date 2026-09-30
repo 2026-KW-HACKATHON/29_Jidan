@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { DeadlineExceeded, withDeadline } from '../async/deadline'
 import { LoginScreen } from './LoginScreen'
 import { RoleSelectionScreen, type SignupRole } from './RoleSelectionScreen'
 import { Modal } from '../ui/Modal'
@@ -20,13 +21,13 @@ export function AuthFlow({ path, navigate, renderHome, renderRegistration, servi
   useEffect(() => {
     const controller = new AbortController()
     request.current = controller
-    void service.read(controller.signal).then(value => {
+    void withDeadline(signal => service.read(signal), controller).then(value => {
       if (controller.signal.aborted) return
       setState(value)
       if (value.kind === 'authenticated' && path !== '/home') navigate('/home', true)
       else if ((path === '/home' && value.kind !== 'authenticated') || (path.startsWith('/signup') && value.kind !== 'registration')) navigate('/login', true)
-    }).catch(() => { if (!controller.signal.aborted) setState({ kind: 'unavailable' }) })
-      .finally(() => { if (!controller.signal.aborted) setChecking(false) })
+    }).catch(error => { if (!controller.signal.aborted || error instanceof DeadlineExceeded) setState({ kind: 'unavailable' }) })
+      .finally(() => { if (request.current === controller && (!controller.signal.aborted || controller.signal.reason instanceof DeadlineExceeded)) setChecking(false) })
     return () => { controller.abort(); request.current?.abort() }
   }, [service, path, navigate])
   async function start() {
@@ -34,9 +35,9 @@ export function AuthFlow({ path, navigate, renderHome, renderRegistration, servi
     if (state.kind === 'unavailable') { setMessage(true); return }
     locked.current = true; setBusy(true)
     const controller = new AbortController(); request.current = controller
-    try { await service.startGoogle(controller.signal) }
-    catch { if (!controller.signal.aborted) setMessage(true) }
-    finally { if (!controller.signal.aborted) { locked.current = false; setBusy(false) } }
+    try { await withDeadline(signal => service.startGoogle(signal), controller) }
+    catch (error) { if (!controller.signal.aborted || error instanceof DeadlineExceeded) setMessage(true) }
+    finally { if (request.current === controller && (!controller.signal.aborted || controller.signal.reason instanceof DeadlineExceeded)) { locked.current = false; setBusy(false) } }
   }
   if (state.kind === 'authenticated' && path === '/home') return renderHome(state.session)
   if (state.kind === 'registration' && path.startsWith('/signup')) {
