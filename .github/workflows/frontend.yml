@@ -2,7 +2,7 @@ name: frontend CI/CD
 
 on:
   pull_request:
-    branches: [main, front-end/dev]
+    branches: [main, front-end/dev, 'front-end/feat/**', 'front-end/fix/**', 'front-end/hotfix/**']
     paths:
       - 'front-end/**'
       - 'deploy/frontend/**'
