@@ -10,7 +10,7 @@ const previewJobDraft:JobDraft={...emptyJobDraft,title:'주말 오픈 대타',de
 function draftToPreviewJob(draft:JobDraft):OwnerJob{return {id:'preview-owner-job-'+crypto.randomUUID(),industry:'식당',title:draft.title,storeName:'명랑핫도그 광운대점',address:'서울 노원구 광운로 20',date:draft.date,start:clock(draft.start),end:clock(draft.end),nextDay:draft.nextDay,hourlyPay:Number(draft.pay),headcount:1,applicants:0,publishedAt:new Date().toISOString(),experience:draft.experience,tasks:draft.description.split('\n').filter(Boolean),status:'recruiting',part:draft.part,description:draft.description,qualifications:draft.qualifications,payment:draft.payment,payNotice:draft.payNotice}}
 export default function OwnerJobsPreview(){
  const params=new URLSearchParams(usePreviewLocation().split('?')[1]),view=params.get('view')||'list'
- const [jobs,setJobs]=useState(()=>params.has('empty')?[]:ownerJobFixtures)
+ const [jobs,setJobs]=useState(()=>params.has('empty')?[]:ownerJobFixtures.map(job=>params.get('overlay')==='closed'&&job.id===(params.get('id')||'open')?{...job,status:'closed' as const}:job))
  const [created,setCreated]=useState<OwnerJob|null>(()=>params.get('result')==='success'?draftToPreviewJob(previewJobDraft):null)
  const [closing,setClosing]=useState(()=>params.get('overlay')==='close'||params.get('overlay')==='closed')
  const failureState=useRef({create:params.has('fail'),close:params.has('fail')})
