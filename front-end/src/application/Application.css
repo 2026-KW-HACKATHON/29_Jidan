@@ -4,7 +4,7 @@
 .application-job-summary { display:flex; flex-direction:column; gap:4px; padding:12px; border-radius:8px; background:var(--ds-primary-surface); }
 .application-job-summary p { font-size:13px; color:var(--ds-secondary); }
 .application-introduction { display:flex; flex-direction:column; gap:8px; }
-.application-introduction textarea { min-height:144px; padding:12px; background:var(--ds-surface); box-shadow:none; }
+.application-introduction textarea { min-height:144px; resize:none; padding:12px; background:var(--ds-surface); box-shadow:none; }
 .application-counter { text-align:right; font-size:13px; color:var(--ds-secondary); }
 .application-helper { font-size:13px; color:var(--ds-secondary); }
 .application-error { font-size:13px; color:var(--ds-danger); }
@@ -23,3 +23,5 @@
 .application-details > div { display:flex; gap:16px; align-items:flex-start; }
 .application-details dt { flex:1; color:var(--ds-secondary); }
 .application-details dd { margin:0; text-align:right; max-width:70%; }
+
+.application-content > .ds-button:disabled { opacity:.4; }
