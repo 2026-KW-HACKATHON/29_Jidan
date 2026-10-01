@@ -1,0 +1,61 @@
+import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react'
+import {afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest'
+// 화면 검증의 대기 시간에 최초 모듈 변환 비용이 포함되지 않도록 준비한다.
+// 모듈 캐시를 유지해 재진입 시에도 URL별 상태가 초기화되는지 검증한다.
+beforeAll(async()=>{await Promise.all([
+ import('./WorkerRegistrationPreview'), import('./OwnerRegistrationPreview'),
+ import('./RoleSelectionPreview'),
+ import('./OwnerHomePreview'),
+])},15000)
+beforeEach(()=>{vi.stubGlobal('fetch',vi.fn());sessionStorage.clear()})
+afterEach(()=>{cleanup();vi.unstubAllGlobals()})
+it.each(['/__preview','/__auth/worker?step=complete'])('다른 미리보기 %s 진입은 점주 초안과 인증을 변경하지 않는다',async url=>{
+ history.replaceState(null,'',url);const key='preview.v2.jidan.owner-draft.v1';sessionStorage.setItem(key,'owner-sentinel');sessionStorage.setItem('jidan.owner-draft.v1','real-sentinel');const before=document.cookie
+ const {default:Preview}=await import('./PreviewApp');await act(async()=>{render(<Preview/>)});await screen.findByRole('heading',{name:url==='/__preview'?'화면 탐색':'등록 완료'})
+ const menu=within(screen.getByRole('navigation',{name:'미리보기 화면 목록'}))
+ expect(menu.getByRole('link',{name:'가능 시간·시간 선택'})).toHaveAttribute('href','/__auth/worker?step=time')
+ expect(menu.getByRole('link',{name:'접근 종료 실패·재시도'})).toHaveAttribute('href','/__store/employment?fail=1')
+ if(url.endsWith('step=complete'))expect(menu.getByRole('link',{name:'등록 완료'})).toHaveAttribute('aria-current','page')
+ else expect(menu.getByRole('link',{name:'등록 완료'})).not.toHaveAttribute('aria-current')
+ expect(sessionStorage.getItem(key)).toBe('owner-sentinel');expect(sessionStorage.getItem('jidan.owner-draft.v1')).toBe('real-sentinel');expect(document.cookie).toBe(before);expect(fetch).not.toHaveBeenCalled()
+})
+it('화면 목록은 문서를 유지하고 query 변경·뒤로·앞으로 이동을 반영한다',async()=>{
+ history.replaceState(null,'','/__preview')
+ const {default:Preview}=await import('./PreviewApp');await act(async()=>{render(<Preview/>)})
+ const sidebar=screen.getByRole('navigation',{name:'미리보기 화면 목록'}),menu=within(sidebar)
+ await screen.findByRole('heading',{name:'화면 탐색'})
+ expect(fireEvent.click(menu.getByRole('link',{name:'등록 완료'}))).toBe(false)
+ await screen.findByRole('heading',{name:'등록 완료'})
+ expect(location.pathname+location.search).toBe('/__auth/worker?step=complete')
+ expect(screen.getByRole('navigation',{name:'미리보기 화면 목록'})).toBe(sidebar)
+ expect(fireEvent.click(menu.getByRole('link',{name:'근무 경력·종료 연월'}))).toBe(false)
+ await screen.findByRole('button',{name:'경력 수정'})
+ expect(menu.getByRole('link',{name:'근무 경력·종료 연월'})).toHaveAttribute('aria-current','page')
+ await act(async()=>history.back())
+ await screen.findByRole('heading',{name:'등록 완료'})
+ await act(async()=>history.forward())
+ await screen.findByRole('button',{name:'경력 수정'})
+ expect(fetch).not.toHaveBeenCalled()
+})
+it('같은 주소 선택은 입력을 초기화하거나 이력을 추가하지 않고, 페이지의 뒤로 버튼도 React로 이동한다',async()=>{
+ history.replaceState(null,'','/__auth/worker')
+ const {default:Preview}=await import('./PreviewApp');await act(async()=>{render(<Preview/>)})
+ const name=await screen.findByLabelText('이름 *');fireEvent.change(name,{target:{value:'직접 입력'}})
+ const before=history.length,menu=within(screen.getByRole('navigation',{name:'미리보기 화면 목록'}))
+ fireEvent.click(menu.getAllByRole('link',{name:'기본 정보'})[1])
+ expect(name).toHaveValue('직접 입력');expect(history.length).toBe(before)
+ fireEvent.click(screen.getByRole('button',{name:'뒤로 가기'}))
+ await waitFor(()=>expect(location.pathname).toBe('/__auth/signup'))
+ await screen.findByRole('heading',{name:'가입 유형 선택'})
+})
+it('캐시된 점주 모듈도 URL별 승인 대기와 매장 정보 예시를 다시 초기화한다',async()=>{
+ history.replaceState(null,'','/__auth/owner?step=pending')
+ const {default:Preview}=await import('./PreviewApp');await act(async()=>{render(<Preview/>)})
+ await screen.findByRole('heading',{name:'안녕하세요, 김민수 점주님'})
+ const menu=within(screen.getByRole('navigation',{name:'미리보기 화면 목록'}))
+ fireEvent.click(menu.getByRole('link',{name:'매장 정보·업종 선택'}))
+ expect(await screen.findByLabelText('매장명 *')).toHaveValue('')
+ fireEvent.click(menu.getByRole('link',{name:'승인 대기'}))
+ await screen.findByRole('heading',{name:'안녕하세요, 김민수 점주님'})
+ expect(fetch).not.toHaveBeenCalled()
+})

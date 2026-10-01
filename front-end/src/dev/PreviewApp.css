@@ -1,0 +1,31 @@
+.preview-banner { background:#fff3cd; color:#614800; max-width:390px; margin:0 auto; padding:8px 16px; font:13px/20px sans-serif; display:flex; justify-content:space-between; gap:8px; }
+.preview-banner a { color:inherit; font-weight:700; }
+.preview-dashboard { display:flex; flex-direction:column; gap:24px; }
+.preview-dashboard section { display:flex; flex-direction:column; gap:12px; }
+.preview-dashboard h3 { font-size:19px; }
+.preview-dashboard a { color:#1744c0; background:white; padding:12px; border-radius:8px; }
+
+.preview-host { height:100dvh; display:flex; flex-direction:column; }
+.preview-host > .preview-banner { flex:none; width:100%; box-sizing:border-box; }
+.preview-host > .ds-mobile { height:auto; flex:1; min-height:0; }
+
+.preview-sidebar { display:none; }
+@media (min-width:800px) {
+ .preview-workbench { display:grid; grid-template-columns:280px minmax(0,1fr); gap:24px; padding-inline:24px; }
+ .preview-sidebar { display:flex; flex-direction:column; gap:20px; height:calc(100dvh - 32px); align-self:center; overflow-y:auto; overscroll-behavior:contain; padding:20px; background:#fff; border:1px solid #e6e8ea; border-radius:12px; font:14px/1.5 system-ui,sans-serif; }
+ .preview-host { min-width:0; }
+ .preview-banner { display:none; }
+ .preview-note { margin:0; padding:12px; border-radius:8px; background:#fff3cd; color:#614800; font-size:13px; }
+ .preview-sidebar h2,.preview-sidebar h3 { margin:0; }
+ .preview-sidebar h2 { font-size:18px; }
+ .preview-sidebar h3 { font-size:14px; color:#5c636c; margin-bottom:6px; }
+ .preview-sidebar section { display:flex; flex-direction:column; gap:4px; }
+ .preview-sidebar a { display:block; color:#18232c; text-decoration:none; border-radius:6px; padding:8px; overflow-wrap:anywhere; }
+ .preview-sidebar a:hover { background:#f1f4fa; }
+ .preview-sidebar a[aria-current="page"] { background:#eaf0ff; color:#1744c0; font-weight:700; }
+ .preview-sidebar a:focus-visible { outline:2px solid #255cf5; outline-offset:1px; }
+ /* The canvas is centered in the workspace after the 280px menu and 24px gap.
+    Native top-layer dialogs must use the same center, including their scrim. */
+ .preview-workbench :is(.ds-modal,.ds-picker) { left:calc(50% + 152px); right:auto; margin-inline:0; transform:translateX(-50%); }
+ .preview-workbench .ds-modal::backdrop,.preview-workbench .ds-picker::backdrop { left:calc(50% + 152px); }
+}
