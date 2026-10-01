@@ -32,7 +32,8 @@ export function validateAvailability(a: Availability, others: Availability[] = [
   const e: Errors = {}
   if (!a.days.length || new Set(a.days).size !== a.days.length || a.days.some(d => !Number.isInteger(d) || d < 0 || d > 6)) e.days = '가능한 요일을 선택해 주세요.'
   if (![a.start,a.end].every(t => Number.isInteger(t) && t >= 0 && t < 1440 && t % 30 === 0)) e.time = '시간을 30분 단위로 선택해 주세요.'
-  else if (duration(a) <= 0 || duration(a) > 1440) e.time = '종료 시간과 다음 날 종료 여부를 확인해 주세요.'
+  else if (duration(a) > 1440) e.time = '근무 가능 시간은 하루 24시간을 초과할 수 없어요.'
+  else if (duration(a) <= 0) e.time = '종료 시간과 다음 날 종료 여부를 확인해 주세요.'
   if (!Object.keys(e).length) {
     const occupied = new Set(others.flatMap(slots))
     if (slots(a).some(s => occupied.has(s))) e.time = '이미 등록한 시간과 겹쳐요. 요일과 시간을 확인해 주세요.'
