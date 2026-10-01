@@ -12,5 +12,5 @@ export default function OwnerJobsPreview(){
  const back=()=>navigatePreview('/__home/owner')
  if(view==='detail'&&created)return <JobDetail job={created} onBack={back} onApply={back} applyLabel="공고 목록 보기"/>
  const step=(Number(params.get('step'))||1) as 1|2|3
- return <JobRegistration key={params.get('case')||'create'} onBack={back} onCreated={job=>{setCreated(job);params.set('view','detail');navigatePreview(`/__owner/jobs?${params}`)}} initialReceipt={created??undefined} service={service} initialStep={[1,2,3].includes(step)?step:1} initialDraft={step>1||params.has('picker')||params.has('result')?previewJobDraft:emptyJobDraft} initialPicker={params.get('picker') as 'part'|'experience'|'payment'|null} initialResult={params.get('result') as 'success'|'failure'|undefined}/>
+ return <JobRegistration key={params.get('case')||'create'} onBack={back} onCreated={(job,destination)=>{setCreated(job);if(destination==='list'){back();return}params.set('view','detail');navigatePreview(`/__owner/jobs?${params}`)}} initialReceipt={created??undefined} service={service} initialStep={[1,2,3].includes(step)?step:1} initialDraft={step>1||params.has('picker')||params.has('result')?previewJobDraft:emptyJobDraft} initialPicker={params.get('picker') as 'part'|'experience'|'payment'|null} initialResult={params.get('result') as 'success'|'failure'|undefined}/>
 }

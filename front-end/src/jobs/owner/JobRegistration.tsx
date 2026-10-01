@@ -16,17 +16,17 @@ function DatePicker({value,onClose,onSave}:{value:string;onClose:()=>void;onSave
  const [date,setDate]=useState(value)
  return <PickerDialog title="근무 날짜" onClose={onClose}><div className="owner-job-picker-content"><InputField type="date" label="근무 날짜" value={date} onChange={e=>setDate(e.target.value)}/><Button disabled={!date} onClick={()=>onSave(date)}>선택 완료</Button></div></PickerDialog>
 }
-export function JobRegistration({onBack,onCreated,service=unavailableOwnerJobs,initialStep=1,initialDraft=emptyJobDraft,initialPicker=null,initialResult,initialReceipt}: {onBack:()=>void;onCreated:(job:OwnerJob)=>void;service?:OwnerJobService;initialStep?:1|2|3;initialDraft?:JobDraft;initialPicker?:Picker|null;initialResult?:'success'|'failure';initialReceipt?:OwnerJob}){
+export function JobRegistration({onBack,onCreated,service=unavailableOwnerJobs,initialStep=1,initialDraft=emptyJobDraft,initialPicker=null,initialResult,initialReceipt}: {onBack:()=>void;onCreated:(job:OwnerJob,destination:'list'|'detail')=>void;service?:OwnerJobService;initialStep?:1|2|3;initialDraft?:JobDraft;initialPicker?:Picker|null;initialResult?:'success'|'failure';initialReceipt?:OwnerJob}){
  const [step,setStep]=useState(initialStep),[draft,setDraft]=useState(initialDraft),[errors,setErrors]=useState<Record<string,string>>({}),[picker,setPicker]=useState<Picker|null>(initialPicker),[created,setCreated]=useState<OwnerJob|null>(initialReceipt??null),[success,setSuccess]=useState(initialResult==='success'),[failure,setFailure]=useState(initialResult==='failure')
- const {busy,run,cancel}=useCommand(),formId=useId(),heading=useRef<HTMLHeadingElement>(null),previousStep=useRef(step),generation=useRef(0)
+ const {busy,run,cancel}=useCommand(),formId=useId(),heading=useRef<HTMLHeadingElement>(null),previousStep=useRef(step),generation=useRef(0),destination=useRef<'list'|'detail'>('list')
  useEffect(()=>{if(previousStep.current!==step){heading.current?.focus();heading.current?.closest('main')?.scrollTo?.(0,0);previousStep.current=step}},[step])
  useEffect(()=>()=>{generation.current+=1},[])
  const change=(patch:Partial<JobDraft>)=>{setDraft(d=>({...d,...patch}));setErrors({})}
  const closePicker=()=>setPicker(null)
- async function register(){const e=validateJobDraft(draft);setErrors(e);if(Object.keys(e).length){setStep(e.title||e.description||e.part||e.date||e.time?1:e.experience||e.qualifications?2:3);return}setFailure(false);const current=++generation.current;const ok=await run(signal=>service.create({...draft,title:draft.title.trim(),description:draft.description.trim(),qualifications:draft.qualifications.trim(),payNotice:draft.payNotice.trim()},signal),job=>{setCreated(job);setSuccess(true)});if(!ok&&current===generation.current)setFailure(true)}
+ async function register(){const e=validateJobDraft(draft);setErrors(e);if(Object.keys(e).length){setStep(e.title||e.description||e.part||e.date||e.time?1:e.experience||e.qualifications?2:3);return}destination.current='list';setFailure(false);const current=++generation.current;const ok=await run(signal=>service.create({...draft,title:draft.title.trim(),description:draft.description.trim(),qualifications:draft.qualifications.trim(),payNotice:draft.payNotice.trim()},signal),job=>{setCreated(job);setSuccess(true)});if(!ok&&current===generation.current)setFailure(true)}
  function next(){if(busy||success)return;if(step===3){void register();return}const e=validateJobDraft(draft,step);setErrors(e);if(!Object.keys(e).length)setStep(step===1?2:3)}
  const back=()=>{generation.current+=1;cancel();if(step===1)onBack();else setStep(step===3?2:1)}
- const closeResult=()=>{cancel();setFailure(false);setSuccess(false);if(created)onCreated(created)}
+ const closeResult=()=>{cancel();setFailure(false);setSuccess(false);if(created)onCreated(created,destination.current)}
  return <><MobileLayout className="owner-jobs owner-job-registration" header={<AppBar title="공고 등록" onBack={back}/>} footer={<div className="owner-job-actions">{step!==1&&<Button intent="secondary" disabled={busy||success} onClick={back}>이전</Button>}<Button type="submit" form={formId} busy={busy} disabled={success}>{step===3?'공고 등록하기':'다음'}</Button></div>}>
  <form id={formId} className="owner-job-form" noValidate onSubmit={event=>{event.preventDefault();next()}}>
  <RegistrationProgress step={step} labels={['업무 정보','경험 조건','급여 조건']} label="공고 등록 진행 단계"/>
@@ -41,6 +41,6 @@ export function JobRegistration({onBack,onCreated,service=unavailableOwnerJobs,i
  {picker==='date'&&<DatePicker value={draft.date} onClose={closePicker} onSave={date=>{change({date});closePicker()}}/>}
  {(picker==='start'||picker==='end')&&<ValuePicker title={picker==='start'?'시작 시간':'종료 시간'} type="time" allowNextDayTime value={draft[picker]<0?'':String(draft[picker])} overnight={picker==='end'?draft.nextDay:undefined} onClose={closePicker} onSave={(value,nextDay)=>change({[picker]:Number(value),...(picker==='end'?{nextDay:nextDay??false}:{})})}/>}
  <Modal open={failure} state="error" title="공고를 등록하지 못했어요" description={"입력한 내용은 그대로 남아 있어요.\n연결 상태를 확인한 뒤 다시 시도해 주세요."} cancelLabel="닫기" confirmLabel="다시 시도" busy={busy} onClose={()=>{generation.current+=1;cancel();setFailure(false)}} onConfirm={register}/>
- <Modal open={success} title="공고를 등록했어요" description={"지원자가 들어오면 알림으로 알려드려요.\n등록한 공고에서 지원 현황을 확인하세요."} showCancel cancelLabel="닫기" confirmLabel="공고 보기" onClose={closeResult} onConfirm={()=>{if(!created)onBack()}}/>
+ <Modal open={success} title="공고를 등록했어요" description={"지원자가 들어오면 알림으로 알려드려요.\n등록한 공고에서 지원 현황을 확인하세요."} showCancel cancelLabel="닫기" confirmLabel="공고 보기" onClose={closeResult} onConfirm={()=>{destination.current='detail';if(!created)onBack()}}/>
  </>
 }
