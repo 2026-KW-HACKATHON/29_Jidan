@@ -1,127 +1,58 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AuthFlow, type AuthPath } from './AuthFlow'
-import { SSO_START_PATH } from './session'
-
-const me = { id: '00000000-0000-4000-8000-000000000001', displayName: '김근무', accountType: 'WORKER', sessionExpiresAt: '2099-01-01T00:00:00Z', csrfToken: 'test-csrf' }
-const renderHome = vi.fn(() => <p>홈 진입점</p>)
-const renderRegistration = vi.fn(role => <p>{role} 가입 진입점</p>)
-const anonymous = () => new Response(null, { status: 401 })
+import type { AuthService, AuthState } from './session'
 const original = Object.getOwnPropertyDescriptors(HTMLDialogElement.prototype)
 beforeEach(() => {
-  document.cookie = 'signup_csrf=; Max-Age=0; Path=/'
-  vi.clearAllMocks()
+  vi.stubGlobal('fetch', vi.fn())
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.setAttribute('open', '') } })
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value(this: HTMLDialogElement) { this.removeAttribute('open') } })
 })
-afterEach(() => {
-  cleanup()
-  for (const key of ['showModal', 'close']) {
-    if (original[key]) Object.defineProperty(HTMLDialogElement.prototype, key, original[key])
-    else Reflect.deleteProperty(HTMLDialogElement.prototype, key)
-  }
-  document.cookie = 'signup_csrf=; Max-Age=0; Path=/'
-})
-function setup(path: AuthPath, search = '') {
-  const navigate = vi.fn()
-  const startSso = vi.fn()
-  const view = render(<AuthFlow path={path} search={search} navigate={navigate} startSso={startSso} renderHome={renderHome} renderRegistration={renderRegistration} />)
-  return { ...view, navigate, startSso }
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); document.cookie = 'signup_csrf=; Max-Age=0; Path=/'; for (const key of ['showModal','close']) { if (original[key]) Object.defineProperty(HTMLDialogElement.prototype,key,original[key]); else Reflect.deleteProperty(HTMLDialogElement.prototype,key) } })
+function setup(path: AuthPath, state: AuthState = { kind: 'unavailable' }, search = '') {
+  const navigate = vi.fn(), renderHome = vi.fn(() => <p>홈</p>), renderRegistration = vi.fn(role => <p>{role} 등록</p>)
+  const service: AuthService = { read: vi.fn().mockResolvedValue(state), startGoogle: vi.fn().mockResolvedValue(undefined) }
+  return { service, navigate, renderHome, renderRegistration, ...render(<AuthFlow path={path} search={search} service={service} navigate={navigate} renderHome={renderHome} renderRegistration={renderRegistration} />) }
 }
+it('API 미준비 상태는 준비 안내만 표시한다', async () => {
+  const { service, renderHome } = setup('/')
+  const button = screen.getByRole('button', { name: 'Google 계정으로 시작하기' })
+  await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button)
+  expect(screen.getByRole('dialog')).toHaveAccessibleName('Google 로그인 연결을 준비하고 있어요')
+  expect(fetch).not.toHaveBeenCalled(); expect(service.startGoogle).not.toHaveBeenCalled(); expect(renderHome).not.toHaveBeenCalled()
+})
+it.each(['/signup','/signup/owner','/signup/worker','/home'] as const)('쿠키와 URL은 %s 진입 권한을 만들지 않는다', async path => {
+  document.cookie = 'signup_csrf=hint; Path=/'
+  const { navigate, renderHome, renderRegistration } = setup(path, { kind: 'guest' }, '?role=OWNER&error=access_denied')
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login', true))
+  expect(renderHome).not.toHaveBeenCalled(); expect(renderRegistration).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled()
+})
+it.each(['OWNER','WORKER'] as const)('주입한 %s UI 상태로 역할별 홈을 표시한다', async accountType => {
+  const session = { displayName: '검수', accountType }, { renderHome } = setup('/home', { kind: 'authenticated', session })
+  await screen.findByText('홈'); expect(renderHome).toHaveBeenCalledWith(session)
+})
+it('주입한 등록 상태에서만 가입 유형을 선택한다', async () => {
+  const { navigate } = setup('/signup', { kind: 'registration' })
+  fireEvent.click(await screen.findByRole('button', { name: '점주로 가입' })); expect(navigate).toHaveBeenCalledWith('/signup/owner')
+})
+it('해제 후 늦은 결과로 이동하지 않는다', async () => {
+  let resolve!: (state: AuthState) => void
+  const navigate = vi.fn(), read = vi.fn(() => new Promise<AuthState>(done => { resolve = done }))
+  const view = render(<AuthFlow path="/" navigate={navigate} service={{ read, startGoogle: vi.fn() }} renderHome={() => null} renderRegistration={() => null} />)
+  view.unmount(); await act(async () => resolve({ kind: 'authenticated', session: { displayName: '검수', accountType: 'OWNER' } }))
+  expect(navigate).not.toHaveBeenCalled()
+})
 
-describe('AuthFlow', () => {
-  it('rechecks the session then redirects once to the backend SSO entry', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => anonymous()))
-    const { startSso } = setup('/')
-    const button = screen.getByRole('button', { name: 'SSO 계정으로 시작하기' })
-    await waitFor(() => expect(button).toBeEnabled())
-    fireEvent.click(button)
-    fireEvent.click(button)
-    await waitFor(() => expect(startSso).toHaveBeenCalledExactlyOnceWith(SSO_START_PATH))
-    expect(button).toBeDisabled()
-  })
-  it.each(['OWNER', 'WORKER'])('routes an existing %s to home rather than signup', async accountType => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { ...me, accountType } }))))
-    const { navigate } = setup('/signup')
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/home', true))
-    expect(renderRegistration).not.toHaveBeenCalled()
-  })
-  it('renders verified session data at the home integration point', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: me }))))
-    setup('/home')
-    expect(await screen.findByText('홈 진입점')).toBeInTheDocument()
-    expect(renderHome).toHaveBeenCalledWith(me)
-  })
-  it('allows a new signup hint to choose either future signup path and return to login', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => anonymous()))
-    document.cookie = 'signup_csrf=hint; Path=/'
-    const { navigate } = setup('/signup')
-    fireEvent.click(await screen.findByRole('button', { name: '점주로 가입' }))
-    expect(navigate).toHaveBeenCalledWith('/signup/owner')
-    fireEvent.click(screen.getByRole('button', { name: '일반회원으로 가입' }))
-    expect(navigate).toHaveBeenCalledWith('/signup/worker')
-    fireEvent.click(screen.getByRole('button', { name: '뒤로 가기' }))
-    expect(navigate).toHaveBeenCalledWith('/login')
-    expect(renderHome).not.toHaveBeenCalled()
-  })
-  it.each(['/signup', '/signup/owner', '/signup/worker'] as const)('rejects direct %s entry without a signup hint', async path => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(anonymous()))
-    const { navigate } = setup(path)
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login?error=signup_expired', true))
-    expect(renderRegistration).not.toHaveBeenCalled()
-  })
-  it('does not derive a role from query parameters', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(anonymous()))
-    const { navigate } = setup('/home', '?role=OWNER')
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login', true))
-    expect(renderHome).not.toHaveBeenCalled()
-  })
-  it('keeps a missing API as a retryable failure, without pretending login succeeded', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(null, { status: 404 })))
-    const { startSso, navigate } = setup('/')
-    const button = screen.getByRole('button', { name: 'SSO 계정으로 시작하기' })
-    await waitFor(() => expect(button).toBeEnabled())
-    fireEvent.click(button)
-    expect(await screen.findByRole('alertdialog')).toHaveAccessibleName('로그인에 연결하지 못했어요')
-    expect(startSso).not.toHaveBeenCalled()
-    expect(navigate).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
-    expect(await screen.findByRole('alertdialog')).toHaveAccessibleName('로그인에 연결하지 못했어요')
-    fireEvent.click(screen.getByRole('button', { name: '닫기' }))
-    expect(button).toHaveFocus()
-  })
-  it('shows a safe cancellation without reflecting the provider text', () => {
-    vi.stubGlobal('fetch', vi.fn())
-    const { startSso } = setup('/login', '?error=access_denied&error_description=private-provider-message')
-    expect(screen.getByRole('dialog')).toHaveAccessibleName('로그인이 취소됐어요')
-    expect(screen.queryByText('private-provider-message')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '확인' }))
-    expect(startSso).not.toHaveBeenCalled()
-  })
-  it('cancels a pending retry without following a late successful response', async () => {
-    let resolve!: (response: Response) => void
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce(new Response(null, { status: 503 }))
-      .mockResolvedValueOnce(new Response(null, { status: 503 }))
-      .mockImplementationOnce(() => new Promise<Response>(done => { resolve = done })))
-    const { startSso } = setup('/')
-    const button = screen.getByRole('button', { name: 'SSO 계정으로 시작하기' })
-    await waitFor(() => expect(button).toBeEnabled())
-    fireEvent.click(button)
-    fireEvent.click(await screen.findByRole('button', { name: '다시 시도' }))
-    fireEvent.click(screen.getByRole('button', { name: '닫기' }))
-    await act(async () => resolve(anonymous()))
-    expect(startSso).not.toHaveBeenCalled()
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-    expect(button).toBeEnabled()
-  })
-  it('ignores an initial session result after unmount', async () => {
-    let resolve!: (response: Response) => void
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(done => { resolve = done })))
-    const { unmount, navigate } = setup('/')
-    unmount()
-    await act(async () => resolve(new Response(JSON.stringify({ data: me }))))
-    expect(navigate).not.toHaveBeenCalled()
-  })
+it('상태 조회가 지연되어도 준비 안내를 확인할 수 있고 늦은 인증 응답을 무시한다',async()=>{
+ vi.useFakeTimers();let resolve!:(value:AuthState)=>void;const navigate=vi.fn()
+ render(<AuthFlow path="/" navigate={navigate} service={{read:()=>new Promise(r=>{resolve=r}),startGoogle:vi.fn()}} renderHome={()=>null} renderRegistration={()=>null}/>)
+ await act(async()=>{await vi.advanceTimersByTimeAsync(10000)})
+ const button=screen.getByRole('button',{name:'Google 계정으로 시작하기'});expect(button).toBeEnabled();fireEvent.click(button)
+ expect(screen.getByRole('dialog')).toBeVisible()
+ await act(async()=>resolve({kind:'authenticated',session:{displayName:'늦은 결과',accountType:'OWNER'}}));expect(navigate).not.toHaveBeenCalled()
+})
+it('로그인 시작 지연 후 버튼을 복구하고 중복 시작을 막는다',async()=>{
+ const startGoogle=vi.fn(()=>new Promise<void>(()=>{}));render(<AuthFlow path="/" navigate={vi.fn()} service={{read:async()=>({kind:'guest'}),startGoogle}} renderHome={()=>null} renderRegistration={()=>null}/>)
+ const button=screen.getByRole('button',{name:'Google 계정으로 시작하기'});await waitFor(()=>expect(button).toBeEnabled());vi.useFakeTimers();fireEvent.click(button);fireEvent.click(button);expect(startGoogle).toHaveBeenCalledTimes(1)
+ await act(async()=>{await vi.advanceTimersByTimeAsync(10000)});expect(button).toBeEnabled();expect(screen.getByRole('dialog')).toBeVisible()
 })

@@ -14,9 +14,9 @@ export type OwnerService = {
   submit: (draft: OwnerDraft, idempotencyKey: string, signal: AbortSignal) => Promise<OwnerReceipt>
 }
 /**
- * Figma's owner profile/store payload is not supported by the current API draft.
+ * No owner registration API has been agreed. This interface describes frontend state only.
  * No speculative POST: the backend adapter must replace this fail-closed boundary.
- * submit must validate the ticket/CSRF and save the full request atomically and idempotently.
+ * Server authentication and persistence contracts must be agreed before connecting.
  */
 export const ownerService: OwnerService = {
   identity: async () => { throw new OwnerFailure('unavailable') },

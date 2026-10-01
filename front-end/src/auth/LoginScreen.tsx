@@ -18,7 +18,7 @@ export function LoginScreen({ onStart, busy = false }: { onStart: () => void; bu
         {['업무 매뉴얼, 한곳에서 확인', '궁금한 업무는 AI에게 질문'].map(text => <div className="auth-onboarding-row" key={text}><img src={check} alt="" /><p>{text}</p></div>)}
       </section>
       <div className="auth-sign-in">
-        <Button onClick={onStart} busy={busy} aria-describedby="sign-in-description">SSO 계정으로 시작하기</Button>
+        <Button onClick={onStart} busy={busy} aria-describedby="sign-in-description">Google 계정으로 시작하기</Button>
         <p id="sign-in-description">기존 계정으로 로그인하거나 새로 가입할 수 있어요.</p>
       </div>
       <p className="auth-login-footer">매장 AI 온보딩 서비스 · 지단</p>
