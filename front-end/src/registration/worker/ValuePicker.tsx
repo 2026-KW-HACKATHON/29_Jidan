@@ -5,7 +5,7 @@ import { today } from './model'
 import './ValuePicker.css'
 import { WheelPicker } from '../../ui/WheelPicker'
 
-export function ValuePicker({ title, value, type, min, max, overnight, current, onClose, onSave }: { title: string; value: string; type: 'month'|'time'; min?: string; max?: string; overnight?: boolean; current?: boolean; onClose: () => void; onSave: (value: string, selected?: boolean) => void }) {
+export function ValuePicker({ title, value, type, min, max, overnight, allowNextDayTime = false, current, onClose, onSave }: { title: string; value: string; type: 'month'|'time'; min?: string; max?: string; overnight?: boolean; allowNextDayTime?: boolean; current?: boolean; onClose: () => void; onSave: (value: string, selected?: boolean) => void }) {
   const lower = min || '0001-01', upper = max || today().slice(0, 7)
   const initial = value && value >= lower && value <= upper ? value : upper
   const [year, setYear] = useState(Number(initial.slice(0, 4)))
@@ -18,7 +18,7 @@ export function ValuePicker({ title, value, type, min, max, overnight, current, 
   const selectedMonth = Math.max(minMonth, Math.min(maxMonth, month))
   return <PickerDialog className="worker-value-picker" title={title} onClose={onClose}><div className="worker-picker-content">
   <div className="worker-picker-columns">
-    {type === 'month' ? <><WheelPicker label="연도" value={year} min={Number(lower.slice(0, 4))} max={Number(upper.slice(0, 4))} suffix="년" change={setYear} disabled={stillWorking} /><WheelPicker label="월" value={selectedMonth} min={minMonth} max={maxMonth} suffix="월" change={setMonth} disabled={stillWorking} /></> : <><WheelPicker label="시 · 24시간제" value={Math.floor(time / 60)} min={0} max={23} suffix="시" change={h => setTime(h * 60 + time % 60)} disabled={nextDay} /><div className={`ds-wheel-column${nextDay ? ' is-disabled' : ''}`}><p>분</p><div className="worker-minute-choices">{[0, 30].map(m => <Button key={m} intent="secondary" aria-pressed={time % 60 === m} disabled={nextDay} onClick={() => setTime(Math.floor(time / 60) * 60 + m)}>{String(m).padStart(2, '0')}분</Button>)}</div></div></>}
+    {type === 'month' ? <><WheelPicker label="연도" value={year} min={Number(lower.slice(0, 4))} max={Number(upper.slice(0, 4))} suffix="년" change={setYear} disabled={stillWorking} /><WheelPicker label="월" value={selectedMonth} min={minMonth} max={maxMonth} suffix="월" change={setMonth} disabled={stillWorking} /></> : <><WheelPicker label="시 · 24시간제" value={Math.floor(time / 60)} min={0} max={23} suffix="시" change={h => setTime(h * 60 + time % 60)} disabled={nextDay && !allowNextDayTime} /><div className={`ds-wheel-column${nextDay && !allowNextDayTime ? ' is-disabled' : ''}`}><p>분</p><div className="worker-minute-choices">{[0, 30].map(m => <Button key={m} intent="secondary" aria-pressed={time % 60 === m} disabled={nextDay && !allowNextDayTime} onClick={() => setTime(Math.floor(time / 60) * 60 + m)}>{String(m).padStart(2, '0')}분</Button>)}</div></div></>}
   </div>
   {current !== undefined && <label className="worker-picker-option"><input type="checkbox" checked={stillWorking} onChange={e => setStillWorking(e.target.checked)} /><span className="worker-picker-checkbox" aria-hidden="true" />현재 근무 중</label>}
   {overnight !== undefined && <label className="worker-picker-option"><input type="checkbox" checked={nextDay} onChange={e => setNextDay(e.target.checked)} /><span className="worker-picker-checkbox" aria-hidden="true" />다음 날 종료</label>}
