@@ -129,3 +129,11 @@ it('확인 화면의 수정 취소는 값과 제출 요청 키를 보존한다',
  await screen.findByText('프로필 등록이 완료됐어요')
  expect(vi.mocked(service.submit).mock.calls[0][0].name).toBe('김지수')
 })
+
+it('등록 완료의 프로필 보기에서 뒤로 이동하면 완료 화면으로 복귀한다',async()=>{
+ setup();fireEvent.click(await screen.findByRole('button',{name:'프로필 등록 완료'}))
+ fireEvent.click(await screen.findByRole('button',{name:'내 프로필 보기'}))
+ await screen.findByRole('heading',{name:'내 프로필'})
+ fireEvent.click(screen.getByRole('button',{name:'뒤로 가기'}))
+ expect(screen.getByText('프로필 등록이 완료됐어요')).toBeVisible()
+})
