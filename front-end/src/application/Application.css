@@ -8,3 +8,18 @@
 .application-counter { text-align:right; font-size:13px; color:var(--ds-secondary); }
 .application-helper { font-size:13px; color:var(--ds-secondary); }
 .application-error { font-size:13px; color:var(--ds-danger); }
+.application-complete .jobs-content { gap:24px; }
+.application-heading { display:flex; flex-direction:column; gap:8px; }
+.application-heading h2 { font-size:24px; letter-spacing:1px; }
+.application-complete .ds-mobile-footer { padding-bottom:max(24px,env(safe-area-inset-bottom,0px)); }
+.application-footer { display:flex; gap:12px; }
+.application-footer > button { flex:1; min-width:0; }
+.application-footer .application-withdraw { border:1px solid #d03154; color:var(--ds-danger); }
+.application-complete-card { display:flex; flex-direction:column; gap:16px; }
+.application-store { display:flex; gap:8px; align-items:flex-start; justify-content:space-between; }
+.application-store h3 { flex:1; min-width:0; font-size:19px; }
+.application-pending { flex:none; min-height:28px; padding:2px 7px; border-radius:4px; background:#9c6e16; color:var(--ds-white); font-size:15px; }
+.application-details { margin:0; display:flex; flex-direction:column; gap:16px; }
+.application-details > div { display:flex; gap:16px; align-items:flex-start; }
+.application-details dt { flex:1; color:var(--ds-secondary); }
+.application-details dd { margin:0; text-align:right; max-width:70%; }
