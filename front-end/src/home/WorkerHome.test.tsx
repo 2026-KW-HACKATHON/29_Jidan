@@ -66,3 +66,13 @@ it('shows shifts for the visible month and narrows them to a touched date', () =
   expect(screen.getByText('오늘의 매장')).toBeInTheDocument()
   expect(screen.queryByText('네 번째 매장')).not.toBeInTheDocument()
 })
+
+it('홈의 더 찾아보기와 하단 탐색 모두 주입된 공고 이동을 사용한다', () => {
+  let count = 0
+  render(<WorkerHome displayName="김지수" onJobs={() => { count += 1 }} />)
+  fireEvent.click(screen.getByRole('button',{name:'+ 공고 더 찾아보기'}))
+  fireEvent.click(screen.getByRole('button',{name:'공고 찾기'}))
+  expect(count).toBe(2)
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'홈'})).toHaveAttribute('aria-current','page')
+})
