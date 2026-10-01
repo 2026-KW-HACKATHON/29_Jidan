@@ -11,3 +11,26 @@
 .owner-job-notice { font-size:13px; color:var(--ds-secondary); }
 .owner-job-error { font-size:13px; color:var(--ds-danger); }
 .owner-job-picker-content { display:flex; flex-direction:column; gap:20px; }
+.owner-job-list { display:flex;flex-direction:column;gap:20px; }
+.owner-job-heading {display:flex;flex-direction:column;gap:8px;}
+.owner-job-heading h2 {font-size:22px;}
+.owner-job-heading p {font-size:15px;color:var(--ds-secondary);}
+.owner-job-tabs {display:flex;gap:4px;}
+.owner-job-tabs .ds-button {flex:1;min-width:0;min-height:36px;padding:8px 12px;font-size:13px;box-shadow:none;}
+.owner-job-list-meta {display:flex;justify-content:space-between;gap:8px;font-size:13px;}
+.owner-job-list-meta span {color:var(--ds-secondary);}
+.owner-job-cards {display:flex;flex-direction:column;gap:16px;}
+.owner-job-card {display:flex;flex-direction:column;gap:8px;width:100%;padding:16px;border:0;border-radius:12px;background:white;box-shadow:var(--ds-shadow);text-align:left;font:inherit;cursor:pointer;}
+.owner-job-card:focus-visible {outline:2px solid var(--ds-primary);outline-offset:2px;}
+.owner-job-card-heading {display:flex;gap:8px;justify-content:space-between;align-items:center;}
+.owner-job-card-heading strong {font-size:15px;overflow-wrap:anywhere;}
+.owner-job-badge {flex:none;border-radius:4px;background:var(--ds-primary-surface);color:var(--ds-primary);padding:4px 8px;font-size:13px;font-weight:700;}
+.owner-job-badge.is-muted {background:#f4f5f6;color:var(--ds-secondary);}
+.owner-job-badge.is-selected {background:#eef6ee;color:#28702f;}
+.owner-job-card-date {font-size:13px;color:var(--ds-secondary);}
+.owner-job-summary {display:flex;flex-direction:column;gap:12px;background:#d6e3fd;border-radius:12px;padding:16px;width:100%;}
+.owner-job-summary strong {font-size:15px;color:#0a2c93;overflow-wrap:anywhere;}
+.owner-job-summary p {font-size:13px;color:var(--ds-secondary);}
+.owner-job-close-dialog[open] {gap:16px;}
+.owner-job-close-dialog .ds-modal-message {gap:16px;}
+.owner-job-close-dialog .ds-modal-message h2 {font-size:22px;}
