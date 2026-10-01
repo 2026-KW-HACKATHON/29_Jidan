@@ -36,3 +36,11 @@ it('그리드 편집은 심야 슬롯을 보존하고 동일한 일간 시간대
   expect(new Set(availabilityFromSlots(selected).flatMap(slots))).toEqual(selected)
   expect(weekHours(availabilityFromSlots(selected))).toBe(17)
 })
+
+it('정확히 24시간은 허용하고 초과·0시간·역순은 구분한다', () => {
+  const a = { id: 'day', days: [0], start: 540, end: 540, overnight: true }
+  expect(validateAvailability(a)).toEqual({})
+  expect(validateAvailability({ ...a, end: 570 }).time).toBe('근무 가능 시간은 하루 24시간을 초과할 수 없어요.')
+  expect(validateAvailability({ ...a, overnight: false }).time).toBe('종료 시간과 다음 날 종료 여부를 확인해 주세요.')
+  expect(validateAvailability({ ...a, end: 510, overnight: false }).time).toBe('종료 시간과 다음 날 종료 여부를 확인해 주세요.')
+})
