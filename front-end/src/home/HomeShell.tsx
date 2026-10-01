@@ -7,10 +7,7 @@ import home from '../registration/owner/assets/home.svg'
 import book from '../registration/owner/assets/book.svg'
 import brief from '../registration/owner/assets/brief.svg'
 import memberBell from './assets/member-bell.svg'
-import memberHome from './assets/member-home.svg'
-import memberBook from './assets/member-book.svg'
-import memberBrief from './assets/member-brief.svg'
-import user from './assets/user.svg'
+import { MemberNavigation } from './MemberNavigation'
 import './Home.css'
 
 export type HomeRole = 'owner' | 'worker'
@@ -21,16 +18,15 @@ const ownerItems = [
   { label: '공고 관리', icon: brief },
 ]
 
-export function HomeShell({ role, children, notificationCount = 0, onProfile }: {
+export function HomeShell({ role, children, notificationCount = 0, onProfile, onJobs }: {
   role: HomeRole
   children: ReactNode
   notificationCount?: number
   onProfile?: () => void
+  onJobs?: () => void
 }) {
   const [unavailable, setUnavailable] = useState<string | null>(null)
-  const items = role === 'owner' ? ownerItems : [
-    { label: '홈', icon: memberHome }, { label: '매뉴얼', icon: memberBook }, { label: '공고 찾기', icon: memberBrief }, { label: '프로필', icon: user },
-  ]
+  const items = ownerItems
 
   return <>
     <MobileLayout className={`home-screen home-${role}`}
@@ -38,7 +34,7 @@ export function HomeShell({ role, children, notificationCount = 0, onProfile }: 
         {notificationCount > 0 && <span className="home-notification-badge">미확인 알림 {notificationCount}개</span>}
         <img src={role === 'owner' ? bell : memberBell} alt="" />
       </button></div>}
-      footer={<nav className="home-bottom-nav" aria-label="주 메뉴"><div className="home-nav-items">{items.map(({ label, icon }, index) => <button type="button" key={label} aria-current={index === 0 ? 'page' : undefined} onClick={() => { if (label === '프로필' && onProfile) onProfile(); else if (index) setUnavailable(label) }}>
+      footer={role === 'worker' ? <MemberNavigation active="home" onHome={() => {}} onJobs={onJobs || (() => setUnavailable('공고 찾기'))} onProfile={onProfile || (() => setUnavailable('프로필'))} onManual={() => setUnavailable('매뉴얼')} /> : <nav className="home-bottom-nav" aria-label="주 메뉴"><div className="home-nav-items">{items.map(({ label, icon }, index) => <button type="button" key={label} aria-current={index === 0 ? 'page' : undefined} onClick={() => { if (label === '프로필' && onProfile) onProfile(); else if (index) setUnavailable(label) }}>
         <img src={icon} alt="" /><span>{label}</span>
       </button>)}</div><span className="home-indicator" aria-hidden="true" /></nav>}>
       <div className="home-content">{children}</div>
