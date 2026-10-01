@@ -36,3 +36,19 @@
 .owner-job-close-dialog .ds-modal-message h2 {font-size:22px;}
 
 .owner-job-management .owner-job-list {gap:16px;}
+.owner-applicants h2 {font-size:22px;}
+.owner-applicant-count {font-size:15px;}
+.owner-applicant-cards {display:flex;flex-direction:column;gap:12px;}
+.owner-applicant-card {background:white;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:var(--ds-shadow);}
+.owner-applicant-identity {display:flex;flex-direction:column;gap:4px;}
+.owner-applicant-identity h3,.owner-applicant-card h3 {font-size:19px;}
+.owner-applicant-identity p {font-size:13px;color:var(--ds-secondary);}
+.owner-applicant-card > p {font-size:15px;color:var(--ds-secondary);}
+.owner-applicant-card .ds-button-secondary {box-shadow:0 0 2px rgb(0 0 0 / 12%),0 1px 2px rgb(0 0 0 / 12%);}
+.owner-applicant-review h2 {font-size:22px;}
+.owner-applicant-review header .ds-button {width:56px;flex-shrink:0;padding:12px 0;}
+.owner-applicant-review-content {display:flex;flex-direction:column;gap:16px;}
+.owner-applicant-introduction {max-height:240px;overflow-y:auto;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:8px;}
+.owner-applicant-introduction h4 {font-size:15px;}
+.owner-applicant-introduction p {font-size:15px;white-space:pre-wrap;}
+.owner-applicant-hint {font-size:13px;color:var(--ds-secondary);}
