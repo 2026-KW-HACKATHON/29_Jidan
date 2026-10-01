@@ -36,3 +36,5 @@ export function jobHours(job: Pick<Job, 'start' | 'end' | 'nextDay'>) {
 export function jobTime(job: Pick<Job, 'start' | 'end' | 'nextDay'>) { return `${job.start}–${job.nextDay ? '다음 날 ' : ''}${job.end}` }
 export function jobDate(date: string) { return date.replaceAll('-', '.') }
 export function won(amount: number) { return `${amount.toLocaleString('ko-KR')}원` }
+
+export function shortJobDate(date: string) { return `${Number(date.slice(5,7))}월 ${Number(date.slice(8))}일` }
