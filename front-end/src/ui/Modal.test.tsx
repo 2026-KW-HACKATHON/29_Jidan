@@ -110,3 +110,5 @@ it('안내 모달의 보조 동작으로 닫고 주 동작을 실행하지 않�
 })
 
 it('아이콘 없는 업무 확인에서도 제목과 설명 연결을 유지한다',()=>{render(<Modal open title="모집 마감" description="설명" showIcon={false} summary={<div>공고 요약</div>} onClose={()=>{}}/>);expect(screen.getByRole('dialog',{name:'모집 마감'})).toHaveAccessibleDescription('설명');expect(screen.getByText('공고 요약')).toBeVisible();expect(document.querySelector('.ds-modal-icon')).toBeNull()})
+
+it('확인 후 결과 화면으로 전환하는 모달은 자동으로 닫지 않는다',async()=>{const close=vi.fn();render(<Modal open closeOnConfirm={false} title="처리" description="설명" onConfirm={async()=>{}} onClose={close}/>);fireEvent.click(screen.getByRole('button',{name:'확인'}));await act(async()=>{});expect(close).not.toHaveBeenCalled();expect(screen.getByRole('dialog')).toBeVisible()})

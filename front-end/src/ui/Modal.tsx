@@ -14,6 +14,7 @@ type ModalProps = {
   cancelLabel?: string
   busy?: boolean
   showCancel?: boolean
+  closeOnConfirm?: boolean
   showIcon?: boolean
   summary?: ReactNode
   className?: string
@@ -26,7 +27,7 @@ export function Modal({ open, ...props }: ModalProps) {
   return open ? <OpenModal {...props} /> : null
 }
 
-function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, showCancel = false, showIcon = true, summary, className = '', onClose, onConfirm }: Omit<ModalProps, 'open'>) {
+function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, showCancel = false, closeOnConfirm = true, showIcon = true, summary, className = '', onClose, onConfirm }: Omit<ModalProps, 'open'>) {
   const dialog = useRef<HTMLDialogElement>(null)
   const initialFocus = useRef<HTMLButtonElement>(null)
   const generation = useRef(0)
@@ -58,7 +59,7 @@ function OpenModal({ title, description, state = 'information', confirmLabel = '
     const current = generation.current
     try {
       await onConfirm?.()
-      if (current === generation.current) onClose()
+      if (current === generation.current && closeOnConfirm) onClose()
     } catch {
       if (current === generation.current) setFailed(true)
     } finally {
