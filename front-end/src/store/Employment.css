@@ -26,3 +26,6 @@
 .employment-worker-heading h2 { flex:1; min-width:0; }
 .employment-badge { flex:none; }
 .employment-card dd.employment-expiry { color:var(--ds-danger); font-weight:700; }
+
+.employment-badge-ended { color:var(--ds-danger); background:var(--ds-danger-surface); }
+.employment-permission strong.employment-permission-ended { color:var(--ds-danger); }
