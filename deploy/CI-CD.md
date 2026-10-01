@@ -33,6 +33,14 @@ PR은 테스트·빌드만 수행한다. 같은 저장소의 PR만 self-hosted r
 - `VITE_*` 값은 브라우저에 노출되므로 비밀 값을 넣지 않는다.
 - 로컬 개발은 Vite의 `/api` 프록시를 `http://127.0.0.1:8000`에 연결한다.
 
+#### RPi4 테스트 실행
+
+- Docker의 `test` stage는 `CI=true`를 설정하며, Vitest worker를 최대 2개로 제한한다. 로컬에서는 기존 기본 병렬도를 사용한다.
+- 테스트의 기본 시간 제한은 5초로 유지한다. 프로필 시간 수정·취소처럼 큰 DOM과 여러 화면 전환을 검증하는 시나리오에만 15초를 적용한다.
+- 시간 셀은 `aria-label`로 조회하고, 버튼은 해당 영역 안에서 조회해 접근성 계산 비용을 줄인다. 오류·완료 모달은 제목 삽입 시점이 아니라 접근 가능한 dialog와 버튼을 기다린다.
+- Node.js 22 환경에서 `CI=true npm run test:ci -- --maxWorkers=1`과 `--maxWorkers=2`의 시간·메모리를 비교한다. 반복 검증은 새 테스트 컨테이너를 실행하거나 Buildx의 `--no-cache-filter test`로 테스트 결과 캐시를 제외해 실제 테스트를 다시 수행한다.
+- 프론트엔드 CI 보강은 `front-end/dev` 대상 PR에서 통합한 뒤 `front-end/dev → main` 릴리즈 PR으로 반영한다. 기존 미병합 PR에 필요한 설정은 해당 커밋만 `cherry-pick -x`로 반영하고, stacked PR의 후속 브랜치에 전파한다.
+
 운영 컨테이너는 Nginx의 8080 포트에서 정적 파일을 제공한다. SPA 경로는 `index.html`로 fallback하며, 없는 `/assets/*` 파일은 404를 반환한다.
 
 ### FastAPI
