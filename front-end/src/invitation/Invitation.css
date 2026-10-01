@@ -35,3 +35,5 @@
 .invitation-empty { box-shadow:none; }
 .invitation-empty h3 { font-size:17px; }
 .invitation-management .ds-mobile-footer { padding-bottom:max(24px,env(safe-area-inset-bottom,0px)); }
+
+.invitation-history-secondary { font-size:13px; }
