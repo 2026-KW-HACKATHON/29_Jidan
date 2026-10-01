@@ -1,0 +1,13 @@
+.owner-jobs { background:var(--ds-primary-surface); }
+.owner-jobs .ds-mobile-body { padding:8px 24px 24px; }
+.owner-jobs .ds-mobile-footer { padding:16px 24px max(24px,env(safe-area-inset-bottom,0px)); }
+.owner-job-form { display:flex; flex-direction:column; gap:20px; min-width:0; }
+.owner-job-form h2 { font-size:24px; letter-spacing:1px; }
+.owner-job-form .ds-field-textarea { min-height:104px; padding:16px; box-shadow:none; }
+.owner-job-schedule { display:flex; flex-direction:column; gap:16px; }
+.owner-job-actions { display:flex; gap:8px; width:100%; }
+.owner-job-actions > * { flex:1; min-width:0; }
+.owner-job-schedule .owner-job-actions { gap:12px; }
+.owner-job-notice { font-size:13px; color:var(--ds-secondary); }
+.owner-job-error { font-size:13px; color:var(--ds-danger); }
+.owner-job-picker-content { display:flex; flex-direction:column; gap:20px; }
