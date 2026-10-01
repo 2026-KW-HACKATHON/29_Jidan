@@ -6,7 +6,7 @@ const build = enabled => {
  const files=readdirSync('dist/assets')
  const js=files.filter(file=>file.endsWith('.js')).map(file=>readFileSync(`dist/assets/${file}`,'utf8')).join('\n')
  assert.equal(files.some(file=>file.startsWith('PreviewApp-')),enabled,'Preview chunk boundary')
- for(const marker of ['owner-preview','preview-worker-receipt','MOCK_FAILURE','/__store/employment'])assert.equal(js.includes(marker),enabled,`Fixture boundary: ${marker}`)
+ for(const marker of ['owner-preview','preview-worker-receipt','MOCK_FAILURE','/__store/employment','/__jobs','preview-application-','MOCK_SUBMIT_FAILURE'])assert.equal(js.includes(marker),enabled,`Fixture boundary: ${marker}`)
 }
 build(true)
 build(false)

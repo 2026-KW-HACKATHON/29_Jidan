@@ -1,0 +1,32 @@
+.application-dialog header h2 { font-size:22px; }
+/* 스크롤 경계 바깥으로 나오는 2px outline과 3px offset 공간 확보 */
+.application-dialog .ds-picker-body { padding:5px; margin:-5px; }
+.application-content { display:flex; flex-direction:column; gap:16px; }
+.application-content > .ds-button { width:100%; }
+.application-job-summary { display:flex; flex-direction:column; gap:4px; padding:12px; border-radius:8px; background:var(--ds-primary-surface); }
+.application-job-summary p { font-size:13px; color:var(--ds-secondary); }
+.application-introduction { display:flex; flex-direction:column; gap:8px; }
+.application-introduction textarea { min-height:144px; resize:none; padding:12px; background:var(--ds-surface); box-shadow:none; }
+.application-counter { text-align:right; font-size:13px; color:var(--ds-secondary); }
+.application-helper { font-size:13px; color:var(--ds-secondary); }
+.application-error { font-size:13px; color:var(--ds-danger); }
+.application-complete .jobs-content { gap:24px; }
+.application-heading { display:flex; flex-direction:column; gap:8px; }
+.application-heading h2 { font-size:24px; letter-spacing:1px; }
+.application-complete { position:relative; }
+.application-complete .ds-mobile-body { padding-bottom:calc(48px + 16px + max(24px,env(safe-area-inset-bottom,0px)) + 24px); }
+.application-complete .ds-mobile-footer { position:absolute; inset:auto 0 0; padding-bottom:max(24px,env(safe-area-inset-bottom,0px)); background:transparent; pointer-events:none; }
+.application-complete .ds-mobile-footer > * { pointer-events:auto; }
+.application-footer { display:flex; gap:12px; }
+.application-footer > button { flex:1; min-width:0; }
+.application-footer .application-withdraw { border:1px solid #d03154; color:var(--ds-danger); }
+.application-complete-card { display:flex; flex-direction:column; gap:16px; }
+.application-store { display:flex; gap:8px; align-items:flex-start; justify-content:space-between; }
+.application-store h3 { flex:1; min-width:0; font-size:19px; }
+.application-pending { flex:none; min-height:28px; padding:2px 7px; border-radius:4px; background:#9c6e16; color:var(--ds-white); font-size:15px; }
+.application-details { margin:0; display:flex; flex-direction:column; gap:16px; }
+.application-details > div { display:flex; gap:16px; align-items:flex-start; }
+.application-details dt { flex:1; color:var(--ds-secondary); }
+.application-details dd { margin:0; text-align:right; max-width:70%; }
+
+.application-content > .ds-button:disabled { opacity:.4; }
