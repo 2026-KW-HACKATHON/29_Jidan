@@ -2,7 +2,7 @@ import { createHangulSearch } from './search'
 
 export type Industry = '카페' | '식당' | '편의점' | '기타'
 export type Job = {
-  id: string; industry: Industry; title: string; storeName: string; address: string
+  id: string; industry: Industry; title: string; storeName: string; address: string; district?: string
   date: string; start: string; end: string; nextDay: boolean
   hourlyPay: number; headcount: number; applicants: number; publishedAt: string
   experience: string; tasks: string[]
