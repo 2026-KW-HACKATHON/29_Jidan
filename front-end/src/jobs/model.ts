@@ -1,3 +1,5 @@
+import { createHangulSearch } from './search'
+
 export type Industry = '카페' | '식당' | '편의점' | '기타'
 export type Job = {
   id: string; industry: Industry; title: string; storeName: string; address: string
@@ -13,11 +15,10 @@ export function filterJobs(jobs: readonly Job[], query: string, filters: JobFilt
   const first = dateKey(today)
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 2, 0).getDate()
   const nextMonth = dateKey(new Date(today.getFullYear(), today.getMonth() + 1, Math.min(today.getDate(), monthEnd)))
-  const terms = query.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean)
+  const matchesSearch = createHangulSearch(query)
   return jobs.filter(job => {
     if (filters.industry !== '전체' && job.industry !== filters.industry) return false
-    const haystack = `${job.title} ${job.storeName} ${job.industry==='식당'?'음식점 식당':job.industry} ${job.tasks.join(' ')}`.toLocaleLowerCase()
-    if (!terms.every(term => haystack.includes(term))) return false
+    if (!matchesSearch([job.title, job.storeName, job.industry, job.industry === '식당' ? '음식점' : job.industry, ...job.tasks])) return false
     if (filters.date === '오늘' && job.date !== first) return false
     if (filters.date === '내일' && job.date !== dateKey(addDays(today, 1))) return false
     if (filters.date === '일주일 이내' && (job.date < first || job.date >= dateKey(addDays(today, 7)))) return false
