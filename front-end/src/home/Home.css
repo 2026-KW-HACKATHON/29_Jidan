@@ -38,3 +38,10 @@
 .home-calendar-days > button.home-calendar-substitute > span { background: #faeac6; color: var(--ds-primary-strong); }
 .home-calendar-days > button[aria-pressed='true'] > span { background: var(--ds-primary); color: var(--ds-white); }
 .home-calendar-days > button.home-calendar-substitute[data-user-selected='true'] > span { background: #ffc83d; color: var(--ds-primary-strong); }
+.member-nav-icon { display:block; width:24px; height:24px; -webkit-mask-size:contain; mask-size:contain; -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat; -webkit-mask-position:center; mask-position:center; background:var(--ds-muted); }
+.home-nav-items button[aria-current] .member-nav-icon { background:var(--ds-primary); }
+
+.member-nav-home { -webkit-mask-image:url("./assets/member-home.svg"); mask-image:url("./assets/member-home.svg"); }
+.member-nav-manual { -webkit-mask-image:url("./assets/member-book.svg"); mask-image:url("./assets/member-book.svg"); }
+.member-nav-jobs { -webkit-mask-image:url("./assets/member-brief.svg"); mask-image:url("./assets/member-brief.svg"); }
+.member-nav-profile { -webkit-mask-image:url("./assets/user.svg"); mask-image:url("./assets/user.svg"); }
