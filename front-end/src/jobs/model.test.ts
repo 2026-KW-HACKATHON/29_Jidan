@@ -32,3 +32,8 @@ describe('승인된 공고 필터 기준', () => {
     expect(jobTime(job)).toBe('22:00–다음 날 02:30')
   })
 })
+
+it('표시 업종인 음식점과 내부 분류인 식당 모두 검색한다',()=>{
+  const job={...base,industry:'식당' as const}
+  for(const query of ['음식점','식당'])expect(filterJobs([job],query,defaultFilters,new Date())).toHaveLength(1)
+})

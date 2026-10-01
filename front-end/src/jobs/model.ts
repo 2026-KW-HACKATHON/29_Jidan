@@ -16,7 +16,7 @@ export function filterJobs(jobs: readonly Job[], query: string, filters: JobFilt
   const terms = query.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean)
   return jobs.filter(job => {
     if (filters.industry !== '전체' && job.industry !== filters.industry) return false
-    const haystack = `${job.title} ${job.storeName} ${job.industry} ${job.tasks.join(' ')}`.toLocaleLowerCase()
+    const haystack = `${job.title} ${job.storeName} ${job.industry==='식당'?'음식점 식당':job.industry} ${job.tasks.join(' ')}`.toLocaleLowerCase()
     if (!terms.every(term => haystack.includes(term))) return false
     if (filters.date === '오늘' && job.date !== first) return false
     if (filters.date === '내일' && job.date !== dateKey(addDays(today, 1))) return false
