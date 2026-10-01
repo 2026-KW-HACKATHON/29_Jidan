@@ -3,7 +3,7 @@ export const workParts=['평일 오픈','평일 마감','주말 오픈','주말 
 export const experienceOptions=['무관','3개월 이상','6개월 이상','1년 이상'] as const
 export const paymentOptions=['근무 당일','근무 다음 날','별도 협의'] as const
 export type JobDraft={title:string;description:string;part:typeof workParts[number]|'';date:string;start:number;end:number;nextDay:boolean;experience:typeof experienceOptions[number];qualifications:string;pay:string;payment:typeof paymentOptions[number]|'';payNotice:string}
-export const emptyJobDraft:JobDraft={title:'',description:'',part:'',date:'',start:-1,end:-1,nextDay:false,experience:'무관',qualifications:'',pay:'',payment:'',payNotice:''}
+export const emptyJobDraft:JobDraft={title:'',description:'',part:'평일 오픈',date:'',start:-1,end:-1,nextDay:false,experience:'무관',qualifications:'',pay:'',payment:'근무 당일',payNotice:''}
 export type OwnerJob=Job & {status:'recruiting'|'closed'|'selected';part:string;description:string;qualifications:string;payment:string;payNotice:string}
 export type OwnerJobService={create:(draft:JobDraft,signal:AbortSignal)=>Promise<OwnerJob>}
 export const unavailableOwnerJobs:OwnerJobService={create:async()=>{throw Error('OWNER_JOBS_NOT_CONFIGURED')}}
