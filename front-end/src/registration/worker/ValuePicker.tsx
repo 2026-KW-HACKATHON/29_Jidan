@@ -17,10 +17,10 @@ export function ValuePicker({ title, value, type, min, max, overnight, current, 
   const maxMonth = year === Number(upper.slice(0, 4)) ? Number(upper.slice(5, 7)) : 12
   const selectedMonth = Math.max(minMonth, Math.min(maxMonth, month))
   return <PickerDialog className="worker-value-picker" title={title} onClose={onClose}><div className="worker-picker-content">
-  {current !== undefined && <label className="worker-picker-option"><input type="checkbox" checked={stillWorking} onChange={e => setStillWorking(e.target.checked)} /><span className="worker-picker-checkbox" aria-hidden="true" />현재 근무 중</label>}
   <div className="worker-picker-columns">
     {type === 'month' ? <><WheelPicker label="연도" value={year} min={Number(lower.slice(0, 4))} max={Number(upper.slice(0, 4))} suffix="년" change={setYear} disabled={stillWorking} /><WheelPicker label="월" value={selectedMonth} min={minMonth} max={maxMonth} suffix="월" change={setMonth} disabled={stillWorking} /></> : <><WheelPicker label="시 · 24시간제" value={Math.floor(time / 60)} min={0} max={23} suffix="시" change={h => setTime(h * 60 + time % 60)} disabled={nextDay} /><div className={`ds-wheel-column${nextDay ? ' is-disabled' : ''}`}><p>분</p><div className="worker-minute-choices">{[0, 30].map(m => <Button key={m} intent="secondary" aria-pressed={time % 60 === m} disabled={nextDay} onClick={() => setTime(Math.floor(time / 60) * 60 + m)}>{String(m).padStart(2, '0')}분</Button>)}</div></div></>}
   </div>
+  {current !== undefined && <label className="worker-picker-option"><input type="checkbox" checked={stillWorking} onChange={e => setStillWorking(e.target.checked)} /><span className="worker-picker-checkbox" aria-hidden="true" />현재 근무 중</label>}
   {overnight !== undefined && <label className="worker-picker-option"><input type="checkbox" checked={nextDay} onChange={e => setNextDay(e.target.checked)} /><span className="worker-picker-checkbox" aria-hidden="true" />다음 날 종료</label>}
   <div className="worker-picker-action"><Button onClick={() => { onSave(type === 'month' ? `${year.toString().padStart(4, '0')}-${String(selectedMonth).padStart(2, '0')}` : String(time), type === 'month' ? stillWorking : nextDay); onClose() }}>선택 완료</Button></div>
   </div></PickerDialog>
