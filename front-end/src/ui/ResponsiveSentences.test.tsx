@@ -1,0 +1,5 @@
+import {act,cleanup,render} from '@testing-library/react'
+import {afterEach,expect,it,vi} from 'vitest'
+import {ResponsiveSentences} from './ResponsiveSentences'
+afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals()})
+it('모든 문장이 맞으면 개행을 유지하고 하나라도 넘치면 이어서 자연 개행한다',()=>{let width=300;let resize!:()=>void;vi.stubGlobal('ResizeObserver',class{constructor(fn:()=>void){resize=fn}observe(){}disconnect(){}});vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){return {width:this.classList.contains('responsive-sentences')?width:this.parentElement?.classList.contains('sentence-measure')?250:0} as DOMRect});const {container}=render(<ResponsiveSentences lines={['첫 문장.','둘째 문장.']}/>);expect(container.querySelectorAll('br')).toHaveLength(1);width=249;act(resize);expect(container.querySelectorAll('br')).toHaveLength(0);expect(container.querySelector('.responsive-sentences > span:last-child')).toHaveTextContent('첫 문장. 둘째 문장.');width=300;act(resize);expect(container.querySelectorAll('br')).toHaveLength(1)})

@@ -17,7 +17,7 @@ const initialDraft = (): DraftState => ({ draft: { ...emptyDraft }, step: 1, req
 const messages = {
   unavailable: ['가입 정보를 불러올 수 없어요', '잠시 후 다시 시도해 주세요.'],
   expired: ['다시 로그인해 주세요', '가입 세션이 만료됐어요. 다시 로그인한 뒤 진행해 주세요.'],
-  duplicate: ['이미 등록된 매장이에요', '중복 등록하지 않고 운영자에게 관리 권한을 문의해 주세요.'],
+  duplicate: ['이미 등록된 매장이에요', '중복 등록하지 말고 운영자에게 관리 권한을 문의해 주세요.'],
   validation: ['입력 내용을 확인해 주세요', '입력 내용을 수정한 뒤 다시 신청해 주세요.'],
   network: ['요청을 처리하지 못했어요', '입력 내용은 유지돼요. 잠시 후 다시 시도해 주세요.'],
 } as const
