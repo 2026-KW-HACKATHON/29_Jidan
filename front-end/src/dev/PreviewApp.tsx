@@ -3,6 +3,7 @@ import { MobileLayout } from '../ui/MobileLayout'
 import { AuthFlow } from '../auth/AuthFlow'
 import { Fragment, lazy, Suspense } from 'react'
 import { handlePreviewLink, navigatePreview, usePreviewLocation } from './navigation'
+const Invitations = lazy(() => import('./InvitationsPreview'))
 const StoreManagement = lazy(() => import('./StoreManagementPreview'))
 const Jobs = lazy(() => import('./JobsPreview'))
 const Components = lazy(() => import('./ComponentPreview'))
@@ -16,6 +17,7 @@ const Employment = lazy(() => import('./EmploymentPreview'))
 const ProfilePreview = lazy(() => import('./WorkerProfilePreview'))
 import './PreviewApp.css'
 const groups=[
+ {title:'근무자 초대',links:[['근무자 초대 생성','/__invitations?view=create'],['초대 수락','/__invitations?view=accept'],['초대 생성 실패','/__invitations?view=create&fail=1']]},
  {title:'매장·근무자 관리',links:[['매장 관리 홈','/__store/manage'],['근무자 목록','/__store/manage?view=workers'],['김지수 상세','/__store/manage?view=worker&id=jisu'],['최유진 상세·만료 예정','/__store/manage?view=worker&id=yujin'],['근무자 목록 빈 상태','/__store/manage?view=workers&empty=1'],['접근 종료 실패','/__store/manage?view=worker&id=jisu&fail=1']]},
  {title:'대타 공고',links:[['공고 탐색','/__jobs'],['검색 결과 없음','/__jobs?empty=1'],['공고 필터','/__jobs?filter=1'],['공고 상세','/__jobs?view=detail&id=cafe'],['다음 날 종료 공고','/__jobs?view=detail&id=night'],['지원 자기소개 작성','/__jobs?view=apply&id=cafe&case=empty'],['지원 작성 완료','/__jobs?view=apply&id=cafe&case=written'],['지원 완료','/__jobs?view=complete&id=cafe&case=complete'],['지원 철회 확인','/__jobs?view=complete&id=cafe&case=withdraw'],['지원 실패·재시도','/__jobs?view=apply&id=cafe&case=submit-fail&fail=1'],['철회 실패·재시도','/__jobs?view=complete&id=cafe&case=withdraw-fail&fail=1']]},
  {title:'공통·로그인',links:[['공통 UI·오버레이','/__ui'],['Google 로그인','/__preview/login'],['가입 유형 선택','/__auth/signup']]},
@@ -27,7 +29,8 @@ function ScreenList({current}:{current:string}) {
  return <>{groups.map(group=><section key={group.title}><h3>{group.title}</h3>{group.links.map(([title,url])=><a key={url} href={url} aria-current={url===current?'page':undefined}>{title}</a>)}</section>)}</>
 }
 export default function PreviewApp(){const current=usePreviewLocation();const path=current.split('?')[0];let content
- if(path==='/__store/manage')content=<StoreManagement/>
+ if(path==='/__invitations')content=<Invitations/>
+ else if(path==='/__store/manage')content=<StoreManagement/>
  else if(path==='/__jobs')content=<Jobs/>
  else if(path==='/__ui')content=<Components/>
  else if(path==='/__preview/login')content=<AuthFlow path="/login" search="" navigate={()=>navigatePreview('/__auth/signup')} service={{read:async()=>({kind:'unavailable'}),startGoogle:async()=>{throw Error('MOCK')}}} renderHome={()=>null} renderRegistration={()=>null}/>
@@ -40,5 +43,5 @@ export default function PreviewApp(){const current=usePreviewLocation();const pa
  else if(path==='/__store/applicant')content=<Applicant/>
  else if(path==='/__store/employment')content=<Employment/>
  else content=<MobileLayout header={<AppBar title="화면 탐색" onBack={()=>navigatePreview("/__preview")}/>}><div className="preview-dashboard"><p>샘플 데이터로 구현된 화면을 확인합니다. 실제 로그인·등록·권한 변경은 수행하지 않습니다.</p><ScreenList current={current}/></div></MobileLayout>
- return <div className="preview-workbench" onClick={handlePreviewLink}><nav className="preview-sidebar" aria-label="미리보기 화면 목록"><h2><a href="/__preview">화면 목록</a></h2><p className="preview-note">검수 전용 · 샘플 데이터<br/>API 미연결</p><ScreenList current={current}/></nav><div className="preview-host"><aside className="preview-banner"><a href="/__preview">미리보기 · 화면 목록</a><span>샘플 데이터 / API 미연결</span></aside><Suspense fallback={<p role="status">미리보기 화면을 불러오고 있어요.</p>}><Fragment key={path==='/__jobs' ? `${path}:${new URLSearchParams(current.split('?')[1]).get('empty')}:${new URLSearchParams(current.split('?')[1]).get('filter')}:${new URLSearchParams(current.split('?')[1]).get('case')}` : path==='/__store/manage' ? `${path}:${new URLSearchParams(current.split('?')[1]).has('empty')}` : current}>{content}</Fragment></Suspense></div></div>
+ return <div className="preview-workbench" onClick={handlePreviewLink}><nav className="preview-sidebar" aria-label="미리보기 화면 목록"><h2><a href="/__preview">화면 목록</a></h2><p className="preview-note">검수 전용 · 샘플 데이터<br/>API 미연결</p><ScreenList current={current}/></nav><div className="preview-host"><aside className="preview-banner"><a href="/__preview">미리보기 · 화면 목록</a><span>샘플 데이터 / API 미연결</span></aside><Suspense fallback={<p role="status">미리보기 화면을 불러오고 있어요.</p>}><Fragment key={path==='/__jobs' ? `${path}:${new URLSearchParams(current.split('?')[1]).get('empty')}:${new URLSearchParams(current.split('?')[1]).get('filter')}:${new URLSearchParams(current.split('?')[1]).get('case')}` : path==='/__invitations' ? `${path}:${new URLSearchParams(current.split('?')[1]).has('fail')}` : path==='/__store/manage' ? `${path}:${new URLSearchParams(current.split('?')[1]).has('empty')}` : current}>{content}</Fragment></Suspense></div></div>
 }
