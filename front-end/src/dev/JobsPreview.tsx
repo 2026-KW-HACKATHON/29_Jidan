@@ -22,8 +22,8 @@ export default function JobsPreview() {
   const home=()=>navigatePreview('/__home/worker')
   return <div className="jobs-preview-flow">
     <div className="jobs-preview-browse" hidden={!!job && ['detail','apply','complete'].includes(view || '')}><JobBrowse jobs={displayedJobs} today={jobToday} onSelect={job=>route('detail',job.id)} onHome={home} onProfile={()=>navigatePreview('/__profile/worker')} initialQuery={params.has('empty')?'없는 매장':''} initialFilterOpen={params.has('filter') && !view}/></div>
-    {job && (view==='detail' || view==='apply' && !current || view==='complete' && !current) && <JobDetail key={job.id} job={displayedJobs.find(value=>value.id===job.id)!} onBack={browse} onApply={()=>route(current?'complete':'apply',job.id)} applyLabel={current?'지원 확인하기':'지원하기'}/>}
-    {view==='apply' && job && !current && <ApplicationDialog key={job.id} job={job} service={service} onClose={()=>route('detail',job.id)} initialIntroduction={params.get('case')==='written'?exampleIntroduction:''} onSuccess={application=>{setApplications(previous=>({...previous,[job.id]:application}));route('complete',job.id)}}/>}
+    {job && (view==='detail' || view==='apply' && !current || view==='complete' && !current) && <JobDetail key={`detail-${job.id}`} job={displayedJobs.find(value=>value.id===job.id)!} onBack={browse} onApply={()=>route(current?'complete':'apply',job.id)} applyLabel={current?'지원 확인하기':'지원하기'}/>}
+    {view==='apply' && job && !current && <ApplicationDialog key={`application-${job.id}`} job={job} service={service} onClose={()=>route('detail',job.id)} initialIntroduction={params.get('case')==='written'?exampleIntroduction:''} onSuccess={application=>{setApplications(previous=>({...previous,[job.id]:application}));route('complete',job.id)}}/>}
     {job && current && (view==='complete' || view==='apply') && <ApplicationComplete key={current.id} application={current} service={service} onBack={browse} onHome={home} initialWithdrawOpen={params.get('case')==='withdraw' || params.get('case')==='withdraw-fail'} onWithdrawn={()=>{setApplications(previous=>{const next={...previous};delete next[job.id];return next});browse()}}/>}
   </div>
 }

@@ -38,6 +38,7 @@ it('샘플 지원 완료·철회는 공고 탐색으로 복귀하고 상태만 �
   fireEvent.change(dialog.getByLabelText('지원자 자기소개 *'),{target:{value:'음료 제조 경험이 있어요'}})
   fireEvent.click(dialog.getByRole('button',{name:'지원 완료하기'}))
   await screen.findByRole('heading',{name:'지원이 완료됐어요'})
+  expect(screen.queryByRole('heading',{name:'공고 상세'})).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button',{name:'신청 철회하기'}))
   fireEvent.click(screen.getByRole('button',{name:'지원 철회'}))
   await waitFor(()=>expect(screen.getByRole('heading',{name:'공고 찾기'})).toBeVisible())
