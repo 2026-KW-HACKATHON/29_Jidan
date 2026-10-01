@@ -1,4 +1,6 @@
 .application-dialog header h2 { font-size:22px; }
+/* 스크롤 경계 바깥으로 나오는 2px outline과 3px offset 공간 확보 */
+.application-dialog .ds-picker-body { padding:5px; margin:-5px; }
 .application-content { display:flex; flex-direction:column; gap:16px; }
 .application-content > .ds-button { width:100%; }
 .application-job-summary { display:flex; flex-direction:column; gap:4px; padding:12px; border-radius:8px; background:var(--ds-primary-surface); }
