@@ -42,16 +42,17 @@
 .worker-cell[aria-pressed=true] { background: var(--ds-primary); }
 .worker-grid-label { color: var(--ds-primary-strong); font-size: 13px; font-weight: 700; line-height: 20px; margin-top: 8px !important; }
 .worker-time-help { font-size: 13px; line-height: 20px; color: var(--ds-secondary); }
-.worker-complete .ds-mobile-body { padding-top: 48px; }
-.worker-complete .worker-intro::before { content: ''; display: none; }
+.worker-complete .ds-mobile-body { padding-top: 24px; }
+.worker-complete .worker-content { gap: 24px; }
+.worker-complete .worker-card { gap: 8px; }
 .worker-complete .worker-card h3 { font-size: 19px; line-height: 29px; }
-.worker-status { width: 48px; height: 48px; border-radius: 9999px; background: var(--ds-information-surface); display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+.worker-status { width: 48px; height: 48px; border-radius: 9999px; background: var(--ds-information-surface); display: flex; align-items: center; justify-content: center; margin-bottom: 0; }
 .worker-fields-boundary { margin: 0; padding: 0; border: 0; min-width: 0; }
 /* Figma uses integer line boxes in the 58px compact app bar. */
 .worker-signup .ds-app-bar h1 { line-height: 26px; }
 .worker-signup .ds-app-bar button img { position: absolute; left: -0.85px; top: -0.85px; width: 8.7px; height: 15.7px; max-width: none; }
 .worker-signup .ds-field-select img { width: 7.53333px; height: 13.3667px; margin-left: -0.85px; margin-right: -0.85px; max-width: none; }
-.worker-status { margin-bottom: 12px; }
+.worker-status { margin-bottom: 0; }
 
 .worker-summary-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
 .worker-summary-row > p { min-width: 0; overflow-wrap: anywhere; }
