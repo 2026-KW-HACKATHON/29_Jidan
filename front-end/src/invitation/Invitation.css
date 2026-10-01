@@ -1,0 +1,23 @@
+.invitation-screen { background:var(--ds-primary-surface); }
+.invitation-screen .ds-mobile-body { padding:8px 24px 24px; }
+.invitation-content { display:flex; flex-direction:column; gap:24px; min-width:0; }
+.invitation-heading { display:flex; flex-direction:column; gap:8px; }
+.invitation-heading h2 { font-size:24px; font-weight:700; letter-spacing:1px; }
+.invitation-heading p { color:var(--ds-secondary); }
+.invitation-card { display:flex; flex-direction:column; gap:16px; min-width:0; background:var(--ds-white); padding:20px; border-radius:12px; box-shadow:var(--ds-shadow); }
+.invitation-card h3 { font-size:15px; }
+.invitation-card .invitation-store-title { font-size:19px; }
+.invitation-card p { color:var(--ds-secondary); }
+.invitation-card small { font-size:13px; color:var(--ds-secondary); }
+.invitation-card dl { margin:0; display:flex; flex-direction:column; gap:16px; }
+.invitation-card dl > div { display:flex; gap:16px; }
+.invitation-card dt { flex:1; color:var(--ds-secondary); }
+.invitation-card dd { flex:1; margin:0; text-align:right; }
+.invitation-create .ds-mobile-body { display:flex; }
+.invitation-create-content { display:flex; flex-direction:column; gap:24px; flex:1; min-width:0; }
+.invitation-create-bottom { margin-top:auto; padding-top:24px; display:flex; flex-direction:column; gap:24px; }
+.invitation-actions { display:flex; gap:12px; }
+.invitation-actions > button { flex:1; min-width:0; }
+.invitation-notice { color:var(--ds-secondary); font-size:13px; padding:12px; }
+.invitation-error { color:var(--ds-danger); font-size:13px; }
+.invitation-accept .ds-mobile-footer { padding-bottom:max(24px,env(safe-area-inset-bottom,0px)); }
