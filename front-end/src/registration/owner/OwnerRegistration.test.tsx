@@ -183,3 +183,15 @@ it('최초 가입 정보 조회가 만료되면 오류를 닫아도 재로그인
   expect(onExpired).toHaveBeenCalledOnce()
   expect(load).toHaveBeenCalledTimes(1)
 })
+
+it.each(['점주 정보 수정', '매장 정보 수정'])('확인 화면의 %s 취소는 원본과 저장된 초안을 복원한다', async edit => {
+ ready(); setup()
+ fireEvent.click(await screen.findByRole('button', {name:edit}))
+ const label=edit==='점주 정보 수정'?'점주 성명 *':'매장명 *'
+ fireEvent.change(screen.getByLabelText(label),{target:{value:'취소할 변경'}})
+ expect(sessionStorage.getItem('jidan.owner-draft.v1')).not.toContain('취소할 변경')
+ fireEvent.click(screen.getByRole('button',{name:'뒤로 가기'}))
+ expect(screen.getByText(valid.name)).toBeVisible()
+ expect(screen.getByText(valid.storeName)).toBeVisible()
+ expect(screen.queryByText('취소할 변경')).not.toBeInTheDocument()
+})

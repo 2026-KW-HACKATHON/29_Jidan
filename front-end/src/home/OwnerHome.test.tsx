@@ -5,7 +5,7 @@ import { OwnerHome } from './OwnerHome'
 it('uses session identity and shows honest empty states without API data', () => {
   render(<OwnerHome displayName="이하늘" initialDate={new Date(2026, 8, 25)} />)
   expect(screen.getByRole('heading', { name: '안녕하세요, 이하늘 점주님' })).toBeInTheDocument()
-  expect(screen.getByText('등록된 매장이 없어요.')).toBeInTheDocument()
+  expect(screen.getByText('매장 정보를 불러오지 못했어요.')).toBeInTheDocument()
   expect(screen.getByText('모집 중인 공고가 없어요.')).toBeInTheDocument()
   expect(screen.getByText('이 달에 일정이 없어요.')).toBeInTheDocument()
   expect(screen.queryByText('명랑핫도그 광운대점')).not.toBeInTheDocument()

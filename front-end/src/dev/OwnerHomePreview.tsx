@@ -18,5 +18,5 @@ const sample: OwnerHomeData = {
 }
 
 export default function OwnerHomePreview() {
-  return <OwnerHome displayName="000" data={new URLSearchParams(location.search).has('empty') ? {} : sample} initialDate={new Date(2025, 6, 19)} />
+  return <OwnerHome displayName="000" data={new URLSearchParams(location.search).has('empty') ? { store: sample.store } : sample} initialDate={new Date(2025, 6, 19)} />
 }
