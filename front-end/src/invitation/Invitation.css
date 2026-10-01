@@ -21,3 +21,19 @@
 .invitation-notice { color:var(--ds-secondary); font-size:13px; padding:12px; }
 .invitation-error { color:var(--ds-danger); font-size:13px; }
 .invitation-accept .ds-mobile-footer { padding-bottom:max(24px,env(safe-area-inset-bottom,0px)); }
+.invitation-management .invitation-content { gap:16px; }
+.invitation-management .invitation-heading h2 { font-size:22px; letter-spacing:0; }
+.invitation-list { display:flex; flex-direction:column; gap:16px; }
+.invitation-list-card { padding:16px; gap:12px; }
+.invitation-card-heading { display:flex; align-items:center; gap:8px; }
+.invitation-card-heading > strong { flex:1; min-width:0; overflow-wrap:anywhere; }
+.invitation-badge { flex:none; border-radius:4px; padding:4px 8px; font-size:13px; font-weight:700; background:var(--ds-surface); color:var(--ds-secondary); }
+.invitation-badge-pending { background:var(--ds-primary-surface); color:var(--ds-primary); }
+.invitation-badge-accepted { background:#eef6ee; color:#28702f; }
+.invitation-dates { display:flex; flex-direction:column; gap:8px; font-size:13px; }
+.invitation-history { font-size:15px; }
+.invitation-empty { box-shadow:none; }
+.invitation-empty h3 { font-size:17px; }
+.invitation-management .ds-mobile-footer { padding-bottom:max(24px,env(safe-area-inset-bottom,0px)); }
+
+.invitation-history-secondary { font-size:13px; }
