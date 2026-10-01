@@ -31,7 +31,7 @@ export function OwnerHome({ displayName, data = {}, initialDate, onManage, onCre
   const jobs = data.jobs || []
   const events = eventsInView(data.events || [], visibleMonth, selectedDate, selectedDate ? undefined : 3)
   return <>
-    <HomeShell role="owner" notificationCount={data.notificationCount}>
+    <HomeShell role="owner" onJobs={onJobs} notificationCount={data.notificationCount}>
       <div className="home-greeting"><h2>안녕하세요, {displayName} 점주님</h2><p>오늘의 매장 운영 현황을 확인하세요.</p></div>
       <section className="home-section owner-home-store-section" aria-label="관리 매장">
         <div className="owner-home-store home-card"><p>관리 매장</p>
