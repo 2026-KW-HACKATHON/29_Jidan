@@ -6,4 +6,4 @@ const fixture:WorkerDraft={name:'김지수',phone:'010-1234-5678',birth:'2001-03
 const page=step==='work'||step==='career'?2:step==='time'?3:step==='review'?'review':step==='complete'?'complete':1
 const service:WorkerService={identity:async()=>({email:'member@example.com'}),submit:async()=>({id:'preview-worker-receipt',status:'COMPLETE'})}
 /** DEV-only fixtures never set cookies or send registration requests. Normal entry starts empty. */
-export default function WorkerRegistrationPreview(){return <WorkerRegistration service={service} initialDraft={step?fixture:emptyWorker} initialPage={page} onBack={()=>location.assign('/__auth/signup')} onExpired={()=>location.assign('/__auth/signup')} onHome={()=>location.assign('/home')} />}
+export default function WorkerRegistrationPreview(){return <WorkerRegistration service={service} profileService={{read:async()=>({draft:fixture,email:"member@example.com"}),save:async()=>{}}} initialDraft={step?fixture:emptyWorker} initialPage={page} onBack={()=>location.assign('/__auth/signup')} onExpired={()=>location.assign('/__auth/signup')} onHome={()=>location.assign('/__home/worker')} />}
