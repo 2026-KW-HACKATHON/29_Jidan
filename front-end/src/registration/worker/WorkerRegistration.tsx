@@ -15,6 +15,7 @@ type Editor = {kind:'career'|'time';index:number}|null
 export function WorkerRegistration({ service=workerService, onBack, onExpired, onHome, initialDraft=emptyWorker, initialPage=1, profileService }: { profileService?:ProfileService;service?:WorkerService;onBack:()=>void;onExpired:()=>void;onHome:()=>void;initialDraft?:WorkerDraft;initialPage?:Page }) {
   const [draft,setDraft]=useState(initialDraft),[page,setPage]=useState<Page>(initialPage),[editor,setEditor]=useState<Editor>(null),[editing,setEditing]=useState(false)
   const [email,setEmail]=useState(''),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[errors,setErrors]=useState<Errors>({}),[message,setMessage]=useState(''),[expired,setExpired]=useState(false),[loadVersion,setLoadVersion]=useState(0)
+  const editSnapshot=useRef<{draft:WorkerDraft;key:string;dirty:boolean}|null>(null)
   const lock=useRef(false), request=useRef<AbortController|null>(null), key=useRef(crypto.randomUUID()), alive=useRef(true),dirty=useRef(false)
   useEffect(()=>{
     alive.current=true;const controller=new AbortController();request.current=controller
@@ -25,7 +26,7 @@ export function WorkerRegistration({ service=workerService, onBack, onExpired, o
   useEffect(()=>{const warn=(e:BeforeUnloadEvent)=>{if(dirty.current&&page!=='complete'&&page!=='profile'){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[page])
   useEffect(()=>{document.querySelector('.worker-signup .ds-mobile-body')?.scrollTo?.(0,0)},[page,editor])
   function change(patch:Partial<WorkerDraft>) {if(lock.current)return;setDraft(d=>({...d,...patch}));key.current=crypto.randomUUID();dirty.current=true;setErrors({})}
-  function back() {if(lock.current)return;if(editor){setEditor(null);return}if(page==='complete'){onHome();return}if(page==='profile'){setPage('complete');return}if(editing){setEditing(false);setPage('review');return}if(page===1)onBack();else setPage(page==='review'?3:page===3?2:1)}
+  function back() {if(lock.current)return;if(editor){setEditor(null);return}if(page==='complete'){onHome();return}if(page==='profile'){setPage('complete');return}if(editing){if(editSnapshot.current){setDraft(editSnapshot.current.draft);key.current=editSnapshot.current.key;dirty.current=editSnapshot.current.dirty}editSnapshot.current=null;setErrors({});setEditing(false);setPage('review');return}if(page===1)onBack();else setPage(page==='review'?3:page===3?2:1)}
   async function next() {
     if(lock.current||!ready)return
     if(page==='complete'){onHome();return}if(page==='profile'){setPage('complete');return}
@@ -49,7 +50,7 @@ export function WorkerRegistration({ service=workerService, onBack, onExpired, o
     {page===1&&<WorkerBasic draft={draft} email={email} errors={errors} change={change} blur={field=>setErrors(e=>({...e,[field]:validateWorker(draft,1)[field]||''}))}/>}
     {page===2&&<WorkerExperience draft={draft} errors={errors} change={change} edit={index=>setEditor({kind:'career',index})}/>}
     {page===3&&<WorkerAvailability values={draft.availability} error={errors.availability} change={availability=>change({availability})} edit={index=>setEditor({kind:'time',index})}/>}
-    {page==='review'&&<WorkerReview draft={draft} email={email} edit={page==='review'?step=>{setEditing(true);setErrors({});setPage(step)}:undefined}/>}
+    {page==='review'&&<WorkerReview draft={draft} email={email} edit={page==='review'?step=>{editSnapshot.current={draft:structuredClone(draft),key:key.current,dirty:dirty.current};setEditing(true);setErrors({});setPage(step)}:undefined}/>}
     {page==='complete'&&<WorkerCompleteContent draft={draft} onProfile={()=>setPage('profile')}/>}
     </fieldset>
   </WorkerFrame>{modal}</>
