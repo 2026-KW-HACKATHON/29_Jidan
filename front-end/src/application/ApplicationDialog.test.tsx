@@ -40,3 +40,17 @@ it('닫힌 화면에는 늦은 완료 결과를 반영하지 않는다',async()=
   await act(async()=>resolve({id:'1',job,introduction:'지원해요'}))
   expect(signal?.aborted).toBe(true);expect(onSuccess).not.toHaveBeenCalled()
 })
+it('응답 없는 서비스는 대기 종료 후 입력을 유지하고 재시도할 수 있다',async()=>{
+  vi.useFakeTimers()
+  try {
+    const submit=vi.fn<ApplicationService['submit']>().mockImplementationOnce(()=>new Promise(()=>{})).mockResolvedValue({id:'1',job,introduction:'지원해요'})
+    const {view,onSuccess}=mount({submit,withdraw:vi.fn()})
+    fireEvent.change(screen.getByLabelText('지원자 자기소개 *'),{target:{value:'지원해요'}})
+    fireEvent.click(screen.getByRole('button',{name:'지원 완료하기'}))
+    await act(async()=>{await vi.advanceTimersByTimeAsync(10000)})
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(screen.getByRole('button',{name:'지원 완료하기'})).toBeEnabled()
+    fireEvent.click(screen.getByRole('button',{name:'지원 완료하기'}));await act(async()=>{})
+    expect(onSuccess).toHaveBeenCalledOnce();view.unmount()
+  } finally {vi.useRealTimers()}
+})
