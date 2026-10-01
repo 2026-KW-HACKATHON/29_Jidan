@@ -13,4 +13,4 @@ export function WorkerReview({ draft, email, edit }: { draft: WorkerDraft; email
 export function WorkerCompleteContent({ draft, onProfile }: { draft:WorkerDraft;onProfile?:()=>void }) {
   return <><article className="worker-card"><h3>{draft.name} 님의 근무 프로필</h3><p className="worker-muted">{draft.experience}</p>{draft.availability.map(a=><p className="worker-muted" key={a.id}>{daysText(a.days)}　{rangeText(a)}</p>)}</article>{onProfile && <Button intent="secondary" onClick={onProfile}>내 프로필 보기</Button>}</>
 }
-export function WorkerStatusIcon() { return <div className="worker-status"><img src={information} alt="" width="21.7" height="21.7" /></div> }
+export function WorkerStatusIcon() { return <div className="worker-status"><img src={information} alt="" width="21.7329" height="24" /></div> }
