@@ -1,3 +1,4 @@
+import { navigatePreview } from './navigation'
 import { WorkerArea } from '../profile/WorkerArea'
 import { useState } from 'react'
 import { createProfilePreviewService } from './profilePreviewService'
@@ -21,5 +22,5 @@ const sample: WorkerHomeData = {
 
 export default function WorkerHomePreview() {
   const [service]=useState(()=>createProfilePreviewService())
-  return <WorkerArea service={service} displayName="김지수" data={new URLSearchParams(location.search).has('empty') ? {} : sample} initialDate={new Date(2025, 6, 19)} />
+  return <WorkerArea onJobs={()=>navigatePreview('/__jobs')} service={service} displayName="김지수" data={new URLSearchParams(location.search).has('empty') ? {} : sample} initialDate={new Date(2025, 6, 19)} />
 }
