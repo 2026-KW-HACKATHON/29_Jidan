@@ -16,7 +16,7 @@ export function WorkerRegistration({ service=workerService, onBack, onExpired, o
   const [draft,setDraft]=useState(initialDraft),[page,setPage]=useState<Page>(initialPage),[editor,setEditor]=useState<Editor>(null),[editing,setEditing]=useState(false)
   const [email,setEmail]=useState(''),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[errors,setErrors]=useState<Errors>({}),[message,setMessage]=useState(''),[expired,setExpired]=useState(false),[loadVersion,setLoadVersion]=useState(0)
   const editSnapshot=useRef<{draft:WorkerDraft;key:string;dirty:boolean}|null>(null)
-  const lock=useRef(false), request=useRef<AbortController|null>(null), key=useRef(crypto.randomUUID()), alive=useRef(true),dirty=useRef(false)
+  const lock=useRef(false), request=useRef<AbortController|null>(null), key=useRef<string>(crypto.randomUUID()), alive=useRef(true),dirty=useRef(false)
   useEffect(()=>{
     alive.current=true;const controller=new AbortController();request.current=controller
     const timer=setTimeout(()=>{controller.abort();if(alive.current)setMessage('가입 정보를 불러오지 못했어요. 다시 시도해 주세요.')},10000)
