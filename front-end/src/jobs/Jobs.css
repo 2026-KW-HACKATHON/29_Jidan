@@ -35,7 +35,10 @@
 .jobs-actions > button { flex:1; min-width:0; }
 @media(max-width:350px) { .jobs-card-heading { flex-wrap:wrap; } .jobs-card-heading > strong { flex-basis:calc(100% - 70px); } }
 .jobs-detail .jobs-content > h2 { font-size:24px; letter-spacing:1px; }
-.jobs-detail .ds-mobile-footer { padding:12px 24px max(16px,env(safe-area-inset-bottom,0px)); }
+.jobs-detail { position:relative; }
+.jobs-detail .ds-mobile-body { padding-bottom:calc(48px + 12px + max(16px,env(safe-area-inset-bottom,0px)) + 24px); }
+.jobs-detail .ds-mobile-footer { position:absolute; inset:auto 0 0; padding:12px 24px max(16px,env(safe-area-inset-bottom,0px)); background:transparent; pointer-events:none; }
+.jobs-detail .ds-mobile-footer > * { pointer-events:auto; }
 .jobs-detail-card { display:flex; flex-direction:column; align-items:stretch; gap:16px; }
 .jobs-detail-card h3 { font-size:19px; }
 .jobs-detail-card .jobs-pay-title { font-size:22px; color:var(--ds-primary-strong); }
