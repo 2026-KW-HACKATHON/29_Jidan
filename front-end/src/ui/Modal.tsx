@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Button } from './Button'
 import warningIcon from './assets/warning.svg'
 import errorIcon from './assets/error.svg'
@@ -14,6 +14,9 @@ type ModalProps = {
   cancelLabel?: string
   busy?: boolean
   showCancel?: boolean
+  showIcon?: boolean
+  summary?: ReactNode
+  className?: string
   onClose: () => void
   /** Resolve to close; reject to keep the dialog open and allow retry. */
   onConfirm?: () => void | Promise<void>
@@ -23,7 +26,7 @@ export function Modal({ open, ...props }: ModalProps) {
   return open ? <OpenModal {...props} /> : null
 }
 
-function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, showCancel = false, onClose, onConfirm }: Omit<ModalProps, 'open'>) {
+function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, showCancel = false, showIcon = true, summary, className = '', onClose, onConfirm }: Omit<ModalProps, 'open'>) {
   const dialog = useRef<HTMLDialogElement>(null)
   const initialFocus = useRef<HTMLButtonElement>(null)
   const generation = useRef(0)
@@ -66,7 +69,7 @@ function OpenModal({ title, description, state = 'information', confirmLabel = '
     }
   }
 
-  return <dialog ref={dialog} className="ds-ui ds-modal" role={information ? 'dialog' : 'alertdialog'}
+  return <dialog ref={dialog} className={`ds-ui ds-modal ${className}`} role={information ? 'dialog' : 'alertdialog'}
     aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`}
     aria-busy={busy || pending || undefined} tabIndex={-1}
     onCancel={event => { event.preventDefault(); onClose() }}
@@ -80,9 +83,10 @@ function OpenModal({ title, description, state = 'information', confirmLabel = '
       buttons[next].focus()
     }}>
     <div className="ds-modal-content">
-      <div className={`ds-modal-icon ds-modal-icon-${state}`}><img src={icon} alt="" /></div>
+      {showIcon && <div className={`ds-modal-icon ds-modal-icon-${state}`}><img src={icon} alt="" /></div>}
       <div className="ds-modal-message">
         <h2 id={`${id}-title`}>{title}</h2>
+        {summary}
         <p id={`${id}-description`}>{description}</p>
         {failed && <p className="ds-modal-failure" role="alert">처리하지 못했어요. 다시 시도해 주세요.</p>}
       </div>
