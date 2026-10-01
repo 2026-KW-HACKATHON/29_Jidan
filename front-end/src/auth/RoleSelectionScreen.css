@@ -8,9 +8,9 @@
 .auth-role-card { display: flex; flex-direction: column; gap: var(--ds-space-4); padding: var(--ds-space-5); border-radius: var(--ds-radius-dialog); background: var(--ds-white); box-shadow: var(--ds-shadow); }
 .auth-role-heading { display: flex; align-items: center; gap: var(--ds-space-4); }
 .auth-role-heading h3 { font-size: var(--ds-heading); font-weight: 700; min-width: 0; }
-.auth-role-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: var(--ds-radius-dialog); background: var(--ds-primary-surface); }
-.auth-role-icon img { display: block; }
-.auth-role-worker .auth-role-icon { background: var(--ds-surface); }
+.auth-role-icon { display: grid; place-items: center; width: 60px; height: 58px; flex: none; }
+.auth-role-icon img { display: block; width: 60px; height: 58px; object-fit: cover; filter: drop-shadow(0 0 1px rgb(0 0 0 / 5%)) drop-shadow(0 1px 1px rgb(0 0 0 / 5%)); }
+
 .auth-role-card .ds-button { min-height: 52px; width: 100%; }
 .auth-role-worker .ds-button { color: var(--ds-gray-80); }
 .auth-role-hint { font-size: var(--ds-small); color: var(--ds-secondary); }
