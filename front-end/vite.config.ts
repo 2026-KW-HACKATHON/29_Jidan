@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
-    // RPi4では複数のjsdom環境によるCPU競合を抑える。
+    // RPi4에서 동시에 실행하는 jsdom 환경의 CPU 경쟁을 줄인다.
     maxWorkers: process.env.CI === 'true' ? 2 : undefined,
   },
 })
