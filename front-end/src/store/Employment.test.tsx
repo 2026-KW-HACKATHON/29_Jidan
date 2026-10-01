@@ -19,6 +19,8 @@ it('실패 후 같은 작업 키로 재시도하고 성공 후만 상태를 변�
   fireEvent.click(retry)
   const completeDialog = await screen.findByRole('dialog', { name: '접근 종료가 완료됐어요' })
   expect(screen.queryByText('재직 중')).not.toBeInTheDocument()
+  expect(document.querySelector('.employment-badge')).toHaveClass('employment-badge-ended')
+  expect(document.querySelectorAll('.employment-permission-ended')).toHaveLength(3)
   expect(screen.getByRole('button', { name: '접근 종료 완료' })).toBeDisabled()
   expect(end).toHaveBeenCalledTimes(2)
   expect(end.mock.calls[0][0]).toBe(end.mock.calls[1][0])

@@ -1,3 +1,4 @@
+import { navigatePreview } from './navigation'
 import { OwnerHome, type OwnerHomeData } from '../home/OwnerHome'
 
 const sample: OwnerHomeData = {
@@ -18,5 +19,5 @@ const sample: OwnerHomeData = {
 }
 
 export default function OwnerHomePreview() {
-  return <OwnerHome displayName="000" data={new URLSearchParams(location.search).has('empty') ? { store: sample.store } : sample} initialDate={new Date(2025, 6, 19)} />
+  return <OwnerHome onManage={()=>navigatePreview('/__store/manage')} displayName="000" data={new URLSearchParams(location.search).has('empty') ? { store: sample.store } : sample} initialDate={new Date(2025, 6, 19)} />
 }

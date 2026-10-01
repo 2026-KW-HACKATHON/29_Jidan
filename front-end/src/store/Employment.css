@@ -20,3 +20,12 @@
 
 .employment-permission strong { display:flex; align-items:center; gap:8px; }
 .employment-permission strong img { width:10.5px; height:7.5px; }
+
+.employment-worker-text { flex:1; min-width:0; }
+.employment-worker-heading { display:flex; align-items:center; gap:8px; justify-content:space-between; }
+.employment-worker-heading h2 { flex:1; min-width:0; }
+.employment-badge { flex:none; }
+.employment-card dd.employment-expiry { color:var(--ds-danger); font-weight:700; }
+
+.employment-badge-ended { color:var(--ds-danger); background:var(--ds-danger-surface); }
+.employment-permission strong.employment-permission-ended { color:var(--ds-danger); }

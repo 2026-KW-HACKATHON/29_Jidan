@@ -1,0 +1,8 @@
+import { render,screen,fireEvent } from '@testing-library/react'
+import { it,expect,vi } from 'vitest'
+import { WorkerList,StoreManagement,type ManagedWorker } from './StoreManagement'
+const worker:ManagedWorker={id:'one',name:'최유진',task:'홀 서빙',job:'홀 서빙 · 대타 근무',type:'대타 근무',start:'2025. 07. 01',expiry:'2025. 07. 26',permissions:[],status:'expiring'}
+it('선택한 근무자 원본과 만료 정보를 전달한다',()=>{const select=vi.fn();render(<WorkerList storeName="매장" workers={[worker]} onSelect={select} onBack={()=>{}}/>);fireEvent.click(screen.getByRole('button',{name:/최유진/}));expect(select).toHaveBeenCalledWith(worker);expect(screen.getByText('대타 근무 - 7월 26일까지')).toBeVisible();expect(screen.getByText('매장 · 재직 중 1명')).toBeVisible()})
+it('종료된 근무자를 목록과 재직 건수에서 제외한다',()=>{render(<WorkerList storeName="매장" workers={[{...worker,status:'ended'}]} onSelect={()=>{}} onBack={()=>{}}/>);expect(screen.getByText('매장 · 재직 중 0명')).toBeVisible();expect(screen.queryByRole('button',{name:/최유진/})).not.toBeInTheDocument();expect(screen.getByText('등록된 근무자가 없어요.')).toBeVisible()})
+it('빈 목록을 표시한다',()=>{render(<WorkerList storeName="매장" workers={[]} onSelect={()=>{}} onBack={()=>{}}/>);expect(screen.getByText('등록된 근무자가 없어요.')).toBeVisible()})
+it('홈 건수와 이동을 데이터에 맞게 표시한다',()=>{const invite=vi.fn();render(<StoreManagement storeName="매장" statistics={{jobs:3,review:5,pending:2}} workers={[worker]} pendingInvitations={2} onInvitations={invite} onWorkers={()=>{}} onHome={()=>{}} onBack={()=>{}}/>);expect(screen.getByText('재직 중 1명 · 만료 예정 1명')).toBeVisible();fireEvent.click(screen.getByRole('button',{name:/근무자 초대/}));expect(invite).toHaveBeenCalledOnce()})
