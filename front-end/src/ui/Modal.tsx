@@ -13,6 +13,7 @@ type ModalProps = {
   confirmLabel?: string
   cancelLabel?: string
   busy?: boolean
+  showCancel?: boolean
   onClose: () => void
   /** Resolve to close; reject to keep the dialog open and allow retry. */
   onConfirm?: () => void | Promise<void>
@@ -22,7 +23,7 @@ export function Modal({ open, ...props }: ModalProps) {
   return open ? <OpenModal {...props} /> : null
 }
 
-function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, onClose, onConfirm }: Omit<ModalProps, 'open'>) {
+function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, showCancel = false, onClose, onConfirm }: Omit<ModalProps, 'open'>) {
   const dialog = useRef<HTMLDialogElement>(null)
   const initialFocus = useRef<HTMLButtonElement>(null)
   const generation = useRef(0)
@@ -87,7 +88,7 @@ function OpenModal({ title, description, state = 'information', confirmLabel = '
       </div>
     </div>
     <div className="ds-modal-actions">
-      {!information && <Button ref={initialFocus} intent="secondary" onClick={onClose}>{cancelLabel}</Button>}
+      {(!information || showCancel) && <Button ref={initialFocus} intent="secondary" onClick={onClose}>{cancelLabel}</Button>}
       <Button ref={information ? initialFocus : undefined} intent={state === 'warning' ? 'danger' : 'primary'}
         busy={busy || pending} onClick={confirm}>{confirmLabel}</Button>
     </div>
