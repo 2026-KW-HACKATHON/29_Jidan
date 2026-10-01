@@ -1,0 +1,22 @@
+.employment { background:var(--ds-primary-surface); }
+.employment .ds-mobile-body { display:flex; flex-direction:column; gap:24px; padding:16px 24px; }
+.employment-card { display:flex; flex-direction:column; align-items:flex-start; gap:24px; padding:20px; border-radius:12px; background:white; box-shadow:var(--ds-shadow); }
+.employment-worker { display:flex; gap:16px; align-items:center; width:100%; }
+.employment-worker > .employment-character { display:block; width:60px; height:60px; object-fit:cover; flex:none; filter:drop-shadow(0 4px 4px rgb(0 0 0 / 8%)) drop-shadow(0 0 1px rgb(0 0 0 / 5%)); }
+.employment-worker h2 { font-size:19px; line-height:29px; }
+.employment-worker p { font-size:13px; line-height:20px; color:var(--ds-secondary); margin-top:4px; }
+.employment-badge { font-size:13px; line-height:20px; color:#28702f; background:#eef6ee; padding:4px 8px; border-radius:4px; }
+.employment-card dl { margin:0; width:100%; display:flex; flex-direction:column; gap:20px; }
+.employment-card dl > div { display:flex; gap:16px; }
+.employment-card dt,.employment-card dd { flex:1; margin:0; line-height:23px; }
+.employment-card dt { color:var(--ds-secondary); }
+.employment-card dd { text-align:right; }
+.employment-card h3 { font-size:17px; line-height:26px; }
+.employment-permission { display:flex; gap:8px; justify-content:space-between; align-items:center; width:100%; line-height:23px; }
+.employment-permission strong { font-size:13px; color:#28702f; }
+.employment-end { display:flex; flex-direction:column; gap:24px; }
+.employment-end p { font-size:13px; line-height:20px; color:var(--ds-secondary); }
+.employment .employment-end-button { min-height:52px; background:#fadcd7; color:#a52d26; }
+
+.employment-permission strong { display:flex; align-items:center; gap:8px; }
+.employment-permission strong img { width:10.5px; height:7.5px; }
