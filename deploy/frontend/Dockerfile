@@ -5,6 +5,7 @@ RUN npm ci
 COPY . .
 
 FROM dependencies AS test
+ENV CI=true
 RUN npm run lint && npm run test:ci
 
 FROM dependencies AS build
