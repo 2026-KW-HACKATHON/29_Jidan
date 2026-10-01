@@ -1,0 +1,17 @@
+.applicant-profile { background: var(--ds-primary-surface); }
+.applicant-profile > .ds-mobile-body { padding: 8px 24px 24px; }
+.applicant-content { display: flex; flex-direction: column; gap: 20px; }
+.applicant-card { display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 12px; background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.applicant-card h3 { font-size: 19px; font-weight: 700; line-height: 1.5; }
+.applicant-identity { flex-direction: row; align-items: center; gap: 12px; }
+.applicant-identity > img { flex: none; object-fit: cover; filter: drop-shadow(0 0 1px rgb(0 0 0 / 5%)) drop-shadow(0 1px 1px rgb(0 0 0 / 5%)); }
+.applicant-identity > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.applicant-name { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.applicant-name h2 { font-size: 22px; font-weight: 700; line-height: 1.5; }
+.applicant-name span { color: #8c949d; font-size: 13px; font-weight: 700; }
+.applicant-identity p { color: var(--ds-secondary); }
+.applicant-application { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 8px; background: #d6e3fd; color: #0a2c93; }
+.applicant-application > p:first-child { font-size: 13px; }
+.applicant-application h3 { font-size: 15px; font-weight: 700; line-height: 1.5; }
+.applicant-experience > p:first-of-type { color: var(--ds-secondary); font-size: 13px; }
+.applicant-notice { padding: 12px; border-radius: 8px; color: var(--ds-secondary); font-size: 13px; }

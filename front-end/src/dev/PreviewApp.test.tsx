@@ -4,7 +4,7 @@ import {afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest'
 // 모듈 캐시를 유지해 재진입 시에도 URL별 상태가 초기화되는지 검증한다.
 beforeAll(async()=>{await Promise.all([
  import('./WorkerRegistrationPreview'), import('./OwnerRegistrationPreview'),
- import('./RoleSelectionPreview'),
+ import('./ApplicantProfilePreview'), import('./RoleSelectionPreview'),
  import('./OwnerHomePreview'),
 ])},15000)
 beforeEach(()=>{vi.stubGlobal('fetch',vi.fn());sessionStorage.clear()})
@@ -57,5 +57,19 @@ it('캐시된 점주 모듈도 URL별 승인 대기와 매장 정보 예시를 �
  expect(await screen.findByLabelText('매장명 *')).toHaveValue('')
  fireEvent.click(menu.getByRole('link',{name:'승인 대기'}))
  await screen.findByRole('heading',{name:'안녕하세요, 김민수 점주님'})
+ expect(fetch).not.toHaveBeenCalled()
+})
+it('대타 근무자 프로필 미리보기는 샘플만 표시하고 뒤로 가면 점주 홈으로 이동한다', async () => {
+ history.replaceState(null, '', '/__preview')
+ const { default: Preview } = await import('./PreviewApp')
+ await act(async()=>{render(<Preview />)})
+ await screen.findByRole('heading', { name: '화면 탐색' })
+ const menu = within(screen.getByRole('navigation', { name: '미리보기 화면 목록' }))
+ fireEvent.click(menu.getByRole('link', { name: '대타 근무자 프로필' }))
+ await screen.findByRole('heading', { name: '근무자 프로필' })
+ expect(screen.getByRole('heading', { name: '박서연' })).toBeVisible()
+ expect(location.pathname).toBe('/__store/applicant')
+ fireEvent.click(screen.getByRole('button', { name: '뒤로 가기' }))
+ await waitFor(() => expect(location.pathname).toBe('/__home/owner'))
  expect(fetch).not.toHaveBeenCalled()
 })
