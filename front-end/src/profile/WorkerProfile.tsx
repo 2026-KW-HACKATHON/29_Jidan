@@ -4,6 +4,7 @@ import { AppBar } from '../ui/AppBar'
 import { Button } from '../ui/Button'
 import { MobileLayout } from '../ui/MobileLayout'
 import { WorkerBasic } from '../registration/worker/WorkerBasic'
+import { WorkerCompleteContent } from '../registration/worker/WorkerReview'
 import { WorkerFrame } from '../registration/worker/WorkerFrame'
 import { CareerEditor, WorkerExperience } from '../registration/worker/WorkerExperience'
 import { AvailabilityEditor, WorkerAvailability } from '../registration/worker/WorkerAvailability'
@@ -18,9 +19,10 @@ const descriptions = {
   2: ['근무 정보 수정', '어떤 일을 해보셨나요?', '근무 경력을 알려주세요.'],
   3: ['가능 시간 수정', '마지막 단계예요!', '근무 가능 시간을 선택해 주세요.'],
 } as const
-export function WorkerProfile({ initialProfile, onBack, service = profileService }: {
-  initialProfile: WorkerProfileData; onBack: () => void; service?: ProfileService
+export function WorkerProfile({ initialProfile, onBack, onSaved, service = profileService }: {
+  initialProfile: WorkerProfileData; onBack: () => void; onSaved?: (profile:WorkerProfileData)=>void; service?: ProfileService
 }) {
+  const [complete, setComplete] = useState(false)
   const [profile, setProfile] = useState(() => structuredClone(initialProfile))
   const [section, setSection] = useState<Section | null>(null)
   const [draft, setDraft] = useState<WorkerDraft | null>(null)
@@ -51,7 +53,7 @@ export function WorkerProfile({ initialProfile, onBack, service = profileService
     try {
       await withDeadline(signal => service.save(structuredClone(next), signal), controller)
       if (controller.signal.aborted) return
-      setProfile(next); cancel()
+      setProfile(next); cancel(); setComplete(true); onSaved?.(structuredClone(next))
     } catch (failure) { if (!controller.signal.aborted || failure instanceof DeadlineExceeded) setFailure('변경 사항을 저장하지 못했어요. 다시 시도해 주세요.') }
     finally { if (request.current === controller && (!controller.signal.aborted || controller.signal.reason instanceof DeadlineExceeded)) { locked.current = false; setBusy(false) } }
   }
@@ -65,6 +67,7 @@ export function WorkerProfile({ initialProfile, onBack, service = profileService
     </fieldset>
     {failure && <p role="alert" className="worker-error">{failure}</p>}
   </WorkerFrame>
+  if (complete) return <WorkerFrame complete title="등록 완료" heading="프로필 수정이 완료됐어요" description="이제 내 일정에 맞는 공고를 찾아보세요." action="돌아가기" onBack={()=>setComplete(false)} onNext={()=>setComplete(false)}><WorkerCompleteContent draft={profile.draft}/></WorkerFrame>
   const value = profile.draft
   return <MobileLayout className="worker-profile worker-signup" header={<AppBar compact backIcon={back} title="내 프로필" onBack={onBack} />} footer={<Button onClick={() => edit(1)}>프로필 수정</Button>}>
     <div className="worker-profile-content">

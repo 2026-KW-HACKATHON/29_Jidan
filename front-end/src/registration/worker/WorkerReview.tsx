@@ -10,7 +10,7 @@ export function WorkerReview({ draft, email, edit }: { draft: WorkerDraft; email
     {card('가능한 시간',3,<>{draft.availability.map(a=><p key={a.id}>{daysText(a.days)}　{rangeText(a)}</p>)}<small>매주 반복 · 주 {weekHours(draft.availability)}시간</small></>)}
   </>
 }
-export function WorkerCompleteContent({ draft, onProfile }: { draft:WorkerDraft;onProfile:()=>void }) {
-  return <><article className="worker-card"><h3>{draft.name} 님의 근무 프로필</h3><p className="worker-muted">{draft.experience}</p>{draft.availability.map(a=><p className="worker-muted" key={a.id}>{daysText(a.days)}　{rangeText(a)}</p>)}</article><Button intent="secondary" onClick={onProfile}>내 프로필 보기</Button></>
+export function WorkerCompleteContent({ draft, onProfile }: { draft:WorkerDraft;onProfile?:()=>void }) {
+  return <><article className="worker-card"><h3>{draft.name} 님의 근무 프로필</h3><p className="worker-muted">{draft.experience}</p>{draft.availability.map(a=><p className="worker-muted" key={a.id}>{daysText(a.days)}　{rangeText(a)}</p>)}</article>{onProfile && <Button intent="secondary" onClick={onProfile}>내 프로필 보기</Button>}</>
 }
 export function WorkerStatusIcon() { return <div className="worker-status"><img src={information} alt="" width="21.7" height="21.7" /></div> }
