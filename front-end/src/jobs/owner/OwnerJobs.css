@@ -60,3 +60,11 @@
 .owner-applicant-review .owner-applicant-experience {font-size:13px;color:var(--ds-secondary);}
 
 .owner-job-date-picker .ds-picker-body {padding:6px;margin:-6px;}
+.owner-work-request-dialog[open] {gap:16px;}
+.owner-work-request-dialog .ds-modal-message {gap:16px;}
+.owner-work-request-dialog .ds-modal-message h2 {font-size:22px;}
+.owner-work-request-dialog .ds-modal-message > p:empty {display:none;}
+.owner-work-request-summary {display:flex;flex-direction:column;gap:12px;background:#d6e3fd;border-radius:12px;padding:16px;}
+.owner-work-request-summary > h3 {font-size:19px;}
+.owner-work-request-summary > p {font-size:13px;}
+.owner-work-request-summary .owner-job-summary {padding:0;border-radius:0;}
