@@ -19,3 +19,5 @@ it('홈에서 시작한 등록은 홈으로 돌아가고 직접 진입한 등록
 })
 
 it('직접 진입한 요청 실패 예시도 재시도 후 완료한다',async()=>{history.replaceState(null,'','/__owner/jobs?view=applicants&id=open&overlay=request&applicant=park&requestFail=1');await act(async()=>{render(<PreviewApp/>)});fireEvent.click(await screen.findByText('요청하기'));expect(await screen.findByRole('alert')).toBeVisible();fireEvent.click(screen.getByText('요청하기'));await screen.findByText('요청을 완료했어요!');fireEvent.click(screen.getByText('공고 목록 보기'));expect(await screen.findByText('모집 중 4')).toBeVisible();expect(screen.queryByRole('dialog')).toBeNull()})
+
+it('김래원 열람 전용 예시는 최신 Figma 경력을 표시한다',async()=>{history.replaceState(null,'','/__owner/jobs?view=applicants&id=open&review=kim&readonly=1');await act(async()=>{render(<PreviewApp/>)});expect(within(await screen.findByRole('dialog')).getByText('카페 근무 · 6개월')).toBeVisible();expect(within(screen.getByRole('dialog')).queryByText('근무 요청 보내기')).toBeNull()})
