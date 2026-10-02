@@ -21,3 +21,17 @@ python -m pytest
 [CI/CD 운영 문서](../deploy/CI-CD.md)를 참고한다.
 
 로컬에서 DB 설정이 없으면 `database: not_configured`를 반환한다. `APP_ENV=dev|production`에서는 DB 설정이 필수이며, `/api/health`가 `SELECT 1`까지 확인한다. DB 장애 시 자격 증명을 노출하지 않고 503을 반환한다.
+
+## 인증·인가 API 설계
+
+[Figma 기반 OpenAPI 명세](openapi.yaml)와 [화면 근거·인가 정책](docs/auth-design.md)을 제공합니다.
+구현 전 계약이며 실제 인증 endpoint는 아직 제공하지 않습니다.
+
+```bash
+cd docs
+npm ci
+npm run check
+npm run dev
+```
+
+[로컬 Swagger 문서](http://127.0.0.1:5500)를 확인합니다. 자세한 실행 방법은 [문서 서버 안내](docs/README.md)를 참고합니다.
