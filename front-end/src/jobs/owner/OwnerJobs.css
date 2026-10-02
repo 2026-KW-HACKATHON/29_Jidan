@@ -58,3 +58,5 @@
 .owner-applicant-introduction-heading span {font-size:13px;color:var(--ds-muted);}
 .owner-applicant-review .owner-applicant-introduction p {font-size:15px;color:var(--ds-text);}
 .owner-applicant-review .owner-applicant-experience {font-size:13px;color:var(--ds-secondary);}
+
+.owner-job-date-picker .ds-picker-body {padding:6px;margin:-6px;}

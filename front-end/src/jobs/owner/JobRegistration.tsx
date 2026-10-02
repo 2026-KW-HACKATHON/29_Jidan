@@ -14,7 +14,7 @@ import './OwnerJobs.css'
 type Picker='part'|'experience'|'payment'|'date'|'start'|'end'
 function DatePicker({value,onClose,onSave}:{value:string;onClose:()=>void;onSave:(date:string)=>void}){
  const [date,setDate]=useState(value)
- return <PickerDialog title="근무 날짜" onClose={onClose}><div className="owner-job-picker-content"><InputField type="date" label="근무 날짜" value={date} onChange={e=>setDate(e.target.value)}/><Button disabled={!date} onClick={()=>onSave(date)}>선택 완료</Button></div></PickerDialog>
+ return <PickerDialog className="owner-job-date-picker" title="근무 날짜" onClose={onClose}><div className="owner-job-picker-content"><InputField type="date" label="근무 날짜" value={date} onChange={e=>setDate(e.target.value)}/><Button disabled={!date} onClick={()=>onSave(date)}>선택 완료</Button></div></PickerDialog>
 }
 export function JobRegistration({onBack,onCreated,service=unavailableOwnerJobs,initialStep=1,initialDraft=emptyJobDraft,initialPicker=null,initialResult,initialReceipt}: {onBack:()=>void;onCreated:(job:OwnerJob,destination:'list'|'detail')=>void;service?:OwnerJobService;initialStep?:1|2|3;initialDraft?:JobDraft;initialPicker?:Picker|null;initialResult?:'success'|'failure';initialReceipt?:OwnerJob}){
  const [step,setStep]=useState(initialStep),[draft,setDraft]=useState(initialDraft),[errors,setErrors]=useState<Record<string,string>>({}),[picker,setPicker]=useState<Picker|null>(initialPicker),[created,setCreated]=useState<OwnerJob|null>(initialReceipt??null),[success,setSuccess]=useState(initialResult==='success'),[failure,setFailure]=useState(initialResult==='failure')
