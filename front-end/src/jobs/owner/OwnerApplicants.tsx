@@ -8,7 +8,18 @@ import type {OwnerJob} from './model'
 import './OwnerJobs.css'
 export type JobApplicant={id:string;name:string;experience:string;introduction:string}
 export function ApplicantReview({applicant,job,readOnly=false,onClose,onRequest}:{applicant:JobApplicant;job:OwnerJob;readOnly?:boolean;onClose:()=>void;onRequest:(applicant:JobApplicant)=>void}){
- return <PickerDialog className="owner-applicant-review" title="지원서 보기" onClose={onClose}><div className="owner-applicant-review-content"><div className="owner-applicant-identity"><h3>{applicant.name}</h3><p>{applicant.experience||'등록한 경력 없음'}</p></div><OwnerJobSummary job={job}/><section className="owner-applicant-introduction"><h4>자기소개</h4><p>{applicant.introduction}</p></section><p className="owner-applicant-hint">지원자가 직접 작성한 내용이에요.</p>{!readOnly&&job.status==='recruiting'&&<Button onClick={()=>onRequest(applicant)}>근무 요청 보내기</Button>}</div></PickerDialog>
+ return <PickerDialog className={`owner-applicant-review${readOnly?' is-readonly':''}`} title="지원서 보기" onClose={onClose}>
+  <div className="owner-applicant-review-content">
+   <OwnerJobSummary job={job}>
+    <section className="owner-applicant-introduction">
+     <div className="owner-applicant-introduction-heading"><h4>자기소개</h4><span>{applicant.name}</span></div>
+     <p>{applicant.introduction}</p>
+    </section>
+    <p className="owner-applicant-experience">{applicant.experience||'등록한 경력 없음'}</p>
+   </OwnerJobSummary>
+   {!readOnly&&job.status==='recruiting'&&<Button onClick={()=>onRequest(applicant)}>근무 요청 보내기</Button>}
+  </div>
+ </PickerDialog>
 }
 export function OwnerApplicants({job,applicants,onBack,onCloseJob,onRequest,initialApplicantId,initialReadOnly=false}:{job:OwnerJob;applicants:readonly JobApplicant[];onBack:()=>void;onCloseJob:()=>void;onRequest:(applicant:JobApplicant)=>void;initialApplicantId?:string;initialReadOnly?:boolean}){
  const [review,setReview]=useState(initialApplicantId),applicant=applicants.find(applicant=>applicant.id===review),readOnly=initialReadOnly||job.status!=='recruiting'

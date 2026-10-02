@@ -46,9 +46,15 @@
 .owner-applicant-card > p {font-size:15px;color:var(--ds-secondary);}
 .owner-applicant-card .ds-button-secondary {box-shadow:0 0 2px rgb(0 0 0 / 12%),0 1px 2px rgb(0 0 0 / 12%);}
 .owner-applicant-review h2 {font-size:22px;}
-.owner-applicant-review header .ds-button {width:56px;flex-shrink:0;padding:12px 0;}
+.owner-applicant-review header .ds-button {width:50px;flex-shrink:0;padding:12px 8px;white-space:nowrap;background:var(--ds-surface);}
 .owner-applicant-review-content {display:flex;flex-direction:column;gap:16px;}
 .owner-applicant-introduction {max-height:240px;overflow-y:auto;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:8px;}
 .owner-applicant-introduction h4 {font-size:15px;}
 .owner-applicant-introduction p {font-size:15px;white-space:pre-wrap;}
 .owner-applicant-hint {font-size:13px;color:var(--ds-secondary);}
+
+.owner-applicant-review.is-readonly header .ds-button {background:var(--ds-white);}
+.owner-applicant-introduction-heading {display:flex;align-items:center;gap:8px;}
+.owner-applicant-introduction-heading span {font-size:13px;color:var(--ds-muted);}
+.owner-applicant-review .owner-applicant-introduction p {font-size:15px;color:var(--ds-text);}
+.owner-applicant-review .owner-applicant-experience {font-size:13px;color:var(--ds-secondary);}
