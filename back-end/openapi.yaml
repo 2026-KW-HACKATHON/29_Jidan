@@ -2,7 +2,8 @@ openapi: 3.1.0
 info:
   title: 지단 인증·인가 API 설계 명세
   version: 0.1.0
-  description: 'Figma 로그인·가입, 일반회원 등록, 점주 가입 흐름을 위한 구현 전 계약입니다.
+  description: |-
+    Figma 로그인·가입, 일반회원 등록, 점주 가입 흐름을 위한 구현 전 계약입니다.
 
     실제 API/OAuth/DB는 구현되지 않았으며 로컬 문서 서버에서는 요청 실행을 지원하지 않습니다.
 
@@ -16,7 +17,7 @@ info:
 
     Google 외 비밀번호 로그인/이메일 인증/비밀번호 재설정은 이 화면 범위에 없습니다.
 
-    모든 응답에는 Cache-Control: no-store를 적용하고 세션/개인정보를 로그에 남기지 않습니다.'
+    모든 응답에는 Cache-Control: no-store를 적용하고 세션/개인정보를 로그에 남기지 않습니다.
   contact:
     name: Jidan 팀
     url: https://github.com/2026-KW-HACKATHON/29_Jidan
@@ -46,17 +47,21 @@ paths:
       operationId: startGoogleLogin
       summary: Google 로그인 시작
       security: []
-      description: 'Google 버튼에서 페이지 이동으로 호출. Google OAuth authorization URL로 302 응답.
+      description: |-
+        Google 버튼에서 페이지 이동으로 호출하며, Google OAuth authorization URL로 **302** 응답합니다.
 
-        서버는 5분 일회용 state·nonce 및 브라우저 바인딩 login 트랜잭션을 생성한다.
+        **로그인 트랜잭션**
 
-        HttpOnly; Secure; SameSite=Lax; Path=/api/auth/google 쿠키 jidan_oauth를 설정하며 callback에서 폐기한다.
+        - 서버는 5분 일회용 `state`·`nonce`와 브라우저 바인딩 트랜잭션을 생성합니다.
+        - `jidan_oauth` 쿠키를 설정하고 callback에서 폐기합니다.
+        - 쿠키 속성: `HttpOnly; Secure; SameSite=Lax; Path=/api/auth/google`
 
-        Google scope는 openid email profile. redirect_uri는 서버 설정의 callback URI만 사용.
+        **인증 설정**
 
-        state는 서버가 생성하고 클라이언트가 지정할 수 없으며 외부 returnUrl을 받지 않는다.
-
-        기존 유효 세션에서 로그인 시작 시 callback 전까지 유지하며 성공 후 세션 ID를 회전한다.'
+        - Google scope: `openid email profile`
+        - `redirect_uri`: 서버에 설정된 callback URI만 사용합니다.
+        - `state`는 서버가 생성하며 클라이언트가 지정할 수 없습니다. 외부 `returnUrl`은 받지 않습니다.
+        - 기존 유효 세션은 callback 전까지 유지하고, 인증 성공 후 세션 ID를 회전합니다.
       responses:
         '302':
           description: Google 인증 화면으로 이동
@@ -84,27 +89,40 @@ paths:
       operationId: completeGoogleLogin
       summary: Google 인증 결과 처리 및 기존/신규 분기
       security: []
-      description: 'Google이 호출하는 브라우저 callback. state와 jidan_oauth 바인딩·만료·일회성 검증 후 code 교환.
+      description: |-
+        Google이 호출하는 브라우저 callback입니다.
 
-        code 또는 error 중 정확히 하나 필요. 동시 제공/누락/중복 query parameter는 400.
+        **검증 순서**
 
-        ID token 서명·iss·aud·exp·nonce·email_verified를 검증하고 provider=GOOGLE + sub로 회원을 찾는다.
+        1. `state`와 `jidan_oauth`의 바인딩·만료·일회성을 검증한 뒤 `code`를 교환합니다.
+        2. `code` 또는 `error` 중 정확히 하나가 필요합니다. 동시 제공·누락·중복 query parameter는 **400**입니다.
+        3. ID token의 서명·`iss`·`aud`·`exp`·`nonce`·`email_verified`를 검증합니다.
+        4. `provider=GOOGLE`과 `sub`로 회원을 찾습니다.
 
-        기존 ACTIVE 회원: 새 회원 세션 발급, 가입 세션 삭제, http://127.0.0.1:5184/__auth/session으로 이동.
+        **인증 결과에 따른 이동**
 
-        신규 주체: 가입 세션 발급, 기존 회원 세션 삭제, http://127.0.0.1:5184/__auth/signup으로 이동.
+        - **기존 ACTIVE 회원**: 새 회원 세션을 발급하고 가입 세션을 삭제합니다.
+          이동 경로: `http://127.0.0.1:5184/__auth/session`
+        - **신규 주체**: 가입 세션을 발급하고 기존 회원 세션을 삭제합니다.
+          이동 경로: `http://127.0.0.1:5184/__auth/signup`
+        - **동의 취소** (`error=access_denied`): 로그인 화면으로 **302** 이동하며 공개 오류 코드 `GOOGLE_ACCESS_DENIED`만 전달합니다.
 
-        이 경로는 프론트엔드 구현 시 확정할 제안이며 운영 frontend origin은 서버 설정값이다.
+        이 경로는 프론트엔드 구현 시 확정할 제안입니다. 운영 frontend origin은 서버 설정값을 사용합니다.
 
-        사용자 동의 취소(error=access_denied): 로그인 화면으로 302, 공개 error=GOOGLE_ACCESS_DENIED만 전달.
+        **오류 응답**
 
-        state 오류는 400 OAUTH_STATE_INVALID, code 재사용은 400 OAUTH_CODE_INVALID,
+        | 상황 | HTTP 상태 | 오류 코드 |
+        | --- | --- | --- |
+        | state 오류 | 400 | `OAUTH_STATE_INVALID` |
+        | code 재사용 | 400 | `OAUTH_CODE_INVALID` |
+        | ID token 검증 실패 | 401 | `GOOGLE_IDENTITY_INVALID` |
+        | 정지 계정 | 403 | `ACCOUNT_SUSPENDED` |
 
-        ID token 검증 실패는 401 GOOGLE_IDENTITY_INVALID, 정지 계정은 403 ACCOUNT_SUSPENDED.
+        **오류 처리와 정보 보호**
 
-        원시 code/ID token/Google error_description은 프론트 URL·응답·로그에 노출하지 않는다.
-
-        state는 Google error 응답에서도 필수이며 오류 시 새 세션을 발급하지 않고 트랜잭션을 폐기한다.'
+        - `state`는 Google error 응답에서도 필수입니다.
+        - 오류 시 새 세션을 발급하지 않고 트랜잭션을 폐기합니다.
+        - 원시 `code`, ID token, Google `error_description`은 프론트 URL·응답·로그에 노출하지 않습니다.
       parameters:
       - name: state
         in: query
@@ -149,8 +167,16 @@ paths:
                 format: uri
               example: http://127.0.0.1:5184/__auth/signup
             Set-Cookie:
-              description: 가입 세션을 설정. 운영에서는 Secure, 로컬 HTTP에서만 Secure 생략. callback 오류 시 login 트랜잭션 쿠키
-                폐기. 기존 회원이면 대신 jidan_session 설정. 각각 별도 Set-Cookie 헤더로 전달.
+              description: |-
+                가입 세션을 설정.
+
+                운영에서는 Secure, 로컬 HTTP에서만 Secure 생략.
+
+                callback 오류 시 login 트랜잭션 쿠키 폐기.
+
+                기존 회원이면 대신 jidan_session 설정.
+
+                각각 별도 Set-Cookie 헤더로 전달.
               schema:
                 type: string
               example: jidan_registration=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/api/auth; Max-Age=600
@@ -174,8 +200,12 @@ paths:
       summary: 최초 가입의 Google 이메일·가능한 가입 유형 조회
       security:
       - RegistrationCookie: []
-      description: 가입 유형 선택/등록 화면 진입 시 호출. 회원 세션만 있으면 403 ALREADY_REGISTERED. 가입 컨텍스트의 email은 읽기 전용. 만료되면
-        입력값을 로컬에서 유지한 채 Google 로그인 재시도.
+      description: |-
+        가입 유형 선택·등록 화면에 진입할 때 호출합니다.
+
+        - 가입 컨텍스트의 `email`은 읽기 전용입니다.
+        - 회원 세션만 있으면 **403 · `ALREADY_REGISTERED`**입니다.
+        - 가입 세션이 만료되면 입력값을 로컬에서 유지한 채 Google 로그인을 다시 시도합니다.
       responses:
         '200':
           description: Google 인증 이후 가입 전 컨텍스트
@@ -213,17 +243,23 @@ paths:
         CsrfToken: []
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
-      description: 'Google 가입 세션 + X-CSRF-Token + 허용된 Origin 필요. 역할과 이메일은 서버가 결정한다.
+      description: |-
+        **요청 조건**
 
-        가입 세션일 때만 새 회원 생성 가능. 회원 세션은 동일 주체의 성공한 Idempotency-Key 재시도만 허용하며 그 외 409 ALREADY_REGISTERED.
+        - Google 가입 세션 + X-CSRF-Token + 허용된 Origin 필요. 역할과 이메일은 서버가 결정한다.
+        - 가입 세션일 때만 새 회원 생성 가능. 회원 세션은 동일 주체의 성공한 Idempotency-Key 재시도만 허용하며 그 외 409 ALREADY_REGISTERED.
+        - Origin은 허용 목록의 정확한 scheme/host/port로 검증하며 임의 Origin/누락은 403 CSRF_INVALID.
 
-        가입/프로필(점주는 매장 포함) 저장과 key 결과 기록은 같은 트랜잭션. 성공 후 가입 세션을 폐기하고 회원 세션으로 교체.
+        **저장과 재시도**
 
-        실패 시 입력값 유지. 같은 key와 본문으로 재시도하면 중복 저장 없이 최초 201 결과 재현.
+        - 가입/프로필(점주는 매장 포함) 저장과 key 결과 기록은 같은 트랜잭션. 성공 후 가입 세션을 폐기하고 회원 세션으로 교체.
+        - 실패 시 입력값 유지. 같은 key와 본문으로 재시도하면 중복 저장 없이 최초 201 결과 재현.
 
-        Origin은 허용 목록의 정확한 scheme/host/port로 검증하며 임의 Origin/누락은 403 CSRF_INVALID.
+        **근무 프로필 검증**
 
-        신입 careers=[]; 경력 최소 1건. 현재 근무 중 endMonth=null. 생일/연월 순서/가능 시간 중첩은 서버 검증.'
+        - 신입은 `careers=[]`, 경력은 최소 1건이 필요합니다.
+        - 현재 근무 중이면 `endMonth=null`입니다.
+        - 생일·경력 연월 순서·가능 시간 중첩은 서버에서 검증합니다.
       requestBody:
         required: true
         content:
@@ -296,8 +332,14 @@ paths:
                 nextAction: WORKER_HOME
           headers:
             Set-Cookie:
-              description: jidan_session을 설정하고 jidan_registration을 Max-Age=0으로 삭제. 별도 Set-Cookie 헤더 사용.
-                기존 쿠키와 CSRF 토큰을 회전. 운영에서 Secure, 로컬 HTTP에서만 Secure 생략.
+              description: |-
+                jidan_session을 설정하고 jidan_registration을 Max-Age=0으로 삭제.
+
+                별도 Set-Cookie 헤더 사용.
+
+                기존 쿠키와 CSRF 토큰을 회전.
+
+                운영에서 Secure, 로컬 HTTP에서만 Secure 생략.
               schema:
                 type: string
               example: jidan_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400
@@ -328,18 +370,24 @@ paths:
         CsrfToken: []
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
-      description: 'Google 가입 세션 + X-CSRF-Token + 허용된 Origin 필요. 역할과 이메일은 서버가 결정한다.
+      description: |-
+        **요청 조건**
 
-        가입 세션일 때만 새 회원 생성 가능. 회원 세션은 동일 주체의 성공한 Idempotency-Key 재시도만 허용하며 그 외 409 ALREADY_REGISTERED.
+        - Google 가입 세션 + X-CSRF-Token + 허용된 Origin 필요. 역할과 이메일은 서버가 결정한다.
+        - 가입 세션일 때만 새 회원 생성 가능. 회원 세션은 동일 주체의 성공한 Idempotency-Key 재시도만 허용하며 그 외 409 ALREADY_REGISTERED.
+        - Origin은 허용 목록의 정확한 scheme/host/port로 검증하며 임의 Origin/누락은 403 CSRF_INVALID.
 
-        가입/프로필(점주는 매장 포함) 저장과 key 결과 기록은 같은 트랜잭션. 성공 후 가입 세션을 폐기하고 회원 세션으로 교체.
+        **저장과 재시도**
 
-        실패 시 입력값 유지. 같은 key와 본문으로 재시도하면 중복 저장 없이 최초 201 결과 재현.
+        - 가입/프로필(점주는 매장 포함) 저장과 key 결과 기록은 같은 트랜잭션. 성공 후 가입 세션을 폐기하고 회원 세션으로 교체.
+        - 실패 시 입력값 유지. 같은 key와 본문으로 재시도하면 중복 저장 없이 최초 201 결과 재현.
 
-        Origin은 허용 목록의 정확한 scheme/host/port로 검증하며 임의 Origin/누락은 403 CSRF_INVALID.
+        **매장 신청과 승인**
 
-        승인 상태는 PENDING으로 서버 설정. 점주 권한과 승인된 매장 운영 권한을 분리. 중복 매장은 409 STORE_ALREADY_REGISTERED, 월계1동 외 소재지는
-        422 STORE_OUTSIDE_SERVICE_AREA.'
+        - 승인 상태는 서버가 `PENDING`으로 설정합니다.
+        - 점주 권한과 승인된 매장의 운영 권한을 분리합니다.
+        - 중복 매장: **409 · `STORE_ALREADY_REGISTERED`**
+        - 월계1동 외 소재지: **422 · `STORE_OUTSIDE_SERVICE_AREA`**
       requestBody:
         required: true
         content:
@@ -387,8 +435,14 @@ paths:
                 nextAction: OWNER_APPROVAL_PENDING
           headers:
             Set-Cookie:
-              description: jidan_session을 설정하고 jidan_registration을 Max-Age=0으로 삭제. 별도 Set-Cookie 헤더 사용.
-                기존 쿠키와 CSRF 토큰을 회전. 운영에서 Secure, 로컬 HTTP에서만 Secure 생략.
+              description: |-
+                jidan_session을 설정하고 jidan_registration을 Max-Age=0으로 삭제.
+
+                별도 Set-Cookie 헤더 사용.
+
+                기존 쿠키와 CSRF 토큰을 회전.
+
+                운영에서 Secure, 로컬 HTTP에서만 Secure 생략.
               schema:
                 type: string
               example: jidan_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400
@@ -412,9 +466,18 @@ paths:
       - 세션
       operationId: getCurrentSession
       summary: 현재 회원·가입 완료 상태·역할·매장 권한 조회
-      description: 새로고침/로그인 완료 시 화면 이동에 사용. 가입 전 세션은 401 REGISTRATION_REQUIRED. 정지 계정은 403 ACCOUNT_SUSPENDED
-        및 세션 폐기. 매장 승인 변경은 현재 DB 상태를 반영. OWNER는 PENDING 매장만 있으면 nextAction=OWNER_APPROVAL_PENDING, 승인
-        매장이 하나라도 있으면 OWNER_HOME.
+      description: |-
+        새로고침·로그인 완료 후 화면 이동을 결정할 때 사용합니다. 매장 승인 변경은 현재 DB 상태를 반영합니다.
+
+        **세션 오류**
+
+        - 가입 전 세션: **401 · `REGISTRATION_REQUIRED`**
+        - 정지 계정: **403 · `ACCOUNT_SUSPENDED`**, 세션 폐기
+
+        **점주 화면 이동**
+
+        - `PENDING` 매장만 있는 경우: `nextAction=OWNER_APPROVAL_PENDING`
+        - 승인된 매장이 하나라도 있는 경우: `nextAction=OWNER_HOME`
       responses:
         '200':
           description: 로그인한 회원과 현재 권한
@@ -483,9 +546,13 @@ paths:
       security:
       - SessionCookie: []
       - RegistrationCookie: []
-      description: 응답을 읽을 수 있는 동일 출처 클라이언트에게 세션에 바인딩된 토큰 반환. wildcard CORS 금지, credential CORS는 정확한 허용
-        origin만 사용. 회원/가입 쿠키가 둘 다 있으면 회원 세션을 우선하며 클라이언트는 현재 상태에 맞는 변경 요청만 수행. 이 GET은 세션 생성/권한 변경을 수행하지
-        않음.
+      description: |-
+        응답을 읽을 수 있는 동일 출처 클라이언트에게 세션에 바인딩된 토큰을 반환합니다.
+
+        - wildcard CORS는 금지합니다. credential CORS는 정확한 허용 origin만 사용합니다.
+        - 회원·가입 쿠키가 둘 다 있으면 회원 세션을 우선합니다.
+        - 클라이언트는 현재 상태에 맞는 변경 요청만 수행합니다.
+        - 이 GET은 세션 생성이나 권한 변경을 수행하지 않습니다.
       responses:
         '200':
           description: 현재 세션용 CSRF 토큰
@@ -516,16 +583,30 @@ paths:
       - RegistrationCookie: []
         CsrfToken: []
       - {}
-      description: 쿠키가 있으면 해당 세션의 CSRF 토큰과 허용된 Origin을 검증하고 서버 세션을 즉시 폐기. 둘 다 있으면 회원 CSRF를 기준으로 둘 모두 폐기.
-        쿠키가 없거나 이미 만료된 경우 Origin 검증 후 204 (CSRF 생략 가능). OAuth 트랜잭션도 폐기. 회원/가입/OAuth 쿠키를 각각 원래 Path/Domain에
-        Max-Age=0으로 삭제. 다른 브라우저의 세션과 Google 계정 자체는 로그아웃하지 않음. 연속 호출도 204.
+      description: |-
+        현재 브라우저의 회원·가입 세션과 OAuth 트랜잭션을 종료합니다.
+
+        **요청 검증**
+
+        - 쿠키가 있으면 해당 세션의 CSRF 토큰과 허용된 Origin을 검증하고 서버 세션을 즉시 폐기합니다.
+        - 회원·가입 쿠키가 둘 다 있으면 회원 CSRF를 기준으로 두 세션을 모두 폐기합니다.
+        - 쿠키가 없거나 이미 만료되었으면 Origin 검증 후 **204**를 반환합니다. 이 경우 CSRF는 생략할 수 있습니다.
+
+        **종료 처리**
+
+        - OAuth 트랜잭션도 폐기합니다.
+        - 회원·가입·OAuth 쿠키를 각각 원래 Path/Domain에 `Max-Age=0`으로 삭제합니다.
+        - 다른 브라우저의 세션과 Google 계정 자체는 로그아웃하지 않습니다.
+        - 연속 호출도 **204**를 반환합니다.
       responses:
         '204':
           description: 세션 종료. 응답 본문 없음.
           headers:
             Set-Cookie:
-              description: jidan_session Path=/, jidan_registration Path=/api/auth, jidan_oauth Path=/api/auth/google을
-                별도 헤더로 삭제. 각 쿠키는 HttpOnly; Secure; SameSite=Lax; Max-Age=0 (로컬 HTTP는 Secure 생략).
+              description: |-
+                jidan_session Path=/, jidan_registration Path=/api/auth, jidan_oauth Path=/api/auth/google을 별도 헤더로 삭제.
+
+                각 쿠키는 HttpOnly; Secure; SameSite=Lax; Max-Age=0 (로컬 HTTP는 Secure 생략).
               schema:
                 type: string
               example: jidan_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0
@@ -541,14 +622,24 @@ components:
       type: apiKey
       in: cookie
       name: jidan_session
-      description: 서버에 저장한 opaque 회원 세션. 운영에서는 HttpOnly; Secure; SameSite=Lax; Path=/; Domain 생략. 유휴 24시간/절대
-        7일 만료 중 먼저 도래하는 시점에 재로그인. 권한은 매 요청 DB 기준으로 재검증.
+      description: |-
+        서버에 저장한 opaque 회원 세션.
+
+        운영에서는 HttpOnly; Secure; SameSite=Lax; Path=/; Domain 생략.
+
+        유휴 24시간/절대 7일 만료 중 먼저 도래하는 시점에 재로그인.
+
+        권한은 매 요청 DB 기준으로 재검증.
     RegistrationCookie:
       type: apiKey
       in: cookie
       name: jidan_registration
-      description: Google 인증 후 아직 가입하지 않은 주체 전용 opaque 세션. HttpOnly; Secure; SameSite=Lax; Path=/api/auth;
-        Domain 생략. 600초 고정 만료, 일반 API 접근 불가.
+      description: |-
+        Google 인증 후 아직 가입하지 않은 주체 전용 opaque 세션.
+
+        HttpOnly; Secure; SameSite=Lax; Path=/api/auth; Domain 생략.
+
+        600초 고정 만료, 일반 API 접근 불가.
     CsrfToken:
       type: apiKey
       in: header
@@ -560,9 +651,18 @@ components:
       name: Idempotency-Key
       in: header
       required: true
-      description: 최종 가입 제출마다 만든 UUID. 같은 Google 주체·endpoint·정규화 본문으로 24시간 재시도하면 최초 201 결과를 재현. 다른 본문/역할에
-        같은 key는 409 IDEMPOTENCY_KEY_REUSED. 성공 후 가입 쿠키가 소비된 경우 회원 세션으로 동일 주체를 확인해야 재현 가능. 어느 세션도 없으면 401
-        후 재로그인. 동시 제출은 중복 저장되지 않으며 Google sub·사업자 번호 DB unique 제약을 함께 적용.
+      description: |-
+        최종 가입 제출마다 만든 UUID.
+
+        같은 Google 주체·endpoint·정규화 본문으로 24시간 재시도하면 최초 201 결과를 재현.
+
+        다른 본문/역할에 같은 key는 409 IDEMPOTENCY_KEY_REUSED.
+
+        성공 후 가입 쿠키가 소비된 경우 회원 세션으로 동일 주체를 확인해야 재현 가능.
+
+        어느 세션도 없으면 401 후 재로그인.
+
+        동시 제출은 중복 저장되지 않으며 Google sub·사업자 번호 DB unique 제약을 함께 적용.
       schema:
         type: string
         format: uuid
@@ -729,8 +829,16 @@ components:
       - startTime
       - endTime
       - endsNextDay
-      description: Asia/Seoul 기준 매주 반복, 30분 단위. 서버에서 0<기간<=24시간을 검증. 같은 요일 및 심야 구간의 다음 요일 중첩은 422. 24:00
-        대신 00:00/endsNextDay 사용. endsNextDay=false이면 종료>시작, true이면 종료<=시작.
+      description: |-
+        Asia/Seoul 기준 매주 반복, 30분 단위.
+
+        서버에서 0<기간<=24시간을 검증.
+
+        같은 요일 및 심야 구간의 다음 요일 중첩은 422.
+
+        24:00 대신 00:00/endsNextDay 사용.
+
+        endsNextDay=false이면 종료>시작, true이면 종료<=시작.
     WorkerRegistrationRequest:
       type: object
       properties:
@@ -839,8 +947,14 @@ components:
       - address
       - businessRegistrationNumber
       - phoneNumber
-      description: 주소와 우편번호는 서버가 주소 데이터로 확인하고 행정동 월계1동인지 판단. 사용자가 지정한 region/승인 상태는 받지 않음. 소재지·관리 권한의
-        최종 승인은 운영자 담당. 이미 등록된 사업자 번호는 409 STORE_ALREADY_REGISTERED; 자동 권한 부여 없음.
+      description: |-
+        주소와 우편번호는 서버가 주소 데이터로 확인하고 행정동 월계1동인지 판단.
+
+        사용자가 지정한 region/승인 상태는 받지 않음.
+
+        소재지·관리 권한의 최종 승인은 운영자 담당.
+
+        이미 등록된 사업자 번호는 409 STORE_ALREADY_REGISTERED; 자동 권한 부여 없음.
     OwnerRegistrationRequest:
       type: object
       additionalProperties: false
@@ -874,8 +988,12 @@ components:
       - provider
       - email
       - emailVerified
-      description: 서버가 검증한 iss/aud/exp/nonce/email_verified 및 Google sub로 확인한 주체. 이메일로 기존 계정을 자동 병합하지
-        않음. Google sub는 응답에 노출하지 않음.
+      description: |-
+        서버가 검증한 iss/aud/exp/nonce/email_verified 및 Google sub로 확인한 주체.
+
+        이메일로 기존 계정을 자동 병합하지 않음.
+
+        Google sub는 응답에 노출하지 않음.
     RegistrationContext:
       type: object
       additionalProperties: false
@@ -939,8 +1057,14 @@ components:
       - storeName
       - approvalStatus
       - permissions
-      description: 본인 관리 매장만 반환. PENDING는 READ_STORE_STATUS만 허용. APPROVED만 운영 권한 허용. 서버는 매 요청 매장 소유/승인
-        상태를 검증하며 이 응답을 인가 근거로 신뢰하지 않음.
+      description: |-
+        본인 관리 매장만 반환.
+
+        PENDING는 READ_STORE_STATUS만 허용.
+
+        APPROVED만 운영 권한 허용.
+
+        서버는 매 요청 매장 소유/승인 상태를 검증하며 이 응답을 인가 근거로 신뢰하지 않음.
       additionalProperties: false
       oneOf:
       - properties:
@@ -1014,8 +1138,12 @@ components:
       - profileCompleted
       - permissions
       - stores
-      description: 'WORKER: 공고 탐색/지원/내 프로필, stores=[]. OWNER: 내 매장 상태 조회 및 stores의 승인된 매장 권한. WORKER의
-        업무 자료 접근은 별도 재직/대타 기간 검증이 필요하며 본 명세에서 포괄 권한을 부여하지 않음.'
+      description: |-
+        WORKER: 공고 탐색/지원/내 프로필, stores=[].
+
+        OWNER: 내 매장 상태 조회 및 stores의 승인된 매장 권한.
+
+        WORKER의 업무 자료 접근은 별도 재직/대타 기간 검증이 필요하며 본 명세에서 포괄 권한을 부여하지 않음.
       additionalProperties: false
       oneOf:
       - properties:
