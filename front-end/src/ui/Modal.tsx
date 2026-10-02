@@ -19,6 +19,7 @@ type ModalProps = {
   summary?: ReactNode
   className?: string
   restoreFocus?: boolean
+  onClosed?: () => void
   onClose: () => void
   /** Resolve to close; reject to keep the dialog open and allow retry. */
   onConfirm?: () => void | Promise<void>
@@ -28,7 +29,7 @@ export function Modal({ open, ...props }: ModalProps) {
   return open ? <OpenModal {...props} /> : null
 }
 
-function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, showCancel = false, closeOnConfirm = true, showIcon = true, summary, className = '', restoreFocus = true, onClose, onConfirm }: Omit<ModalProps, 'open'>) {
+function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, showCancel = false, closeOnConfirm = true, showIcon = true, summary, className = '', restoreFocus = true, onClosed, onClose, onConfirm }: Omit<ModalProps, 'open'>) {
   const dialog = useRef<HTMLDialogElement>(null)
   const initialFocus = useRef<HTMLButtonElement>(null)
   const generation = useRef(0)
@@ -49,8 +50,9 @@ function OpenModal({ title, description, state = 'information', confirmLabel = '
       generation.current += 1
       element.close()
       if (restoreFocus && trigger?.isConnected) trigger.focus()
+      onClosed?.()
     }
-  }, [restoreFocus])
+  }, [restoreFocus, onClosed])
 
   async function confirm() {
     if (busy || inFlight.current) return
