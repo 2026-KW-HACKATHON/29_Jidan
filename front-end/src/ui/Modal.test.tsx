@@ -101,3 +101,10 @@ describe('Modal', () => {
     trigger.remove()
   })
 })
+
+it('안내 모달의 보조 동작으로 닫고 주 동작을 실행하지 않는다', () => {
+ const close=vi.fn(),confirm=vi.fn()
+ render(<Modal open title="등록 완료" description="공고를 확인하세요" showCancel cancelLabel="닫기" confirmLabel="공고 보기" onClose={close} onConfirm={confirm}/>)
+ fireEvent.click(screen.getByRole('button',{name:'닫기'}))
+ expect(close).toHaveBeenCalledOnce();expect(confirm).not.toHaveBeenCalled()
+})

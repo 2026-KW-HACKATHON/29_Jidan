@@ -83,3 +83,5 @@ it('스크롤 도중 값이 변경되어도 오프셋을 강제로 되돌리지 
   expect(wheel.scrollTop).toBe(480)
  } finally { vi.useRealTimers() }
 })
+
+it('공고에서는 다음 날 종료를 선택해도 종료 시각을 바꿀 수 있다',()=>{const save=vi.fn();render(<ValuePicker title="종료 시간" type="time" value="360" overnight={true} allowNextDayTime onClose={()=>{}} onSave={save}/>);expect(screen.getByRole('spinbutton',{name:'시 · 24시간제'})).not.toHaveAttribute('aria-disabled');fireEvent.click(screen.getByText('30분'));fireEvent.click(screen.getByText('선택 완료'));expect(save).toHaveBeenCalledWith('390',true)})
