@@ -53,7 +53,7 @@ flowchart TD
 - 인증은 서버가 Google authorization code를 교환하는 OIDC 흐름으로 정의한다. 검증된 Google `sub`를 식별 키로 사용하며 이메일이 같다는 이유로 계정을 자동 연결하지 않는다. Google scope는 `openid email profile`이다.
 - 브라우저 `/api` 동일 출처 프록시와 서버 저장 opaque HttpOnly 세션 쿠키를 제안한다. 프론트에 JWT나 Google token을 전달하지 않는다. 회원 세션은 유휴 24시간/절대 7일, 가입 세션은 고정 10분, OAuth 트랜잭션은 5분이다. 이 수치는 제품 확정 정책이 아니다.
 - Google state/nonce와 브라우저 트랜잭션 바인딩을 검증한다. 쿠키의 Secure 속성은 운영 HTTPS에서 필수이며 로컬 HTTP에서만 생략한다. Domain을 생략한 host-only 쿠키, SameSite=Lax를 사용한다.
-- 변경 요청은 synchronizer CSRF token과 정확한 허용 Origin을 함께 검증한다. Google callback은 일회용 state가 해당 검증을 담당한다. CORS wildcard credentials를 허용하지 않는다.
+- 가입·로그아웃 변경 요청은 synchronizer CSRF token과 정확한 허용 Origin을 함께 검증한다. Google callback은 일회용 state가 해당 검증을 담당한다. CORS wildcard credentials를 허용하지 않는다.
 - 입력 단계는 프론트에서 유지하고 마지막 확인에서만 한 번에 저장한다. 가입 초안의 서버 저장/중간 PATCH는 이번 계약에 없다.
 - 최종 제출은 UUID Idempotency-Key를 요구한다. Google 주체·경로·정규화 본문과 묶어 24시간 기록하고 중복 제출을 방지한다. 성공 후 응답을 잃었으면 회원 세션으로 같은 요청을 재시도한다. 쿠키까지 없으면 Google 재로그인으로 같은 주체를 확인해야 한다.
 - 업종 코드 4종, 입력 길이와 배열 최대 개수는 제안이다. 실제 프론트 선택지와 맞추며, 최대 경력 20개·가능 시간 그룹 100개를 둔다.
@@ -73,7 +73,7 @@ flowchart TD
 | OWNER + APPROVED 매장 | 해당 매장의 관리·초대·공고·매뉴얼 운영 | 다른 점주의 매장, 아직 승인되지 않은 다른 매장 |
 | 정지 계정/폐기 세션 | 재로그인 안내 또는 차단 안내 | 모든 회원 API |
 
-`role=OWNER`만으로 매장 운영을 허용하면 안 된다. 역할·리소스 소유·매장 승인 상태를 매 요청 서버에서 확인한다. 응답의 permissions/nextAction은 UI 힌트다. 일반회원의 업무 자료 열람은 별도 재직/대타 기간 권한으로 판단하며, 역할만으로 모든 매뉴얼을 열람할 수 없다. 실제 공고·매뉴얼·관리자 승인 API는 이번 명세에 포함하지 않는다.
+`role=OWNER`만으로 매장 운영을 허용하면 안 된다. 역할·리소스 소유·매장 승인 상태를 매 요청 서버에서 확인한다. 응답의 permissions/nextAction은 UI 힌트다. 일반회원의 업무 자료 열람은 별도 재직/대타 기간 권한으로 판단하며, 역할만으로 모든 매뉴얼을 열람할 수 없다. 공고·매뉴얼 API는 이번 명세에 포함하지 않는다. 관리자 매장 승인 신청 조회·승인 계약은 [매장 승인 설계](store-approval-design.md)를 따른다. 해당 관리자 API는 회원 쿠키/CSRF와 별개로 요청 body의 password를 매 요청 검증한다.
 
 ## 유효성 검증과 실패 계약
 
