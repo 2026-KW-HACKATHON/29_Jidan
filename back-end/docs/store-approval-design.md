@@ -38,3 +38,25 @@
 ## 검증 범위
 
 OpenAPI 구조·예시 및 password/페이지/상태 입력 경계, 승인 상태와 시각 일치, 응답의 password 제외를 Schema로 확인한다. 실제 비밀번호 대조·인증 시도 제한·DB 페이지 수 계산·정렬은 서버 구현 후 검증이 필요하다.
+
+## 승인 처리
+
+`POST /api/admin/store-approval-requests/{requestId}/approve`
+
+requestId는 조회 결과 `items[].id`의 신청 UUID다. store.id와 구분한다.
+
+```json
+{
+  "password": "<admin-password>"
+}
+```
+
+- 비밀번호 검증 후 신청을 조회한다. 인증 실패는 401이며, 올바른 비밀번호로 없는 신청에 접근하면 404 STORE_APPROVAL_REQUEST_NOT_FOUND다.
+- 신청자 OWNER와 현재 매장 관리 관계가 일치하지 않으면 409 STORE_APPROVAL_NOT_ALLOWED다.
+- PENDING 신청과 연결 매장 상태를 APPROVED로 바꾸고 서버의 최초 승인 시각을 approvedAt에 저장한다.
+- 승인 상태·매장 상태·해당 매장의 점주 운영 권한을 같은 트랜잭션으로 적용한다. 실패 시 전체 rollback한다.
+- 이미 APPROVED인 신청은 200으로 기존 결과를 반환한다. 최초 승인 시각과 권한을 중복 변경하지 않는다. 동시 승인은 잠금 또는 조건부 갱신으로 한 번만 반영한다.
+- 서버가 상태·시각·권한을 결정하며, 요청에는 password 이외 필드를 받지 않는다. 별도 Idempotency-Key는 필요하지 않다.
+- 기존 점주 세션의 다음 `/api/auth/session` 조회에서 승인된 매장 권한과 OWNER_HOME을 확인한다. 다른 매장의 승인은 영향을 받지 않는다.
+
+Schema 검사는 비밀번호 필수·외부 상태/시각/권한/승인자 주입 거절·승인 응답의 APPROVED 및 승인 시각 필수를 확인한다. 비밀번호 검증 우선순위, 실제 404/409 처리, 중복·동시 승인, 트랜잭션 rollback과 세션 권한 반영은 후속 구현의 통합 테스트 대상이다.

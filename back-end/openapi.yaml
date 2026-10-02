@@ -1,21 +1,23 @@
 openapi: 3.1.0
 info:
-  title: 지단 인증·인가 API 설계 명세
-  version: 0.1.0
+  title: 지단 인증·매장 승인 API 설계 명세
+  version: 0.2.0
   description: |-
-    Figma 로그인·가입, 일반회원 등록, 점주 가입 흐름을 위한 구현 전 계약입니다.
+    Figma 로그인·가입, 일반회원 등록, 점주 가입과 관리자 매장 승인을 위한 구현 전 계약입니다.
 
     실제 API/OAuth/DB는 구현되지 않았으며 로컬 문서 서버에서는 요청 실행을 지원하지 않습니다.
 
     Google 이메일은 검증된 Google ID token에서 서버가 가져오고 요청 본문으로 받지 않습니다.
 
-    브라우저의 동일 출처 /api 프록시를 전제로 opaque HttpOnly 세션 쿠키를 사용합니다.
+    일반 회원 인증은 브라우저의 동일 출처 /api 프록시와 opaque HttpOnly 세션 쿠키를 사용합니다.
+
+    관리자 매장 승인 API는 요청 JSON body의 password로 매 요청 인증합니다.
 
     state·nonce, 세션 만료 시간, 쿠키 방식과 오류 정책은 화면에 없는 설계 제안입니다.
 
     로그인 시작 → Google callback → 기존 회원은 세션, 신규 회원은 10분 가입 세션 → 가입 완료 순서입니다.
 
-    Google 외 비밀번호 로그인/이메일 인증/비밀번호 재설정은 이 화면 범위에 없습니다.
+    일반 회원의 비밀번호 로그인/이메일 인증/비밀번호 재설정은 이 화면 범위에 없습니다.
 
     모든 응답에는 Cache-Control: no-store를 적용하고 세션/개인정보를 로그에 남기지 않습니다.
   contact:
@@ -713,6 +715,119 @@ paths:
                     totalPages: 0
         '401':
           $ref: '#/components/responses/AdminPasswordUnauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/admin/store-approval-requests/{requestId}/approve:
+    post:
+      tags:
+      - 매장 승인 관리
+      operationId: approveStoreApprovalRequest
+      summary: 매장 승인 신청 승인 처리
+      security: []
+      description: |-
+        관리자가 지정한 신청을 승인하고 해당 매장의 운영 권한을 활성화합니다.
+
+        **관리자 인증과 조회**
+
+        - JSON body의 password를 매 요청 검증합니다. 회원 쿠키·Bearer 토큰은 사용하지 않습니다.
+        - password 누락·빈 값·형식 오류는 422, 잘못된 비밀번호는 401 ADMIN_PASSWORD_INVALID입니다.
+        - 신청의 존재 여부를 조회하기 전에 비밀번호를 검증합니다. 인증 실패에는 신청 정보가 포함되지 않습니다.
+        - 비밀번호가 유효하고 신청이 존재하지 않으면 404 STORE_APPROVAL_REQUEST_NOT_FOUND입니다.
+        - OpenAPI security=[]는 body password 인증을 표현하기 위한 재정의이며, 무인증 승인을 허용하지 않습니다.
+
+        **승인 처리**
+
+        1. PENDING 신청과 연결된 매장·신청자 OWNER의 일치 여부를 확인합니다.
+        2. 신청과 매장 승인 상태를 APPROVED로 변경하고 서버 UTC 시각을 approvedAt에 저장합니다.
+        3. 해당 점주에게 이 매장의 관리·근무자 초대·공고·매뉴얼 운영 권한을 적용합니다.
+        4. 신청·매장 상태 변경과 권한 적용을 같은 트랜잭션으로 처리합니다. 하나라도 실패하면 모두 rollback합니다.
+
+        신청자와 현재 매장 관리 관계가 일치하지 않거나 신청자가 OWNER가 아니면 409 STORE_APPROVAL_NOT_ALLOWED입니다.
+        다른 점주의 매장이나 별도 승인 대기 매장에는 권한을 부여하지 않습니다.
+
+        **재시도와 동시 요청**
+
+        - 이미 APPROVED인 신청은 200과 기존 승인 결과를 반환합니다. 최초 approvedAt을 변경하거나 권한을 중복 생성하지 않습니다.
+        - 같은 신청에 대한 동시 승인은 잠금 또는 조건부 갱신으로 한 번만 변경합니다.
+        - 응답을 잃어 재시도해도 같은 신청 ID와 최초 승인 시각을 반환합니다. 별도 Idempotency-Key는 필요하지 않습니다.
+        - 점주는 기존 회원 세션으로 다음 /api/auth/session 조회 시 변경된 승인 상태·권한·OWNER_HOME 이동 힌트를 받습니다.
+
+        **비밀번호와 기록 보호**
+
+        - 운영 HTTPS, 서버 비밀번호 해시 검증, 인증 시도 제한 및 429/Retry-After를 적용합니다.
+        - password는 URL·응답·로그·추적·오류에서 제외합니다. 요청 본문에 승인 상태·시각·권한·승인자 ID를 받지 않습니다.
+        - 운영 기록은 요청 ID·신청 ID·작업·시각·결과를 기록합니다. 공용 비밀번호 인증은 개별 관리자 신원을 식별하지 않습니다.
+      parameters:
+      - name: requestId
+        in: path
+        required: true
+        description: 전체 조회 응답 items[].id의 승인 신청 UUID. 매장 ID와 구분합니다.
+        schema:
+          type: string
+          format: uuid
+        example: d3a4b29d-2efb-4d0d-bae0-1be10c12e80f
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreApprovalApproveRequest'
+            example:
+              password: <admin-password>
+      responses:
+        '200':
+          description: 승인 완료. 이미 승인된 요청도 최초 승인 결과 반환.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreApprovalResult'
+              example:
+                id: d3a4b29d-2efb-4d0d-bae0-1be10c12e80f
+                applicant:
+                  id: 24b9e7af-90fd-424b-9eb3-0b65cda88b2f
+                  name: 김민수
+                  email: owner@example.com
+                  phoneNumber: '01012345678'
+                store:
+                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                  name: 명랑핫도그 광운대점
+                  industry: RESTAURANT
+                  postalCode: '01897'
+                  address: 서울특별시 노원구 광운로 20
+                  detailAddress: 1층
+                  businessRegistrationNumber: '1234567890'
+                  phoneNumber: '029123456'
+                status: APPROVED
+                submittedAt: '2026-10-02T10:00:00Z'
+                approvedAt: '2026-10-02T11:00:00Z'
+        '401':
+          $ref: '#/components/responses/AdminPasswordUnauthorized'
+        '404':
+          description: 매장 승인 신청을 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STORE_APPROVAL_REQUEST_NOT_FOUND
+                message: 매장 승인 신청을 찾을 수 없습니다.
+                requestId: req_example_001
+                fieldErrors: []
+        '409':
+          description: 현재 신청자와 매장 관리 관계로 승인할 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STORE_APPROVAL_NOT_ALLOWED
+                message: 현재 신청자와 매장 관리 관계로 승인할 수 없습니다.
+                requestId: req_example_001
+                fieldErrors: []
         '422':
           $ref: '#/components/responses/Unprocessable'
         '429':
@@ -1575,6 +1690,45 @@ components:
         - 결과가 없거나 마지막 페이지를 넘기면 items는 빈 배열입니다.
         - 승인 상태 필터와 totalItems는 조회 시점의 DB 상태를 반영합니다.
         - 조회 간 신청 추가·승인으로 결과가 바뀔 수 있으며 스냅샷 페이지는 아닙니다.
+    StoreApprovalApproveRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        password:
+          $ref: '#/components/schemas/AdminPassword'
+      required:
+      - password
+    StoreApprovalResult:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 매장 승인 신청 ID
+        applicant:
+          $ref: '#/components/schemas/StoreApprovalApplicant'
+        store:
+          $ref: '#/components/schemas/StoreApprovalStore'
+        status:
+          type: string
+          const: APPROVED
+        submittedAt:
+          type: string
+          format: date-time
+          description: 최초 신청 시각. UTC/RFC 3339.
+        approvedAt:
+          type: string
+          format: date-time
+          description: 최초 승인 시각. 재승인 요청에서도 변경하지 않음.
+      required:
+      - id
+      - applicant
+      - store
+      - status
+      - submittedAt
+      - approvedAt
+      description: 승인이 완료된 신청. 최초 승인과 재승인 요청 모두 같은 신청·상태·최초 승인 시각을 반환합니다.
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
