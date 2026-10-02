@@ -63,3 +63,5 @@ it('모집 중 공고 전체 건수를 표시하고 처음 세 건만 미리 보
 })
 
 it('공고 관리 메뉴는 연결된 이동 콜백을 실행한다',()=>{const jobs=vi.fn();render(<OwnerHome displayName="점주" onJobs={jobs}/>);fireEvent.click(screen.getByRole('button',{name:'공고 관리'}));expect(jobs).toHaveBeenCalledTimes(1)})
+
+it('키보드로 접근 가능한 공고 카드에서 선택한 공고 객체를 전달한다',()=>{const select=vi.fn(),job={id:'night',title:'평일 마감 대타',schedule:'7월 22일',applicants:1};render(<OwnerHome displayName="점주" data={{jobs:[job]}} onSelectJob={select}/>);fireEvent.click(screen.getByRole('button',{name:/평일 마감 대타/}));expect(select).toHaveBeenCalledExactlyOnceWith(job)})

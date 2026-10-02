@@ -16,13 +16,14 @@ export type OwnerHomeData = {
   notificationCount?: number
 }
 
-export function OwnerHome({ displayName, data = {}, initialDate, onManage, onCreateJob, onJobs }: {
+export function OwnerHome({ displayName, data = {}, initialDate, onManage, onCreateJob, onJobs, onSelectJob }: {
   displayName: string
   data?: OwnerHomeData
   initialDate?: Date
   onManage?: () => void
   onCreateJob?: () => void
   onJobs?: () => void
+  onSelectJob?: (job: OwnerJob) => void
 }) {
   const [unavailable, setUnavailable] = useState<string | null>(null)
   const [today] = useState(() => initialDate ?? new Date())
@@ -42,7 +43,7 @@ export function OwnerHome({ displayName, data = {}, initialDate, onManage, onCre
       </section>
       <section className="home-section" aria-labelledby="owner-home-jobs-title">
         <div className="home-section-heading"><h3 id="owner-home-jobs-title">모집 중 공고</h3><span>{jobs.length}건</span></div>
-        {jobs.length ? jobs.slice(0, 3).map(job => <article className="owner-home-job home-card" key={job.id}><div><h4>{job.title}</h4><span className={job.applicants ? 'owner-home-applicants' : 'owner-home-no-applicants'}>{job.applicants ? `지원자 ${job.applicants}명` : '지원자 없음'}</span></div><p>{job.schedule}</p></article>) : <p className="home-empty home-card">모집 중인 공고가 없어요.</p>}
+        {jobs.length ? jobs.slice(0, 3).map(job => <button type="button" className="owner-home-job home-card" key={job.id} onClick={() => onSelectJob ? onSelectJob(job) : setUnavailable('공고 상세')}><div><h4>{job.title}</h4><span className={job.applicants ? 'owner-home-applicants' : 'owner-home-no-applicants'}>{job.applicants ? `지원자 ${job.applicants}명` : '지원자 없음'}</span></div><p>{job.schedule}</p></button>) : <p className="home-empty home-card">모집 중인 공고가 없어요.</p>}
         {jobs.length > 3 && <button type="button" className="owner-home-more" onClick={onJobs || (() => setUnavailable('공고 모두 보기'))}>+ 공고 모두 보기</button>}
       </section>
       <section className="home-section" aria-labelledby="owner-home-calendar-title">
