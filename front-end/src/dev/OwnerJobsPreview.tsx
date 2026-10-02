@@ -25,7 +25,7 @@ export default function OwnerJobsPreview(){
  const job=jobs.find(job=>job.id===params.get('id'))||created
  if(view==='create'){
   const step=(Number(params.get('step'))||1) as 1|2|3
-  return <JobRegistration onBack={list} onCreated={(job,destination)=>{setCreated(job);setJobs(previous=>[job,...previous]);route(destination,job.id)}} initialReceipt={created??undefined} service={service} initialStep={[1,2,3].includes(step)?step:1} initialDraft={step>1||params.has('picker')||params.has('result')?previewJobDraft:emptyJobDraft} initialPicker={params.get('picker') as 'part'|'experience'|'payment'|null} initialResult={params.get('result') as 'success'|'failure'|undefined}/>
+  return <JobRegistration onBack={params.get('from')==='home'?back:list} onCreated={(job,destination)=>{setCreated(job);setJobs(previous=>[job,...previous]);route(destination,job.id)}} initialReceipt={created??undefined} service={service} initialStep={[1,2,3].includes(step)?step:1} initialDraft={step>1||params.has('picker')||params.has('result')?previewJobDraft:emptyJobDraft} initialPicker={params.get('picker') as 'part'|'experience'|'payment'|null} initialResult={params.get('result') as 'success'|'failure'|undefined}/>
  }
  const sampleApplicants:JobApplicant[]=[{id:'kim',name:'김래원',experience:'식당 근무 · 2년',introduction:'식당에서 주문 접수와 홀 응대를 담당했어요.\n바쁜 시간에도 차분하게 손님을 응대하겠습니다.'},{id:'lee',name:'이민하',experience:'',introduction:'안내받은 업무를 성실하게 배우겠습니다.'},{id:'park',name:'박지원',experience:'카페 근무 · 6개월',introduction:'음료 제조와 고객 응대 경험이 있어요.\n안내받은 순서대로 꼼꼼하게 일하겠습니다.'}]
  const applicants=params.has('noApplicants')?[]:sampleApplicants.slice(0,job?.applicants||0)
