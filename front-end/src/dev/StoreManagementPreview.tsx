@@ -16,5 +16,5 @@ export default function StoreManagementPreview() {
  const list=()=>navigatePreview('/__store/manage?view=workers')
  if(view==='worker' && worker)return <Employment key={worker.id} data={worker} service={service} onBack={list} onEnded={()=>setWorkers(items=>items.map(item=>item.id===worker.id?{...item,status:'ended'}:item))}/>
  if(view==='workers'||view==='worker')return <WorkerList storeName="명랑핫도그 광운대점" workers={workers} onBack={()=>navigatePreview('/__store/manage')} onSelect={item=>navigatePreview(`/__store/manage?view=worker&id=${item.id}`)}/>
- return <StoreManagement storeName="명랑핫도그 광운대점" statistics={{jobs:3,review:5,pending:2}} workers={workers} pendingInvitations={1} onInvitations={()=>navigatePreview('/__invitations')} onWorkers={list} onHome={()=>navigatePreview('/__home/owner')} onBack={()=>navigatePreview('/__home/owner')}/>
+ return <StoreManagement onJobs={()=>navigatePreview('/__owner/jobs')} storeName="명랑핫도그 광운대점" statistics={{jobs:3,review:5,pending:2}} workers={workers} pendingInvitations={1} onInvitations={()=>navigatePreview('/__invitations')} onWorkers={list} onHome={()=>navigatePreview('/__home/owner')} onBack={()=>navigatePreview('/__home/owner')}/>
 }

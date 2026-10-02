@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { OwnerHome } from './OwnerHome'
 
 it('uses session identity and shows honest empty states without API data', () => {
@@ -61,3 +61,5 @@ it('모집 중 공고 전체 건수를 표시하고 처음 세 건만 미리 보
   expect(screen.queryByText('4번째 공고')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '+ 공고 모두 보기' })).toBeInTheDocument()
 })
+
+it('공고 관리 메뉴는 연결된 이동 콜백을 실행한다',()=>{const jobs=vi.fn();render(<OwnerHome displayName="점주" onJobs={jobs}/>);fireEvent.click(screen.getByRole('button',{name:'공고 관리'}));expect(jobs).toHaveBeenCalledTimes(1)})
