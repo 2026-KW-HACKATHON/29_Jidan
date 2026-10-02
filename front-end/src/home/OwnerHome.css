@@ -24,3 +24,6 @@
 .owner-home-event > div p { text-decoration: underline; text-underline-position: from-font; }
 .owner-home-event > span { flex: none; display: grid; place-items: center; width: 73px; height: 28px; border-radius: 12px; background: #faeac6; color: var(--ds-primary-strong); }
 .owner-home-add-event { padding: 0; border: 0; background: transparent; color: var(--ds-primary-strong); font-size: 15px; font-weight: 700; line-height: 23px; cursor: pointer; }
+
+.owner-home-job {width:100%;border:0;font:inherit;text-align:left;cursor:pointer;}
+.owner-home-job:focus-visible {outline:2px solid var(--ds-primary-strong);outline-offset:3px;}

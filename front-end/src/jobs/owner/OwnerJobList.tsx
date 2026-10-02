@@ -1,11 +1,11 @@
-import {useState} from 'react'
+import {useState,type ReactNode} from 'react'
 import {MobileLayout} from '../../ui/MobileLayout'
 import {AppBar} from '../../ui/AppBar'
 import {Button} from '../../ui/Button'
 import {shortJobDate,jobTime} from '../model'
 import type {OwnerJob} from './model'
 import './OwnerJobs.css'
-export function OwnerJobSummary({job}:{job:OwnerJob}){return <div className="owner-job-summary"><strong>{job.title}</strong><p>{job.storeName}<br/>{shortJobDate(job.date)} · {jobTime(job)}</p></div>}
+export function OwnerJobSummary({job,children}:{job:OwnerJob;children?:ReactNode}){return <div className="owner-job-summary"><strong>{job.title}</strong><p>{job.storeName}<br/>{shortJobDate(job.date)} · {jobTime(job)}</p>{children}</div>}
 export function OwnerJobList({jobs,storeName,onBack,onSelect,initialTab='recruiting'}:{jobs:readonly OwnerJob[];storeName:string;onBack:()=>void;onSelect:(job:OwnerJob)=>void;initialTab?:'recruiting'|'closed'}){
  const [tab,setTab]=useState(initialTab)
  const open=jobs.filter(job=>job.status==='recruiting'),closed=jobs.filter(job=>job.status!=='recruiting'),visible=(tab==='recruiting'?open:closed).toSorted((a,b)=>b.publishedAt.localeCompare(a.publishedAt)||a.id.localeCompare(b.id))
