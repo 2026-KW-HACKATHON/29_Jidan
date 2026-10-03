@@ -1,0 +1,2534 @@
+openapi: 3.1.0
+info:
+  title: 지단 API 설계 명세
+  version: 0.3.0
+  description: |-
+    Figma 로그인·가입, 일반회원 등록·프로필 관리, 점주 가입과 관리자 매장 승인을 위한 구현 전 계약입니다.
+
+    실제 API/OAuth/DB는 구현되지 않았으며 로컬 문서 서버에서는 요청 실행을 지원하지 않습니다.
+
+    Google 이메일은 검증된 Google ID token에서 서버가 가져오고 요청 본문으로 받지 않습니다.
+
+    일반 회원 인증은 브라우저의 동일 출처 /api 프록시와 opaque HttpOnly 세션 쿠키를 사용합니다.
+
+    관리자 매장 승인 API는 요청 JSON body의 password로 매 요청 인증합니다.
+
+    state·nonce, 세션 만료 시간, 쿠키 방식과 오류 정책은 화면에 없는 설계 제안입니다.
+
+    로그인 시작 → Google callback → 기존 회원은 세션, 신규 회원은 10분 가입 세션 → 가입 완료 순서입니다.
+
+    일반 회원의 비밀번호 로그인/이메일 인증/비밀번호 재설정은 이 화면 범위에 없습니다.
+
+    모든 응답에는 Cache-Control: no-store를 적용하고 세션/개인정보를 로그에 남기지 않습니다.
+  contact:
+    name: Jidan 팀
+    url: https://github.com/2026-KW-HACKATHON/29_Jidan
+  license:
+    name: 프로젝트 내부 설계 문서
+    url: https://github.com/2026-KW-HACKATHON/29_Jidan
+servers:
+- url: http://127.0.0.1:8000
+  description: 향후 로컬 API 구현 서버 (5500은 문서 전용)
+tags:
+- name: Google 인증
+  description: Google 계정으로 로그인 또는 최초 가입 시작
+- name: 가입
+  description: Google 인증 이후 가입 컨텍스트 및 일반회원·점주 등록
+- name: 세션
+  description: 현재 사용자와 권한 조회, CSRF 토큰 발급 및 로그아웃
+- name: 매장 승인 관리
+  description: 요청 body의 관리자 password로 신청을 전체 조회하고 승인 처리
+- name: 일반회원 프로필
+  description: 로그인한 일반회원의 프로필 조회 및 기본 정보·경력·가능 시간 수정
+security:
+- SessionCookie: []
+externalDocs:
+  description: 기준 Figma Design 페이지
+  url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1
+paths:
+  /api/auth/google:
+    get:
+      tags:
+      - Google 인증
+      operationId: startGoogleLogin
+      summary: Google 로그인 시작
+      security: []
+      description: |-
+        Google 버튼에서 페이지 이동으로 호출하며, Google OAuth authorization URL로 **302** 응답합니다.
+
+        **로그인 트랜잭션**
+
+        - 서버는 5분 일회용 `state`·`nonce`와 브라우저 바인딩 트랜잭션을 생성합니다.
+        - `jidan_oauth` 쿠키를 설정하고 callback에서 폐기합니다.
+        - 쿠키 속성: `HttpOnly; Secure; SameSite=Lax; Path=/api/auth/google`
+
+        **인증 설정**
+
+        - Google scope: `openid email profile`
+        - `redirect_uri`: 서버에 설정된 callback URI만 사용합니다.
+        - `state`는 서버가 생성하며 클라이언트가 지정할 수 없습니다. 외부 `returnUrl`은 받지 않습니다.
+        - 기존 유효 세션은 callback 전까지 유지하고, 인증 성공 후 세션 ID를 회전합니다.
+      responses:
+        '302':
+          description: Google 인증 화면으로 이동
+          headers:
+            Location:
+              description: 고정된 프론트엔드 경로 또는 Google authorization URL. 임의 redirect URL을 입력받지 않음. 인증 토큰은
+                URL에 포함하지 않음.
+              schema:
+                type: string
+                format: uri
+              example: http://127.0.0.1:5184/__auth/signup
+            Set-Cookie:
+              description: 일회용 OAuth 브라우저 바인딩 쿠키
+              schema:
+                type: string
+              example: jidan_oauth=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/api/auth/google; Max-Age=300
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/auth/google/callback:
+    get:
+      tags:
+      - Google 인증
+      operationId: completeGoogleLogin
+      summary: Google 인증 결과 처리 및 기존/신규 분기
+      security: []
+      description: |-
+        Google이 호출하는 브라우저 callback입니다.
+
+        **검증 순서**
+
+        1. `state`와 `jidan_oauth`의 바인딩·만료·일회성을 검증한 뒤 `code`를 교환합니다.
+        2. `code` 또는 `error` 중 정확히 하나가 필요합니다. 동시 제공·누락·중복 query parameter는 **400**입니다.
+        3. ID token의 서명·`iss`·`aud`·`exp`·`nonce`·`email_verified`를 검증합니다.
+        4. `provider=GOOGLE`과 `sub`로 회원을 찾습니다.
+
+        **인증 결과에 따른 이동**
+
+        - **기존 ACTIVE 회원**: 새 회원 세션을 발급하고 가입 세션을 삭제합니다.
+          이동 경로: `http://127.0.0.1:5184/__auth/session`
+        - **신규 주체**: 가입 세션을 발급하고 기존 회원 세션을 삭제합니다.
+          이동 경로: `http://127.0.0.1:5184/__auth/signup`
+        - **동의 취소** (`error=access_denied`): 로그인 화면으로 **302** 이동하며 공개 오류 코드 `GOOGLE_ACCESS_DENIED`만 전달합니다.
+
+        이 경로는 프론트엔드 구현 시 확정할 제안입니다. 운영 frontend origin은 서버 설정값을 사용합니다.
+
+        **오류 응답**
+
+        | 상황 | HTTP 상태 | 오류 코드 |
+        | --- | --- | --- |
+        | state 오류 | 400 | `OAUTH_STATE_INVALID` |
+        | code 재사용 | 400 | `OAUTH_CODE_INVALID` |
+        | ID token 검증 실패 | 401 | `GOOGLE_IDENTITY_INVALID` |
+        | 정지 계정 | 403 | `ACCOUNT_SUSPENDED` |
+
+        **오류 처리와 정보 보호**
+
+        - `state`는 Google error 응답에서도 필수입니다.
+        - 오류 시 새 세션을 발급하지 않고 트랜잭션을 폐기합니다.
+        - 원시 `code`, ID token, Google `error_description`은 프론트 URL·응답·로그에 노출하지 않습니다.
+      parameters:
+      - name: state
+        in: query
+        required: true
+        description: 서버가 생성한 OAuth state. 쿠키의 로그인 트랜잭션과 비교.
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 512
+        example: example_state_value_0123456789abcdef
+      - name: code
+        in: query
+        description: Google 일회용 authorization code. error와 상호 배타.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 4096
+      - name: error
+        in: query
+        description: Google OAuth 오류. code와 상호 배타.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+        example: access_denied
+      - name: jidan_oauth
+        in: cookie
+        required: true
+        description: 로그인 시작에서 설정한 브라우저 바인딩 쿠키. 누락·만료·state 불일치는 400.
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '302':
+          description: 기존 회원/신규 가입/동의 취소에 따라 프론트엔드로 이동
+          headers:
+            Location:
+              description: 고정된 프론트엔드 경로 또는 Google authorization URL. 임의 redirect URL을 입력받지 않음. 인증 토큰은
+                URL에 포함하지 않음.
+              schema:
+                type: string
+                format: uri
+              example: http://127.0.0.1:5184/__auth/signup
+            Set-Cookie:
+              description: |-
+                가입 세션을 설정.
+
+                운영에서는 Secure, 로컬 HTTP에서만 Secure 생략.
+
+                callback 오류 시 login 트랜잭션 쿠키 폐기.
+
+                기존 회원이면 대신 jidan_session 설정.
+
+                각각 별도 Set-Cookie 헤더로 전달.
+              schema:
+                type: string
+              example: jidan_registration=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/api/auth; Max-Age=600
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/auth/registration:
+    get:
+      tags:
+      - 가입
+      operationId: getRegistrationContext
+      summary: 최초 가입의 Google 이메일·가능한 가입 유형 조회
+      security:
+      - RegistrationCookie: []
+      description: |-
+        가입 유형 선택·등록 화면에 진입할 때 호출합니다.
+
+        - 가입 컨텍스트의 `email`은 읽기 전용입니다.
+        - 회원 세션만 있으면 **403 · `ALREADY_REGISTERED`**입니다.
+        - 가입 세션이 만료되면 입력값을 로컬에서 유지한 채 Google 로그인을 다시 시도합니다.
+      responses:
+        '200':
+          description: Google 인증 이후 가입 전 컨텍스트
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationContext'
+              example:
+                identity:
+                  provider: GOOGLE
+                  email: member@example.com
+                  emailVerified: true
+                expiresAt: '2026-10-02T10:10:00Z'
+                allowedRoles:
+                - WORKER
+                - OWNER
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/auth/registrations/workers:
+    post:
+      tags:
+      - 가입
+      operationId: registerWorker
+      summary: 일반회원 프로필 등록 및 가입 완료
+      security:
+      - RegistrationCookie: []
+        CsrfToken: []
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      description: |-
+        **요청 조건**
+
+        - Google 가입 세션 + X-CSRF-Token + 허용된 Origin 필요. 역할과 이메일은 서버가 결정한다.
+        - 가입 세션일 때만 새 회원 생성 가능. 회원 세션은 동일 주체의 성공한 Idempotency-Key 재시도만 허용하며 그 외 409 ALREADY_REGISTERED.
+        - Origin은 허용 목록의 정확한 scheme/host/port로 검증하며 임의 Origin/누락은 403 CSRF_INVALID.
+
+        **저장과 재시도**
+
+        - 가입/프로필(점주는 매장 포함) 저장과 key 결과 기록은 같은 트랜잭션. 성공 후 가입 세션을 폐기하고 회원 세션으로 교체.
+        - 실패 시 입력값 유지. 같은 key와 본문으로 재시도하면 중복 저장 없이 최초 201 결과 재현.
+
+        **근무 프로필 검증**
+
+        - 신입은 `careers=[]`, 경력은 최소 1건이 필요합니다.
+        - 현재 근무 중이면 `endMonth=null`입니다.
+        - 생일·경력 연월 순서·가능 시간 중첩은 서버에서 검증합니다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerRegistrationRequest'
+            examples:
+              newWorker:
+                summary: 신입 · 월/수/금 주간 근무
+                value:
+                  name: 김지수
+                  phoneNumber: '01012345678'
+                  birthDate: '2001-03-14'
+                  gender: FEMALE
+                  experienceLevel: NEW
+                  careers: []
+                  availabilities:
+                  - days:
+                    - MON
+                    - WED
+                    - FRI
+                    startTime: 09:00
+                    endTime: '14:00'
+                    endsNextDay: false
+              currentCareerNight:
+                summary: 경력 · 현재 근무 중 · 심야 가능 시간
+                value:
+                  name: 김지수
+                  phoneNumber: '01012345678'
+                  birthDate: '2001-03-14'
+                  gender: FEMALE
+                  experienceLevel: EXPERIENCED
+                  careers:
+                  - industry: CAFE
+                    duties: 음료 제조, 고객 응대
+                    startMonth: 2024-03
+                    endMonth: null
+                    isCurrent: true
+                  availabilities:
+                  - days:
+                    - FRI
+                    - SUN
+                    startTime: '22:00'
+                    endTime: 02:00
+                    endsNextDay: true
+      responses:
+        '201':
+          description: 가입 완료 및 새 회원 세션 발급. 동일 key 재시도도 최초 201 응답 재현.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              example:
+                user:
+                  id: a7be5b17-30d8-4b47-bd75-e866b4539dc9
+                  role: WORKER
+                  name: 김지수
+                  identity:
+                    provider: GOOGLE
+                    email: member@example.com
+                    emailVerified: true
+                  phoneNumber: '01012345678'
+                  profileCompleted: true
+                  permissions:
+                  - BROWSE_JOB_POSTINGS
+                  - APPLY_FOR_JOBS
+                  - READ_OWN_PROFILE
+                  stores: []
+                expiresAt: '2026-10-03T10:00:00Z'
+                nextAction: WORKER_HOME
+          headers:
+            Set-Cookie:
+              description: |-
+                jidan_session을 설정하고 jidan_registration을 Max-Age=0으로 삭제.
+
+                별도 Set-Cookie 헤더 사용.
+
+                기존 쿠키와 CSRF 토큰을 회전.
+
+                운영에서 Secure, 로컬 HTTP에서만 Secure 생략.
+              schema:
+                type: string
+              example: jidan_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/auth/registrations/owners:
+    post:
+      tags:
+      - 가입
+      operationId: registerOwner
+      summary: 점주 가입 및 최초 매장 승인 신청
+      security:
+      - RegistrationCookie: []
+        CsrfToken: []
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      description: |-
+        **요청 조건**
+
+        - Google 가입 세션 + X-CSRF-Token + 허용된 Origin 필요. 역할과 이메일은 서버가 결정한다.
+        - 가입 세션일 때만 새 회원 생성 가능. 회원 세션은 동일 주체의 성공한 Idempotency-Key 재시도만 허용하며 그 외 409 ALREADY_REGISTERED.
+        - Origin은 허용 목록의 정확한 scheme/host/port로 검증하며 임의 Origin/누락은 403 CSRF_INVALID.
+
+        **저장과 재시도**
+
+        - 가입/프로필(점주는 매장 포함) 저장과 key 결과 기록은 같은 트랜잭션. 성공 후 가입 세션을 폐기하고 회원 세션으로 교체.
+        - 실패 시 입력값 유지. 같은 key와 본문으로 재시도하면 중복 저장 없이 최초 201 결과 재현.
+
+        **매장 신청과 승인**
+
+        - 승인 상태는 서버가 `PENDING`으로 설정합니다.
+        - 점주 권한과 승인된 매장의 운영 권한을 분리합니다.
+        - 중복 매장: **409 · `STORE_ALREADY_REGISTERED`**
+        - 월계1동 외 소재지: **422 · `STORE_OUTSIDE_SERVICE_AREA`**
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnerRegistrationRequest'
+            example:
+              name: 김민수
+              phoneNumber: '01012345678'
+              store:
+                name: 명랑핫도그 광운대점
+                industry: RESTAURANT
+                postalCode: '01897'
+                address: 서울특별시 노원구 광운로 20
+                detailAddress: 1층
+                businessRegistrationNumber: '1234567890'
+                phoneNumber: '029123456'
+      responses:
+        '201':
+          description: 가입 완료 및 새 회원 세션 발급. 동일 key 재시도도 최초 201 응답 재현.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              example:
+                user:
+                  id: 24b9e7af-90fd-424b-9eb3-0b65cda88b2f
+                  role: OWNER
+                  name: 김민수
+                  identity:
+                    provider: GOOGLE
+                    email: owner@example.com
+                    emailVerified: true
+                  phoneNumber: '01012345678'
+                  profileCompleted: true
+                  permissions:
+                  - READ_OWN_STORE_STATUS
+                  stores:
+                  - storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    storeName: 명랑핫도그 광운대점
+                    approvalStatus: PENDING
+                    permissions:
+                    - READ_STORE_STATUS
+                expiresAt: '2026-10-03T10:00:00Z'
+                nextAction: OWNER_APPROVAL_PENDING
+          headers:
+            Set-Cookie:
+              description: |-
+                jidan_session을 설정하고 jidan_registration을 Max-Age=0으로 삭제.
+
+                별도 Set-Cookie 헤더 사용.
+
+                기존 쿠키와 CSRF 토큰을 회전.
+
+                운영에서 Secure, 로컬 HTTP에서만 Secure 생략.
+              schema:
+                type: string
+              example: jidan_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/auth/session:
+    get:
+      tags:
+      - 세션
+      operationId: getCurrentSession
+      summary: 현재 회원·가입 완료 상태·역할·매장 권한 조회
+      description: |-
+        새로고침·로그인 완료 후 화면 이동을 결정할 때 사용합니다. 매장 승인 변경은 현재 DB 상태를 반영합니다.
+
+        **세션 오류**
+
+        - 가입 전 세션: **401 · `REGISTRATION_REQUIRED`**
+        - 정지 계정: **403 · `ACCOUNT_SUSPENDED`**, 세션 폐기
+
+        **점주 화면 이동**
+
+        - `PENDING` 매장만 있는 경우: `nextAction=OWNER_APPROVAL_PENDING`
+        - 승인된 매장이 하나라도 있는 경우: `nextAction=OWNER_HOME`
+      responses:
+        '200':
+          description: 로그인한 회원과 현재 권한
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              examples:
+                worker:
+                  summary: 가입을 완료한 일반회원
+                  value:
+                    user:
+                      id: a7be5b17-30d8-4b47-bd75-e866b4539dc9
+                      role: WORKER
+                      name: 김지수
+                      identity:
+                        provider: GOOGLE
+                        email: member@example.com
+                        emailVerified: true
+                      phoneNumber: '01012345678'
+                      profileCompleted: true
+                      permissions:
+                      - BROWSE_JOB_POSTINGS
+                      - APPLY_FOR_JOBS
+                      - READ_OWN_PROFILE
+                      stores: []
+                    expiresAt: '2026-10-03T10:00:00Z'
+                    nextAction: WORKER_HOME
+                pendingOwner:
+                  summary: 매장 운영 승인 대기 점주
+                  value:
+                    user:
+                      id: 24b9e7af-90fd-424b-9eb3-0b65cda88b2f
+                      role: OWNER
+                      name: 김민수
+                      identity:
+                        provider: GOOGLE
+                        email: owner@example.com
+                        emailVerified: true
+                      phoneNumber: '01012345678'
+                      profileCompleted: true
+                      permissions:
+                      - READ_OWN_STORE_STATUS
+                      stores:
+                      - storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        storeName: 명랑핫도그 광운대점
+                        approvalStatus: PENDING
+                        permissions:
+                        - READ_STORE_STATUS
+                    expiresAt: '2026-10-03T10:00:00Z'
+                    nextAction: OWNER_APPROVAL_PENDING
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/auth/csrf:
+    get:
+      tags:
+      - 세션
+      operationId: getCsrfToken
+      summary: 가입·로그아웃 요청의 CSRF 토큰 조회
+      security:
+      - SessionCookie: []
+      - RegistrationCookie: []
+      description: |-
+        응답을 읽을 수 있는 동일 출처 클라이언트에게 세션에 바인딩된 토큰을 반환합니다.
+
+        - wildcard CORS는 금지합니다. credential CORS는 정확한 허용 origin만 사용합니다.
+        - 회원·가입 쿠키가 둘 다 있으면 회원 세션을 우선합니다.
+        - 클라이언트는 현재 상태에 맞는 변경 요청만 수행합니다.
+        - 이 GET은 세션 생성이나 권한 변경을 수행하지 않습니다.
+      responses:
+        '200':
+          description: 현재 세션용 CSRF 토큰
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CsrfTokenResponse'
+              example:
+                csrfToken: example_csrf_token_0123456789abcdef
+                expiresAt: '2026-10-02T10:10:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/auth/logout:
+    post:
+      tags:
+      - 세션
+      operationId: logout
+      summary: 현재 브라우저의 회원/가입 세션 종료
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      - RegistrationCookie: []
+        CsrfToken: []
+      - {}
+      description: |-
+        현재 브라우저의 회원·가입 세션과 OAuth 트랜잭션을 종료합니다.
+
+        **요청 검증**
+
+        - 쿠키가 있으면 해당 세션의 CSRF 토큰과 허용된 Origin을 검증하고 서버 세션을 즉시 폐기합니다.
+        - 회원·가입 쿠키가 둘 다 있으면 회원 CSRF를 기준으로 두 세션을 모두 폐기합니다.
+        - 쿠키가 없거나 이미 만료되었으면 Origin 검증 후 **204**를 반환합니다. 이 경우 CSRF는 생략할 수 있습니다.
+
+        **종료 처리**
+
+        - OAuth 트랜잭션도 폐기합니다.
+        - 회원·가입·OAuth 쿠키를 각각 원래 Path/Domain에 `Max-Age=0`으로 삭제합니다.
+        - 다른 브라우저의 세션과 Google 계정 자체는 로그아웃하지 않습니다.
+        - 연속 호출도 **204**를 반환합니다.
+      responses:
+        '204':
+          description: 세션 종료. 응답 본문 없음.
+          headers:
+            Set-Cookie:
+              description: |-
+                jidan_session Path=/, jidan_registration Path=/api/auth, jidan_oauth Path=/api/auth/google을 별도 헤더로 삭제.
+
+                각 쿠키는 HttpOnly; Secure; SameSite=Lax; Max-Age=0 (로컬 HTTP는 Secure 생략).
+              schema:
+                type: string
+              example: jidan_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/admin/store-approval-requests/search:
+    post:
+      tags:
+      - 매장 승인 관리
+      operationId: searchStoreApprovalRequests
+      summary: 매장 승인 신청 전체 조회
+      security: []
+      description: |-
+        관리자가 모든 점주의 매장 승인 신청을 페이지 단위로 조회합니다.
+        비밀번호를 body에 보내기 위해 조회도 POST로 정의하며, 매장 상태를 변경하지 않습니다.
+
+        **관리자 인증**
+
+        - JSON body의 password를 매 요청 검증합니다. 회원 쿠키·Bearer 토큰은 사용하지 않습니다.
+        - password 누락·빈 값·형식 오류는 422, 잘못된 비밀번호는 401 ADMIN_PASSWORD_INVALID입니다.
+        - OpenAPI security는 body 인증을 표현하지 못하므로 빈 배열로 재정의합니다. 무인증 공개 API를 의미하지 않습니다.
+        - 비밀번호 검증이 끝나기 전에는 신청 목록·건수·개인정보를 반환하지 않습니다.
+
+        **조회 조건**
+
+        - status 생략: 승인 대기·승인 완료 신청 전체 조회
+        - status=PENDING: 승인 대기 신청만 조회
+        - status=APPROVED: 승인 완료 신청만 조회
+        - 기본 page=1, size=20. size는 최대 100입니다.
+        - submittedAt 내림차순, 동률이면 신청 id 내림차순입니다.
+        - 결과가 없거나 마지막 페이지를 넘기면 200과 빈 items를 반환합니다.
+
+        **비밀번호와 응답 보호**
+
+        - 운영에서는 HTTPS로만 제공하며, 서버 설정의 비밀번호 해시와 검증합니다.
+        - 비밀번호는 프론트 빌드·소스에 하드코딩하지 않고 응답·로그·추적·오류에서 제외합니다.
+        - 인증 실패는 IP 및 관리자 endpoint 기준으로 요청을 제한하고 429/Retry-After를 반환합니다.
+        - 개인정보가 포함된 응답에는 Cache-Control: no-store를 적용합니다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreApprovalSearchRequest'
+            examples:
+              all:
+                summary: 전체 신청 조회 · 기본 페이지
+                value:
+                  password: <admin-password>
+              pending:
+                summary: 승인 대기 신청 조회
+                value:
+                  password: <admin-password>
+                  status: PENDING
+                  page: 1
+                  size: 20
+      responses:
+        '200':
+          description: 조건에 맞는 매장 승인 신청 페이지
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreApprovalPage'
+              examples:
+                pending:
+                  summary: 승인 대기 신청 1건
+                  value:
+                    items:
+                    - id: d3a4b29d-2efb-4d0d-bae0-1be10c12e80f
+                      applicant:
+                        id: 24b9e7af-90fd-424b-9eb3-0b65cda88b2f
+                        name: 김민수
+                        email: owner@example.com
+                        phoneNumber: '01012345678'
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 명랑핫도그 광운대점
+                        industry: RESTAURANT
+                        postalCode: '01897'
+                        address: 서울특별시 노원구 광운로 20
+                        detailAddress: 1층
+                        businessRegistrationNumber: '1234567890'
+                        phoneNumber: '029123456'
+                      status: PENDING
+                      submittedAt: '2026-10-02T10:00:00Z'
+                      approvedAt: null
+                    page: 1
+                    size: 20
+                    totalItems: 1
+                    totalPages: 1
+                empty:
+                  summary: 검색 결과 없음
+                  value:
+                    items: []
+                    page: 1
+                    size: 20
+                    totalItems: 0
+                    totalPages: 0
+        '401':
+          $ref: '#/components/responses/AdminPasswordUnauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/admin/store-approval-requests/{requestId}/approve:
+    post:
+      tags:
+      - 매장 승인 관리
+      operationId: approveStoreApprovalRequest
+      summary: 매장 승인 신청 승인 처리
+      security: []
+      description: |-
+        관리자가 지정한 신청을 승인하고 해당 매장의 운영 권한을 활성화합니다.
+
+        **관리자 인증과 조회**
+
+        - JSON body의 password를 매 요청 검증합니다. 회원 쿠키·Bearer 토큰은 사용하지 않습니다.
+        - password 누락·빈 값·형식 오류는 422, 잘못된 비밀번호는 401 ADMIN_PASSWORD_INVALID입니다.
+        - 신청의 존재 여부를 조회하기 전에 비밀번호를 검증합니다. 인증 실패에는 신청 정보가 포함되지 않습니다.
+        - 비밀번호가 유효하고 신청이 존재하지 않으면 404 STORE_APPROVAL_REQUEST_NOT_FOUND입니다.
+        - OpenAPI security=[]는 body password 인증을 표현하기 위한 재정의이며, 무인증 승인을 허용하지 않습니다.
+
+        **승인 처리**
+
+        1. PENDING 신청과 연결된 매장·신청자 OWNER의 일치 여부를 확인합니다.
+        2. 신청과 매장 승인 상태를 APPROVED로 변경하고 서버 UTC 시각을 approvedAt에 저장합니다.
+        3. 해당 점주에게 이 매장의 관리·근무자 초대·공고·매뉴얼 운영 권한을 적용합니다.
+        4. 신청·매장 상태 변경과 권한 적용을 같은 트랜잭션으로 처리합니다. 하나라도 실패하면 모두 rollback합니다.
+
+        신청자와 현재 매장 관리 관계가 일치하지 않거나 신청자가 OWNER가 아니면 409 STORE_APPROVAL_NOT_ALLOWED입니다.
+        다른 점주의 매장이나 별도 승인 대기 매장에는 권한을 부여하지 않습니다.
+
+        **재시도와 동시 요청**
+
+        - 이미 APPROVED인 신청은 200과 기존 승인 결과를 반환합니다. 최초 approvedAt을 변경하거나 권한을 중복 생성하지 않습니다.
+        - 같은 신청에 대한 동시 승인은 잠금 또는 조건부 갱신으로 한 번만 변경합니다.
+        - 응답을 잃어 재시도해도 같은 신청 ID와 최초 승인 시각을 반환합니다. 별도 Idempotency-Key는 필요하지 않습니다.
+        - 점주는 기존 회원 세션으로 다음 /api/auth/session 조회 시 변경된 승인 상태·권한·OWNER_HOME 이동 힌트를 받습니다.
+
+        **비밀번호와 기록 보호**
+
+        - 운영 HTTPS, 서버 비밀번호 해시 검증, 인증 시도 제한 및 429/Retry-After를 적용합니다.
+        - password는 URL·응답·로그·추적·오류에서 제외합니다. 요청 본문에 승인 상태·시각·권한·승인자 ID를 받지 않습니다.
+        - 운영 기록은 요청 ID·신청 ID·작업·시각·결과를 기록합니다. 공용 비밀번호 인증은 개별 관리자 신원을 식별하지 않습니다.
+      parameters:
+      - name: requestId
+        in: path
+        required: true
+        description: 전체 조회 응답 items[].id의 승인 신청 UUID. 매장 ID와 구분합니다.
+        schema:
+          type: string
+          format: uuid
+        example: d3a4b29d-2efb-4d0d-bae0-1be10c12e80f
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreApprovalApproveRequest'
+            example:
+              password: <admin-password>
+      responses:
+        '200':
+          description: 승인 완료. 이미 승인된 요청도 최초 승인 결과 반환.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreApprovalResult'
+              example:
+                id: d3a4b29d-2efb-4d0d-bae0-1be10c12e80f
+                applicant:
+                  id: 24b9e7af-90fd-424b-9eb3-0b65cda88b2f
+                  name: 김민수
+                  email: owner@example.com
+                  phoneNumber: '01012345678'
+                store:
+                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                  name: 명랑핫도그 광운대점
+                  industry: RESTAURANT
+                  postalCode: '01897'
+                  address: 서울특별시 노원구 광운로 20
+                  detailAddress: 1층
+                  businessRegistrationNumber: '1234567890'
+                  phoneNumber: '029123456'
+                status: APPROVED
+                submittedAt: '2026-10-02T10:00:00Z'
+                approvedAt: '2026-10-02T11:00:00Z'
+        '401':
+          $ref: '#/components/responses/AdminPasswordUnauthorized'
+        '404':
+          description: 매장 승인 신청을 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STORE_APPROVAL_REQUEST_NOT_FOUND
+                message: 매장 승인 신청을 찾을 수 없습니다.
+                requestId: req_example_001
+                fieldErrors: []
+        '409':
+          description: 현재 신청자와 매장 관리 관계로 승인할 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STORE_APPROVAL_NOT_ALLOWED
+                message: 현재 신청자와 매장 관리 관계로 승인할 수 없습니다.
+                requestId: req_example_001
+                fieldErrors: []
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/users/me/profile:
+    get:
+      tags:
+      - 일반회원 프로필
+      operationId: getMyWorkerProfile
+      summary: 내 일반회원 프로필 조회
+      security:
+      - SessionCookie: []
+      description: |-
+        **인증·인가**
+
+        - 가입이 완료된 ACTIVE `WORKER`의 `jidan_session` 쿠키가 필요합니다.
+        - 가입 세션만으로는 사용할 수 없으며 **401 REGISTRATION_REQUIRED**입니다.
+        - 점주 등 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 대상 회원은 세션에서 결정합니다. 다른 회원의 ID를 입력받지 않습니다.
+        - Google 이메일은 읽기 전용이며 서버가 검증한 값만 반환합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **화면 데이터**
+
+        - 이름·Google 이메일, 기본 정보, 신입/경력과 경력 목록, 가능 시간 목록을 반환합니다.
+        - `careers`와 `availabilities`는 저장된 순서로 반환합니다. 경력·가능 시간 항목 ID는 이 계약에서 사용하지 않습니다.
+        - 화면의 주당 가능 시간은 요일별 구간을 합산해 표시합니다. 저장 가능한 시간 중첩은 허용하지 않습니다.
+        - 등록 완료 회원의 조회이므로 가입 단계 데이터는 포함하지 않습니다.
+      responses:
+        '200':
+          description: 로그인한 일반회원의 전체 프로필
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerProfile'
+              example:
+                name: 김지수
+                phoneNumber: '01012345678'
+                birthDate: '2001-03-14'
+                gender: FEMALE
+                experienceLevel: NEW
+                careers: []
+                availabilities:
+                - days:
+                  - MON
+                  - WED
+                  - FRI
+                  startTime: 09:00
+                  endTime: '14:00'
+                  endsNextDay: false
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                role: WORKER
+                identity:
+                  provider: GOOGLE
+                  email: member@example.com
+                  emailVerified: true
+                updatedAt: '2026-10-03T01:00:00Z'
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: 'OWNER 등 일반회원 역할 아님: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 일반회원만 사용할 수 있습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 프로필 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+      externalDocs:
+        description: Figma 일반회원 / 내 프로필
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=255-695
+  /api/users/me/profile/basic:
+    patch:
+      tags:
+      - 일반회원 프로필
+      operationId: updateMyWorkerBasicProfile
+      summary: 내 일반회원 기본 정보 부분 수정
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      description: |-
+        **인증·인가**
+
+        - 가입이 완료된 ACTIVE `WORKER`의 `jidan_session` 쿠키가 필요합니다.
+        - 가입 세션만으로는 사용할 수 없으며 **401 REGISTRATION_REQUIRED**입니다.
+        - 점주 등 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 대상 회원은 세션에서 결정합니다. 다른 회원의 ID를 입력받지 않습니다.
+        - Google 이메일은 읽기 전용이며 서버가 검증한 값만 반환합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **부분 수정**
+
+        - 이름·전화번호·생년월일·성별 중 변경할 필드만 전송합니다. 생략한 필드는 유지하며 빈 객체와 null은 **422**입니다.
+        - Google 이메일·provider·회원 ID·역할·경력·가능 시간은 이 요청으로 바꿀 수 없습니다. 알 수 없는 필드도 **422**입니다.
+        - 이름은 앞뒤 공백을 제거해 정규화한 뒤 가입과 동일한 제약으로 검증합니다. 전화번호는 하이픈 없는 010 휴대전화 번호입니다.
+        - 실제 달력 날짜를 검증하고 Asia/Seoul 기준 오늘보다 미래인 생일은 **422**입니다. 연령 제한은 제품 정책 확정이 필요합니다.
+        - 이름·전화번호 수정은 다음 `/api/auth/session` 조회에도 반영됩니다.
+
+        **저장 조건**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`이 함께 필요합니다.
+        - Origin은 허용 목록의 정확한 scheme/host/port로 검증합니다. 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 관리자 `password` 및 가입 세션은 이 수정 API의 인증 수단이 아닙니다.
+        - 유효성 검사에 실패하면 **422 VALIDATION_ERROR**와 `fieldErrors`를 반환하며 변경을 저장하지 않습니다.
+        - 해당 영역만 원자적으로 저장하고 다른 영역은 유지합니다. 성공 시 현재 전체 프로필을 반환합니다.
+        - 같은 값을 다시 저장해도 중복 항목을 만들지 않습니다. 실질 변경이 없으면 `updatedAt`을 유지합니다.
+        - 동시 요청은 서버에 저장된 순서대로 해당 영역의 마지막 요청이 반영됩니다. 다른 영역의 값을 덮어쓰지 않습니다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerBasicProfileUpdateRequest'
+            examples:
+              nameOnly:
+                summary: 이름만 변경
+                value:
+                  name: 김지민
+              allBasicFields:
+                summary: 기본 정보 네 필드 변경
+                value:
+                  name: 김지민
+                  phoneNumber: '01098765432'
+                  birthDate: '2000-02-29'
+                  gender: FEMALE
+      responses:
+        '200':
+          description: 로그인한 일반회원의 전체 프로필
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerProfile'
+              example:
+                name: 김지민
+                phoneNumber: '01012345678'
+                birthDate: '2001-03-14'
+                gender: FEMALE
+                experienceLevel: NEW
+                careers: []
+                availabilities:
+                - days:
+                  - MON
+                  - WED
+                  - FRI
+                  startTime: 09:00
+                  endTime: '14:00'
+                  endsNextDay: false
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                role: WORKER
+                identity:
+                  provider: GOOGLE
+                  email: member@example.com
+                  emailVerified: true
+                updatedAt: '2026-10-03T01:10:00Z'
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: 'OWNER 등 일반회원 역할 아님: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. CSRF 토큰 또는 허용 Origin 불일치·누락: CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 일반회원만 사용할 수 있습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 해당 영역의 변경을 모두 rollback하고 기존 프로필을 유지합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 프로필 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 또는 지원하지 않는 요청 형식.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+      externalDocs:
+        description: Figma 일반회원 / 기본 정보 수정
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=255-1465
+  /api/users/me/profile/careers:
+    put:
+      tags:
+      - 일반회원 프로필
+      operationId: replaceMyWorkerCareers
+      summary: 내 일반회원 근무 정보 전체 교체
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      description: |-
+        **인증·인가**
+
+        - 가입이 완료된 ACTIVE `WORKER`의 `jidan_session` 쿠키가 필요합니다.
+        - 가입 세션만으로는 사용할 수 없으며 **401 REGISTRATION_REQUIRED**입니다.
+        - 점주 등 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 대상 회원은 세션에서 결정합니다. 다른 회원의 ID를 입력받지 않습니다.
+        - Google 이메일은 읽기 전용이며 서버가 검증한 값만 반환합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **근무 정보 교체**
+
+        - `experienceLevel`과 `careers`를 함께 전송합니다. 기존 경력 목록을 요청 목록으로 교체하며 빠진 경력은 삭제됩니다.
+        - **신입**: `experienceLevel=NEW`, `careers=[]`로 전환합니다. 기존 경력을 전부 삭제합니다.
+        - **경력**: `experienceLevel=EXPERIENCED`, 최소 1건을 제출합니다. 최대 20건은 가입 계약을 따른 설계 제안입니다.
+        - 업종·담당 업무·시작/종료 연월·현재 근무 여부는 필수, 매장명은 선택입니다. 입력한 순서를 유지합니다. 항목 ID는 받지 않습니다.
+        - 현재 근무 중이면 `isCurrent=true`, `endMonth=null`입니다. 종료 경력은 `isCurrent=false`와 종료 연월이 필요합니다.
+        - 서버에서 시작/종료 연월이 Asia/Seoul 기준 현재 연월 이하이고 종료가 시작보다 이전이 아닌지 검증합니다. 위반 시 **422**입니다. 같은 달 시작·종료는 허용합니다.
+        - 담당 업무·선택 매장명은 앞뒤 공백을 제거한 뒤 검증하며 빈 문자열로 매장명을 지우지 않고 해당 필드를 생략합니다.
+
+        **저장 조건**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`이 함께 필요합니다.
+        - Origin은 허용 목록의 정확한 scheme/host/port로 검증합니다. 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 관리자 `password` 및 가입 세션은 이 수정 API의 인증 수단이 아닙니다.
+        - 유효성 검사에 실패하면 **422 VALIDATION_ERROR**와 `fieldErrors`를 반환하며 변경을 저장하지 않습니다.
+        - 해당 영역만 원자적으로 저장하고 다른 영역은 유지합니다. 성공 시 현재 전체 프로필을 반환합니다.
+        - 같은 값을 다시 저장해도 중복 항목을 만들지 않습니다. 실질 변경이 없으면 `updatedAt`을 유지합니다.
+        - 동시 요청은 서버에 저장된 순서대로 해당 영역의 마지막 요청이 반영됩니다. 다른 영역의 값을 덮어쓰지 않습니다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerCareersReplaceRequest'
+            examples:
+              newWorker:
+                summary: 신입으로 전환하고 경력 삭제
+                value:
+                  experienceLevel: NEW
+                  careers: []
+              currentCareer:
+                summary: 현재 근무 중 경력으로 전체 교체
+                value:
+                  experienceLevel: EXPERIENCED
+                  careers:
+                  - industry: CAFE
+                    duties: 음료 제조, 고객 응대
+                    storeName: 월계 카페
+                    startMonth: 2024-03
+                    endMonth: null
+                    isCurrent: true
+              endedCareer:
+                summary: 종료 경력 (선택 매장명 생략)
+                value:
+                  experienceLevel: EXPERIENCED
+                  careers:
+                  - industry: RESTAURANT
+                    duties: 홀 서빙
+                    startMonth: 2025-02
+                    endMonth: 2025-02
+                    isCurrent: false
+      responses:
+        '200':
+          description: 로그인한 일반회원의 전체 프로필
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerProfile'
+              example:
+                name: 김지수
+                phoneNumber: '01012345678'
+                birthDate: '2001-03-14'
+                gender: FEMALE
+                experienceLevel: EXPERIENCED
+                careers:
+                - industry: CAFE
+                  duties: 음료 제조, 고객 응대
+                  storeName: 월계 카페
+                  startMonth: 2024-03
+                  endMonth: null
+                  isCurrent: true
+                availabilities:
+                - days:
+                  - MON
+                  - WED
+                  - FRI
+                  startTime: 09:00
+                  endTime: '14:00'
+                  endsNextDay: false
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                role: WORKER
+                identity:
+                  provider: GOOGLE
+                  email: member@example.com
+                  emailVerified: true
+                updatedAt: '2026-10-03T01:20:00Z'
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: 'OWNER 등 일반회원 역할 아님: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. CSRF 토큰 또는 허용 Origin 불일치·누락: CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 일반회원만 사용할 수 있습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 해당 영역의 변경을 모두 rollback하고 기존 프로필을 유지합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 프로필 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 또는 지원하지 않는 요청 형식.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+      externalDocs:
+        description: Figma 일반회원 / 근무 정보 수정
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=255-1519
+  /api/users/me/profile/availabilities:
+    put:
+      tags:
+      - 일반회원 프로필
+      operationId: replaceMyWorkerAvailabilities
+      summary: 내 일반회원 가능 시간 전체 교체
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      description: |-
+        **인증·인가**
+
+        - 가입이 완료된 ACTIVE `WORKER`의 `jidan_session` 쿠키가 필요합니다.
+        - 가입 세션만으로는 사용할 수 없으며 **401 REGISTRATION_REQUIRED**입니다.
+        - 점주 등 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 대상 회원은 세션에서 결정합니다. 다른 회원의 ID를 입력받지 않습니다.
+        - Google 이메일은 읽기 전용이며 서버가 검증한 값만 반환합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **가능 시간 교체**
+
+        - `availabilities` 목록만 전송하며 기존 목록을 통째로 교체합니다. 빠진 구간은 삭제하고 요청 순서를 유지합니다.
+        - 최소 1건·최대 100건은 기존 가입 계약을 따른 설계 제안입니다. 모든 시간을 비우는 요청은 **422**입니다.
+        - 각 구간에 요일 목록·시작/종료 시각·`endsNextDay`를 모두 보냅니다. 30분 단위의 Asia/Seoul 주간 반복 일정입니다.
+        - `endsNextDay=false`이면 종료>시작, true이면 종료<=시작이며 **0<기간<=24시간**이어야 합니다. 서버에서 검증합니다.
+        - 자정은 `24:00` 대신 `00:00`과 `endsNextDay=true`로 표현합니다. 예: 금요일 22:00 → 토요일 00:00.
+
+        **중첩 검증**
+
+        - 요일 목록을 각 요일 구간으로 펼친 뒤 기존 목록이 아닌 제출된 전체 목록의 중첩을 검사합니다. 같은 요일·다음 날·주 경계를 모두 포함합니다.
+        - 일요일 심야는 다음 월요일로 이어집니다. 예: 일요일 22:00~월요일 02:00과 월요일 01:00~03:00은 **422**입니다.
+        - 시작은 포함하고 종료는 제외합니다. 월요일 09:00~12:00과 12:00~14:00은 허용합니다.
+        - 같은 구간을 중복 제출하거나 서로 다른 요일 묶음에서 같은 요일 구간이 겹쳐도 **422**입니다.
+        - `fieldErrors`로 문제 항목을 안내하며 검증 실패 시 전체 목록을 유지합니다.
+
+        **저장 조건**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`이 함께 필요합니다.
+        - Origin은 허용 목록의 정확한 scheme/host/port로 검증합니다. 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 관리자 `password` 및 가입 세션은 이 수정 API의 인증 수단이 아닙니다.
+        - 유효성 검사에 실패하면 **422 VALIDATION_ERROR**와 `fieldErrors`를 반환하며 변경을 저장하지 않습니다.
+        - 해당 영역만 원자적으로 저장하고 다른 영역은 유지합니다. 성공 시 현재 전체 프로필을 반환합니다.
+        - 같은 값을 다시 저장해도 중복 항목을 만들지 않습니다. 실질 변경이 없으면 `updatedAt`을 유지합니다.
+        - 동시 요청은 서버에 저장된 순서대로 해당 영역의 마지막 요청이 반영됩니다. 다른 영역의 값을 덮어쓰지 않습니다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerAvailabilitiesReplaceRequest'
+            examples:
+              weekdays:
+                summary: 월·수·금 주간 시간으로 교체
+                value:
+                  availabilities:
+                  - days:
+                    - MON
+                    - WED
+                    - FRI
+                    startTime: 09:00
+                    endTime: '14:00'
+                    endsNextDay: false
+              night:
+                summary: 일요일 심야 → 월요일
+                value:
+                  availabilities:
+                  - days:
+                    - SUN
+                    startTime: '22:00'
+                    endTime: 02:00
+                    endsNextDay: true
+              untilMidnight:
+                summary: 금요일 22시 → 토요일 자정
+                value:
+                  availabilities:
+                  - days:
+                    - FRI
+                    startTime: '22:00'
+                    endTime: 00:00
+                    endsNextDay: true
+      responses:
+        '200':
+          description: 로그인한 일반회원의 전체 프로필
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerProfile'
+              example:
+                name: 김지수
+                phoneNumber: '01012345678'
+                birthDate: '2001-03-14'
+                gender: FEMALE
+                experienceLevel: NEW
+                careers: []
+                availabilities:
+                - days:
+                  - SUN
+                  startTime: '22:00'
+                  endTime: 02:00
+                  endsNextDay: true
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                role: WORKER
+                identity:
+                  provider: GOOGLE
+                  email: member@example.com
+                  emailVerified: true
+                updatedAt: '2026-10-03T01:30:00Z'
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: 'OWNER 등 일반회원 역할 아님: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. CSRF 토큰 또는 허용 Origin 불일치·누락: CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 일반회원만 사용할 수 있습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 해당 영역의 변경을 모두 rollback하고 기존 프로필을 유지합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 프로필 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 또는 지원하지 않는 요청 형식.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+      externalDocs:
+        description: Figma 일반회원 / 가능 시간 수정
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=255-1565
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: jidan_session
+      description: |-
+        서버에 저장한 opaque 회원 세션.
+
+        운영에서는 HttpOnly; Secure; SameSite=Lax; Path=/; Domain 생략.
+
+        유휴 24시간/절대 7일 만료 중 먼저 도래하는 시점에 재로그인.
+
+        권한은 매 요청 DB 기준으로 재검증.
+    RegistrationCookie:
+      type: apiKey
+      in: cookie
+      name: jidan_registration
+      description: |-
+        Google 인증 후 아직 가입하지 않은 주체 전용 opaque 세션.
+
+        HttpOnly; Secure; SameSite=Lax; Path=/api/auth; Domain 생략.
+
+        600초 고정 만료, 일반 API 접근 불가.
+    CsrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: GET /api/auth/csrf로 받은 현재 회원/가입 세션에 바인딩된 synchronizer token. 쿠키만으로 변경 요청을 허용하지 않는다.
+        가입 완료 시 세션과 함께 회전.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |-
+        최종 가입 제출마다 만든 UUID.
+
+        같은 Google 주체·endpoint·정규화 본문으로 24시간 재시도하면 최초 201 결과를 재현.
+
+        다른 본문/역할에 같은 key는 409 IDEMPOTENCY_KEY_REUSED.
+
+        성공 후 가입 쿠키가 소비된 경우 회원 세션으로 동일 주체를 확인해야 재현 가능.
+
+        어느 세션도 없으면 401 후 재로그인.
+
+        동시 제출은 중복 저장되지 않으며 Google sub·사업자 번호 DB unique 제약을 함께 적용.
+      schema:
+        type: string
+        format: uuid
+      example: a1c2de34-56f7-4890-9abc-def012345678
+  headers: {}
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          description: 클라이언트 분기용 오류 코드
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: 사용자에게 표시할 안전한 안내
+          example: 입력한 정보를 확인해 주세요.
+        requestId:
+          type: string
+          description: 비밀값이 포함되지 않은 추적 ID
+          example: req_example_001
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              field:
+                type: string
+                example: phoneNumber
+              code:
+                type: string
+                example: INVALID_FORMAT
+              message:
+                type: string
+                example: 전화번호 형식을 확인해 주세요.
+            required:
+            - field
+            - code
+            - message
+          description: 422의 필드별 오류. 그 외에는 빈 배열.
+          maxItems: 100
+      required:
+      - code
+      - message
+      - requestId
+      - fieldErrors
+    Name:
+      type: string
+      minLength: 1
+      maxLength: 50
+      pattern: ^\S(?:.*\S)?$
+      description: 앞뒤 공백 제거 후 1–50자. 공백만인 이름은 거절.
+      example: 김지수
+    PhoneNumber:
+      type: string
+      pattern: ^010[0-9]{8}$
+      description: 화면의 하이픈을 제거한 한국 휴대전화 번호
+      example: '01012345678'
+    Industry:
+      type: string
+      enum:
+      - RESTAURANT
+      - CAFE
+      - CONVENIENCE_STORE
+      - OTHER
+      description: 업종 코드 제안. 음식점/카페/편의점/기타. UI 선택지 확정 시 공동 조정.
+      example: CAFE
+    Career:
+      type: object
+      properties:
+        industry:
+          $ref: '#/components/schemas/Industry'
+        duties:
+          type: string
+          minLength: 1
+          maxLength: 300
+          pattern: \S
+          example: 음료 제조, 고객 응대
+        storeName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+          example: 월계 카페
+        startMonth:
+          type: string
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+          example: 2024-03
+        endMonth:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+          example: 2025-02
+        isCurrent:
+          type: boolean
+          example: false
+      required:
+      - industry
+      - duties
+      - startMonth
+      - endMonth
+      - isCurrent
+      description: 현재 근무 중이면 endMonth=null. 종료 경력은 종료>=시작. 시작/종료는 현재 연월 이하. 서버에서 연월 순서와 공백을 검증.
+      additionalProperties: false
+      oneOf:
+      - properties:
+          isCurrent:
+            const: true
+          endMonth:
+            type: 'null'
+        required:
+        - isCurrent
+        - endMonth
+        type: object
+      - properties:
+          isCurrent:
+            const: false
+          endMonth:
+            type: string
+        required:
+        - isCurrent
+        - endMonth
+        type: object
+    Availability:
+      type: object
+      additionalProperties: false
+      properties:
+        days:
+          type: array
+          items:
+            type: string
+            enum:
+            - MON
+            - TUE
+            - WED
+            - THU
+            - FRI
+            - SAT
+            - SUN
+          minItems: 1
+          maxItems: 7
+          uniqueItems: true
+          example:
+          - MON
+          - WED
+          - FRI
+        startTime:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):(00|30)$
+          example: 09:00
+        endTime:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):(00|30)$
+          example: '14:00'
+        endsNextDay:
+          type: boolean
+          description: 종료일이 시작 요일의 다음 날이면 true. SUN 다음 날은 MON.
+          example: false
+      required:
+      - days
+      - startTime
+      - endTime
+      - endsNextDay
+      description: |-
+        Asia/Seoul 기준 매주 반복, 30분 단위.
+
+        서버에서 0<기간<=24시간을 검증.
+
+        같은 요일 및 심야 구간의 다음 요일 중첩은 422.
+
+        24:00 대신 00:00/endsNextDay 사용.
+
+        endsNextDay=false이면 종료>시작, true이면 종료<=시작.
+    WorkerRegistrationRequest:
+      type: object
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        phoneNumber:
+          $ref: '#/components/schemas/PhoneNumber'
+        birthDate:
+          type: string
+          format: date
+          description: 실제 달력 날짜. 미래 생일은 422. 연령 제한은 별도 제품 정책 확정 필요.
+          example: '2001-03-14'
+        gender:
+          type: string
+          enum:
+          - MALE
+          - FEMALE
+          description: Figma의 남성/여성 선택지
+          example: FEMALE
+        experienceLevel:
+          type: string
+          enum:
+          - NEW
+          - EXPERIENCED
+          example: NEW
+        careers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Career'
+          maxItems: 20
+        availabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Availability'
+          minItems: 1
+          maxItems: 100
+      required:
+      - name
+      - phoneNumber
+      - birthDate
+      - gender
+      - experienceLevel
+      - careers
+      - availabilities
+      description: 화면 각 단계는 프론트엔드 임시 입력으로 유지하며 최종 확인에서 한 번에 제출. Google 이메일/주체/role은 서버 결정.
+      additionalProperties: false
+      oneOf:
+      - properties:
+          experienceLevel:
+            const: NEW
+          careers:
+            maxItems: 0
+        required:
+        - experienceLevel
+        - careers
+        type: object
+      - properties:
+          experienceLevel:
+            const: EXPERIENCED
+          careers:
+            minItems: 1
+        required:
+        - experienceLevel
+        - careers
+        type: object
+    StoreRegistrationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+          example: 명랑핫도그 광운대점
+        industry:
+          $ref: '#/components/schemas/Industry'
+        postalCode:
+          type: string
+          pattern: ^\d{5}$
+          example: '01897'
+        address:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: \S
+          example: 서울특별시 노원구 광운로 20
+        detailAddress:
+          type: string
+          maxLength: 200
+          example: 1층
+        businessRegistrationNumber:
+          type: string
+          pattern: ^\d{10}$
+          description: 화면 하이픈 제거. 서버에서 검증한 번호로 중복 확인.
+          example: '1234567890'
+        phoneNumber:
+          type: string
+          pattern: ^0[0-9]{8,10}$
+          description: 하이픈 없는 매장 전화번호. 지역번호와 휴대전화 허용.
+          example: '029123456'
+      required:
+      - name
+      - industry
+      - postalCode
+      - address
+      - businessRegistrationNumber
+      - phoneNumber
+      description: |-
+        주소와 우편번호는 서버가 주소 데이터로 확인하고 행정동 월계1동인지 판단.
+
+        사용자가 지정한 region/승인 상태는 받지 않음.
+
+        소재지·관리 권한의 최종 승인은 운영자 담당.
+
+        이미 등록된 사업자 번호는 409 STORE_ALREADY_REGISTERED; 자동 권한 부여 없음.
+    OwnerRegistrationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        phoneNumber:
+          $ref: '#/components/schemas/PhoneNumber'
+        store:
+          $ref: '#/components/schemas/StoreRegistrationInput'
+      required:
+      - name
+      - phoneNumber
+      - store
+      description: 점주 기본 정보와 최초 매장 신청을 같은 트랜잭션으로 저장. 저장 실패 시 회원/매장/권한 모두 rollback. 가입 성공은 운영 승인과 별개.
+    GoogleIdentity:
+      type: object
+      additionalProperties: false
+      properties:
+        provider:
+          type: string
+          const: GOOGLE
+        email:
+          type: string
+          format: email
+          example: member@example.com
+        emailVerified:
+          type: boolean
+          const: true
+      required:
+      - provider
+      - email
+      - emailVerified
+      description: |-
+        서버가 검증한 iss/aud/exp/nonce/email_verified 및 Google sub로 확인한 주체.
+
+        이메일로 기존 계정을 자동 병합하지 않음.
+
+        Google sub는 응답에 노출하지 않음.
+    RegistrationContext:
+      type: object
+      additionalProperties: false
+      properties:
+        identity:
+          $ref: '#/components/schemas/GoogleIdentity'
+        expiresAt:
+          type: string
+          format: date-time
+          example: '2026-10-02T10:10:00Z'
+        allowedRoles:
+          type: array
+          items:
+            type: string
+            enum:
+            - WORKER
+            - OWNER
+          minItems: 2
+          maxItems: 2
+          uniqueItems: true
+          example:
+          - WORKER
+          - OWNER
+      required:
+      - identity
+      - expiresAt
+      - allowedRoles
+      description: Google 로그인은 완료되었지만 회원 가입 전인 상태. Google 이메일을 읽기 전용으로 표시하고 가입 유형 선택 화면으로 이동.
+    StoreAccess:
+      type: object
+      properties:
+        storeId:
+          type: string
+          format: uuid
+          example: 51c1c743-d377-4e7a-8449-94377eecfce0
+        storeName:
+          type: string
+          example: 명랑핫도그 광운대점
+        approvalStatus:
+          type: string
+          enum:
+          - PENDING
+          - APPROVED
+          description: 운영자 승인 대기 또는 승인 완료. 거절/재신청 정책은 후속 설계.
+          example: PENDING
+        permissions:
+          type: array
+          items:
+            type: string
+            enum:
+            - READ_STORE_STATUS
+            - MANAGE_STORE
+            - INVITE_WORKERS
+            - MANAGE_JOB_POSTINGS
+            - MANAGE_MANUALS
+          uniqueItems: true
+          example:
+          - READ_STORE_STATUS
+      required:
+      - storeId
+      - storeName
+      - approvalStatus
+      - permissions
+      description: |-
+        본인 관리 매장만 반환.
+
+        PENDING는 READ_STORE_STATUS만 허용.
+
+        APPROVED만 운영 권한 허용.
+
+        서버는 매 요청 매장 소유/승인 상태를 검증하며 이 응답을 인가 근거로 신뢰하지 않음.
+      additionalProperties: false
+      oneOf:
+      - properties:
+          approvalStatus:
+            const: PENDING
+          permissions:
+            items:
+              const: READ_STORE_STATUS
+            minItems: 1
+            maxItems: 1
+        required:
+        - approvalStatus
+        - permissions
+        type: object
+      - properties:
+          approvalStatus:
+            const: APPROVED
+          permissions:
+            minItems: 5
+            maxItems: 5
+        required:
+        - approvalStatus
+        - permissions
+        type: object
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a7be5b17-30d8-4b47-bd75-e866b4539dc9
+        role:
+          type: string
+          enum:
+          - WORKER
+          - OWNER
+          example: WORKER
+        name:
+          $ref: '#/components/schemas/Name'
+        identity:
+          $ref: '#/components/schemas/GoogleIdentity'
+        phoneNumber:
+          $ref: '#/components/schemas/PhoneNumber'
+        profileCompleted:
+          type: boolean
+          const: true
+        permissions:
+          type: array
+          items:
+            type: string
+            enum:
+            - BROWSE_JOB_POSTINGS
+            - APPLY_FOR_JOBS
+            - READ_OWN_PROFILE
+            - READ_OWN_STORE_STATUS
+          uniqueItems: true
+          example:
+          - BROWSE_JOB_POSTINGS
+          - APPLY_FOR_JOBS
+          - READ_OWN_PROFILE
+        stores:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoreAccess'
+      required:
+      - id
+      - role
+      - name
+      - identity
+      - phoneNumber
+      - profileCompleted
+      - permissions
+      - stores
+      description: |-
+        WORKER: 공고 탐색/지원/내 프로필, stores=[].
+
+        OWNER: 내 매장 상태 조회 및 stores의 승인된 매장 권한.
+
+        WORKER의 업무 자료 접근은 별도 재직/대타 기간 검증이 필요하며 본 명세에서 포괄 권한을 부여하지 않음.
+      additionalProperties: false
+      oneOf:
+      - properties:
+          role:
+            const: WORKER
+          stores:
+            maxItems: 0
+          permissions:
+            items:
+              type: string
+              enum:
+              - BROWSE_JOB_POSTINGS
+              - APPLY_FOR_JOBS
+              - READ_OWN_PROFILE
+            minItems: 3
+            maxItems: 3
+        required:
+        - role
+        - stores
+        - permissions
+        type: object
+      - properties:
+          role:
+            const: OWNER
+          stores:
+            minItems: 1
+          permissions:
+            items:
+              const: READ_OWN_STORE_STATUS
+            minItems: 1
+            maxItems: 1
+        required:
+        - role
+        - stores
+        - permissions
+        type: object
+    Session:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        expiresAt:
+          type: string
+          format: date-time
+          description: 현재 세션 만료 시각. 유휴/절대 만료 중 빠른 값. 서버가 요청 처리 시 유휴 만료를 갱신할 수 있음.
+          example: '2026-10-03T10:00:00Z'
+        nextAction:
+          type: string
+          enum:
+          - WORKER_HOME
+          - OWNER_HOME
+          - OWNER_APPROVAL_PENDING
+          description: 프론트엔드 이동 힌트. 권한 증명으로 사용하지 않음.
+          example: WORKER_HOME
+      required:
+      - user
+      - expiresAt
+      - nextAction
+      additionalProperties: false
+      oneOf:
+      - properties:
+          user:
+            properties:
+              role:
+                const: WORKER
+          nextAction:
+            const: WORKER_HOME
+        required:
+        - user
+        - nextAction
+        type: object
+      - properties:
+          user:
+            properties:
+              role:
+                const: OWNER
+              stores:
+                contains:
+                  properties:
+                    approvalStatus:
+                      const: APPROVED
+                  required:
+                  - approvalStatus
+          nextAction:
+            const: OWNER_HOME
+        required:
+        - user
+        - nextAction
+        type: object
+      - properties:
+          user:
+            properties:
+              role:
+                const: OWNER
+              stores:
+                not:
+                  contains:
+                    properties:
+                      approvalStatus:
+                        const: APPROVED
+                    required:
+                    - approvalStatus
+          nextAction:
+            const: OWNER_APPROVAL_PENDING
+        required:
+        - user
+        - nextAction
+        type: object
+    CsrfTokenResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        csrfToken:
+          type: string
+          minLength: 32
+          maxLength: 256
+          example: example_csrf_token_0123456789abcdef
+        expiresAt:
+          type: string
+          format: date-time
+          example: '2026-10-02T10:10:00Z'
+      required:
+      - csrfToken
+      - expiresAt
+      description: 세션 수명 이내에 만료. 응답 토큰을 메모리에 보관하고 모든 가입/로그아웃 요청의 X-CSRF-Token 헤더에 전송.
+    AdminPassword:
+      type: string
+      format: password
+      writeOnly: true
+      minLength: 1
+      maxLength: 1024
+      pattern: \S
+      description: |-
+        관리자 공용 비밀번호. 매 요청 JSON body의 password에 입력합니다.
+
+        - 원문을 그대로 검증하며 trim·축약·잘라내기를 하지 않습니다.
+        - 응답·URL·로그·추적·오류 메시지에 비밀번호를 포함하지 않습니다.
+        - 예시는 실제 비밀번호가 아닌 자리 표시자입니다.
+      example: <admin-password>
+    StoreApprovalSearchRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        password:
+          $ref: '#/components/schemas/AdminPassword'
+        status:
+          type: string
+          enum:
+          - PENDING
+          - APPROVED
+          description: 생략하면 승인 대기·완료 신청 전체 조회
+          example: PENDING
+        page:
+          type: integer
+          minimum: 1
+          default: 1
+          description: 1부터 시작하는 페이지
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+          description: 페이지당 신청 개수
+      required:
+      - password
+    StoreApprovalStore:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+          example: 명랑핫도그 광운대점
+        industry:
+          $ref: '#/components/schemas/Industry'
+        postalCode:
+          type: string
+          pattern: ^\d{5}$
+          example: '01897'
+        address:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: \S
+          example: 서울특별시 노원구 광운로 20
+        detailAddress:
+          type: string
+          maxLength: 200
+          example: 1층
+        businessRegistrationNumber:
+          type: string
+          pattern: ^\d{10}$
+          description: 화면 하이픈 제거. 서버에서 검증한 번호로 중복 확인.
+          example: '1234567890'
+        phoneNumber:
+          type: string
+          pattern: ^0[0-9]{8,10}$
+          description: 하이픈 없는 매장 전화번호. 지역번호와 휴대전화 허용.
+          example: '029123456'
+      required:
+      - id
+      - name
+      - industry
+      - postalCode
+      - address
+      - businessRegistrationNumber
+      - phoneNumber
+      description: 승인 신청에 연결된 매장 정보. 신청 시 저장된 값이며 비밀번호는 포함하지 않습니다.
+    StoreApprovalApplicant:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          $ref: '#/components/schemas/Name'
+        email:
+          type: string
+          format: email
+        phoneNumber:
+          $ref: '#/components/schemas/PhoneNumber'
+      required:
+      - id
+      - name
+      - email
+      - phoneNumber
+      description: 승인 신청자 OWNER의 식별·연락 정보. email은 검증된 Google 이메일.
+    StoreApprovalRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 매장 승인 신청 ID
+        applicant:
+          $ref: '#/components/schemas/StoreApprovalApplicant'
+        store:
+          $ref: '#/components/schemas/StoreApprovalStore'
+        status:
+          type: string
+          enum:
+          - PENDING
+          - APPROVED
+        submittedAt:
+          type: string
+          format: date-time
+          description: 최초 신청 시각. UTC/RFC 3339.
+        approvedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: PENDING은 null, APPROVED는 최초 승인 시각.
+      required:
+      - id
+      - applicant
+      - store
+      - status
+      - submittedAt
+      - approvedAt
+      description: |-
+        점주 최초 매장 등록과 같은 트랜잭션에서 생성되는 승인 신청입니다.
+
+        - 최초 상태는 PENDING이며 approvedAt은 null입니다.
+        - 승인 완료 상태는 APPROVED이며 approvedAt은 최초 승인 시각입니다.
+        - 요청에는 사용자 지정 status나 approvedAt을 받지 않습니다.
+      oneOf:
+      - type: object
+        properties:
+          status:
+            const: PENDING
+          approvedAt:
+            type: 'null'
+        required:
+        - status
+        - approvedAt
+      - type: object
+        properties:
+          status:
+            const: APPROVED
+          approvedAt:
+            type: string
+        required:
+        - status
+        - approvedAt
+    StoreApprovalPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoreApprovalRequest'
+          maxItems: 100
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalItems:
+          type: integer
+          minimum: 0
+          description: 필터에 맞는 전체 신청 개수
+        totalPages:
+          type: integer
+          minimum: 0
+          description: ceil(totalItems / size). 결과가 없으면 0.
+      required:
+      - items
+      - page
+      - size
+      - totalItems
+      - totalPages
+      description: |-
+        submittedAt 내림차순, 동률이면 신청 id 내림차순으로 정렬합니다.
+
+        - 결과가 없거나 마지막 페이지를 넘기면 items는 빈 배열입니다.
+        - 승인 상태 필터와 totalItems는 조회 시점의 DB 상태를 반영합니다.
+        - 조회 간 신청 추가·승인으로 결과가 바뀔 수 있으며 스냅샷 페이지는 아닙니다.
+    StoreApprovalApproveRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        password:
+          $ref: '#/components/schemas/AdminPassword'
+      required:
+      - password
+    StoreApprovalResult:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 매장 승인 신청 ID
+        applicant:
+          $ref: '#/components/schemas/StoreApprovalApplicant'
+        store:
+          $ref: '#/components/schemas/StoreApprovalStore'
+        status:
+          type: string
+          const: APPROVED
+        submittedAt:
+          type: string
+          format: date-time
+          description: 최초 신청 시각. UTC/RFC 3339.
+        approvedAt:
+          type: string
+          format: date-time
+          description: 최초 승인 시각. 재승인 요청에서도 변경하지 않음.
+      required:
+      - id
+      - applicant
+      - store
+      - status
+      - submittedAt
+      - approvedAt
+      description: 승인이 완료된 신청. 최초 승인과 재승인 요청 모두 같은 신청·상태·최초 승인 시각을 반환합니다.
+    WorkerProfile:
+      type: object
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        phoneNumber:
+          $ref: '#/components/schemas/PhoneNumber'
+        birthDate:
+          type: string
+          format: date
+          description: 실제 달력 날짜. 미래 생일은 422. 연령 제한은 별도 제품 정책 확정 필요.
+          example: '2001-03-14'
+        gender:
+          type: string
+          enum:
+          - MALE
+          - FEMALE
+          description: Figma의 남성/여성 선택지
+          example: FEMALE
+        experienceLevel:
+          type: string
+          enum:
+          - NEW
+          - EXPERIENCED
+          example: NEW
+        careers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Career'
+          maxItems: 20
+        availabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Availability'
+          minItems: 1
+          maxItems: 100
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          const: WORKER
+        identity:
+          $ref: '#/components/schemas/GoogleIdentity'
+        updatedAt:
+          type: string
+          format: date-time
+          description: 프로필이 마지막으로 실질 변경된 서버 시각. UTC로 반환합니다.
+      required:
+      - name
+      - phoneNumber
+      - birthDate
+      - gender
+      - experienceLevel
+      - careers
+      - availabilities
+      - id
+      - role
+      - identity
+      - updatedAt
+      description: 가입이 완료된 일반회원의 전체 프로필. Google 이메일과 ID·역할·최종 변경 시각은 서버가 결정합니다. 가능 시간은 Asia/Seoul 기준 매주 반복입니다.
+      additionalProperties: false
+      oneOf:
+      - properties:
+          experienceLevel:
+            const: NEW
+          careers:
+            maxItems: 0
+        required:
+        - experienceLevel
+        - careers
+        type: object
+      - properties:
+          experienceLevel:
+            const: EXPERIENCED
+          careers:
+            minItems: 1
+        required:
+        - experienceLevel
+        - careers
+        type: object
+    WorkerBasicProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        phoneNumber:
+          $ref: '#/components/schemas/PhoneNumber'
+        birthDate:
+          type: string
+          format: date
+          description: 실제 달력 날짜. 미래 생일은 422. 연령 제한은 별도 제품 정책 확정 필요.
+          example: '2001-03-14'
+        gender:
+          type: string
+          enum:
+          - MALE
+          - FEMALE
+          description: Figma의 남성/여성 선택지
+          example: FEMALE
+      description: 기본 정보 부분 수정. 적어도 하나의 필드가 필요하며 생략한 필드는 유지합니다. null은 허용하지 않습니다.
+    WorkerCareersReplaceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        experienceLevel:
+          type: string
+          enum:
+          - NEW
+          - EXPERIENCED
+          example: NEW
+        careers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Career'
+          maxItems: 20
+      required:
+      - experienceLevel
+      - careers
+      oneOf:
+      - properties:
+          experienceLevel:
+            const: NEW
+          careers:
+            maxItems: 0
+        required:
+        - experienceLevel
+        - careers
+        type: object
+      - properties:
+          experienceLevel:
+            const: EXPERIENCED
+          careers:
+            minItems: 1
+        required:
+        - experienceLevel
+        - careers
+        type: object
+      description: 근무 정보 전체 교체. 신입은 NEW와 빈 careers, 경력은 EXPERIENCED와 최소 1건을 함께 보냅니다. 최대 20건은 가입 계약을 따른 설계 제안입니다.
+    WorkerAvailabilitiesReplaceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        availabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Availability'
+          minItems: 1
+          maxItems: 100
+      required:
+      - availabilities
+      description: 가능 시간 목록 전체 교체. 최소 1건·최대 100건은 기존 가입 계약을 따른 설계 제안입니다. 요일별 중첩과 기간은 서버에서 검증합니다.
+  responses:
+    AdminPasswordUnauthorized:
+      description: 관리자 비밀번호가 일치하지 않습니다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: ADMIN_PASSWORD_INVALID
+            message: 관리자 인증에 실패했습니다.
+            requestId: req_example_001
+            fieldErrors: []
+    BadRequest:
+      description: 콜백 파라미터 누락·중복·불일치 또는 잘못된 요청
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INVALID_REQUEST
+            message: 콜백 파라미터 누락·중복·불일치 또는 잘못된 요청
+            requestId: req_example_001
+            fieldErrors: []
+    Unauthorized:
+      description: 세션이 없거나 만료·폐기됨. Google 로그인부터 다시 시작
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: SESSION_EXPIRED
+            message: 세션이 없거나 만료·폐기됨. Google 로그인부터 다시 시작
+            requestId: req_example_001
+            fieldErrors: []
+    Forbidden:
+      description: 세션 종류/역할 불일치, 정지 계정, CSRF/Origin 불일치 또는 매장 권한 부족
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: 세션 종류/역할 불일치, 정지 계정, CSRF/Origin 불일치 또는 매장 권한 부족
+            requestId: req_example_001
+            fieldErrors: []
+    Conflict:
+      description: 이미 가입된 Google 주체, 중복 사업자 번호 또는 Idempotency-Key 재사용 충돌
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: REGISTRATION_CONFLICT
+            message: 이미 가입된 Google 주체, 중복 사업자 번호 또는 Idempotency-Key 재사용 충돌
+            requestId: req_example_001
+            fieldErrors: []
+    Unprocessable:
+      description: 필드 형식·날짜·경력·가능 시간 또는 월계1동 소재지 검증 실패
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VALIDATION_ERROR
+            message: 필드 형식·날짜·경력·가능 시간 또는 월계1동 소재지 검증 실패
+            requestId: req_example_001
+            fieldErrors: []
+    TooManyRequests:
+      description: 과도한 요청. Retry-After 초 이후 재시도
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMITED
+            message: 과도한 요청. Retry-After 초 이후 재시도
+            requestId: req_example_001
+            fieldErrors: []
+      headers:
+        Retry-After:
+          description: 재시도까지 남은 초
+          schema:
+            type: integer
+            minimum: 1
+          example: 60
+    BadGateway:
+      description: Google 코드 교환/ID token 조회 일시 실패. 로그인부터 재시도
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: GOOGLE_UNAVAILABLE
+            message: Google 코드 교환/ID token 조회 일시 실패. 로그인부터 재시도
+            requestId: req_example_001
+            fieldErrors: []
+    InternalError:
+      description: 처리 실패. requestId와 함께 문의. 가입 트랜잭션은 전부 rollback
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: 처리 실패. requestId와 함께 문의. 가입 트랜잭션은 전부 rollback
+            requestId: req_example_001
+            fieldErrors: []
