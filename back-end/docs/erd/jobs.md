@@ -8,6 +8,7 @@ erDiagram
     USERS ||--o{ JOB_APPLICATIONS : applies
     JOB_APPLICATIONS ||--o{ APPLICATION_CAREERS : snapshots
     JOB_APPLICATIONS ||--o{ WORK_REQUESTS : receives
+    USERS ||--o{ WORK_REQUESTS : requests
     WORK_REQUESTS ||--o| SHIFT_ASSIGNMENTS : confirms
     JOB_POSTINGS ||--o| SHIFT_ASSIGNMENTS : fills
     USERS ||--o{ SHIFT_ASSIGNMENTS : works
