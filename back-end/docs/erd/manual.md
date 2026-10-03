@@ -4,6 +4,7 @@
 erDiagram
     STORES ||--o| STORE_MANUALS : owns
     STORE_MANUALS ||--o{ MANUAL_VERSIONS : versions
+    MANUAL_VERSIONS o|--o| STORE_MANUALS : current_for
     USERS ||--o{ MANUAL_VERSIONS : authors
     MANUAL_VERSIONS ||--o{ MANUAL_SHIFTS : defines
     MANUAL_VERSIONS ||--o{ MANUAL_SECTIONS : contains
@@ -11,6 +12,7 @@ erDiagram
     MANUAL_SECTIONS ||--o{ MANUAL_STEPS : describes
     MANUAL_SECTIONS ||--o{ MANUAL_MEDIA : illustrates
     MANUAL_VERSIONS ||--o{ INTERVIEW_SESSIONS : drafts
+    USERS ||--o{ INTERVIEW_SESSIONS : interviews
     INTERVIEW_SESSIONS ||--o{ INTERVIEW_TURNS : records
     MANUAL_VERSIONS ||--o{ MANUAL_QA : grounds
     USERS ||--o{ MANUAL_QA : asks
