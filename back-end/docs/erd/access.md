@@ -4,6 +4,7 @@
 erDiagram
     STORES ||--o{ STORE_INVITATIONS : sends
     USERS ||--o{ STORE_INVITATIONS : invites
+    USERS o|--o{ STORE_INVITATIONS : accepts
     STORE_INVITATIONS ||--o| STORE_ACCESS_GRANTS : grants
     SHIFT_ASSIGNMENTS ||--o| STORE_ACCESS_GRANTS : grants
     STORES ||--o{ STORE_ACCESS_GRANTS : allows
