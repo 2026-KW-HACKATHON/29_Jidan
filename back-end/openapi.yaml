@@ -38,6 +38,8 @@ tags:
   description: 현재 사용자와 권한 조회, CSRF 토큰 발급 및 로그아웃
 - name: 매장 승인 관리
   description: 요청 body의 관리자 password로 신청을 전체 조회하고 승인 처리
+- name: 일반회원 프로필
+  description: 로그인한 일반회원의 프로필 조회 및 기본 정보·경력·가능 시간 수정
 security:
 - SessionCookie: []
 externalDocs:
@@ -834,6 +836,97 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/users/me/profile:
+    get:
+      tags:
+      - 일반회원 프로필
+      operationId: getMyWorkerProfile
+      summary: 내 일반회원 프로필 조회
+      security:
+      - SessionCookie: []
+      description: |-
+        **인증·인가**
+
+        - 가입이 완료된 ACTIVE `WORKER`의 `jidan_session` 쿠키가 필요합니다.
+        - 가입 세션만으로는 사용할 수 없으며 **401 REGISTRATION_REQUIRED**입니다.
+        - 점주 등 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 대상 회원은 세션에서 결정합니다. 다른 회원의 ID를 입력받지 않습니다.
+        - Google 이메일은 읽기 전용이며 서버가 검증한 값만 반환합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **화면 데이터**
+
+        - 이름·Google 이메일, 기본 정보, 신입/경력과 경력 목록, 가능 시간 목록을 반환합니다.
+        - `careers`와 `availabilities`는 저장된 순서로 반환합니다. 경력·가능 시간 항목 ID는 이 계약에서 사용하지 않습니다.
+        - 화면의 주당 가능 시간은 요일별 구간을 합산해 표시합니다. 저장 가능한 시간 중첩은 허용하지 않습니다.
+        - 등록 완료 회원의 조회이므로 가입 단계 데이터는 포함하지 않습니다.
+      responses:
+        '200':
+          description: 로그인한 일반회원의 전체 프로필
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerProfile'
+              example:
+                name: 김지수
+                phoneNumber: '01012345678'
+                birthDate: '2001-03-14'
+                gender: FEMALE
+                experienceLevel: NEW
+                careers: []
+                availabilities:
+                - days:
+                  - MON
+                  - WED
+                  - FRI
+                  startTime: 09:00
+                  endTime: '14:00'
+                  endsNextDay: false
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                role: WORKER
+                identity:
+                  provider: GOOGLE
+                  email: member@example.com
+                  emailVerified: true
+                updatedAt: '2026-10-03T01:00:00Z'
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: 'OWNER 등 일반회원 역할 아님: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 일반회원만 사용할 수 있습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 프로필 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+      externalDocs:
+        description: Figma 일반회원 / 내 프로필
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=255-695
 components:
   securitySchemes:
     SessionCookie:
@@ -1729,6 +1822,87 @@ components:
       - submittedAt
       - approvedAt
       description: 승인이 완료된 신청. 최초 승인과 재승인 요청 모두 같은 신청·상태·최초 승인 시각을 반환합니다.
+    WorkerProfile:
+      type: object
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        phoneNumber:
+          $ref: '#/components/schemas/PhoneNumber'
+        birthDate:
+          type: string
+          format: date
+          description: 실제 달력 날짜. 미래 생일은 422. 연령 제한은 별도 제품 정책 확정 필요.
+          example: '2001-03-14'
+        gender:
+          type: string
+          enum:
+          - MALE
+          - FEMALE
+          description: Figma의 남성/여성 선택지
+          example: FEMALE
+        experienceLevel:
+          type: string
+          enum:
+          - NEW
+          - EXPERIENCED
+          example: NEW
+        careers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Career'
+          maxItems: 20
+        availabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Availability'
+          minItems: 1
+          maxItems: 100
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          const: WORKER
+        identity:
+          $ref: '#/components/schemas/GoogleIdentity'
+        updatedAt:
+          type: string
+          format: date-time
+          description: 프로필이 마지막으로 실질 변경된 서버 시각. UTC로 반환합니다.
+      required:
+      - name
+      - phoneNumber
+      - birthDate
+      - gender
+      - experienceLevel
+      - careers
+      - availabilities
+      - id
+      - role
+      - identity
+      - updatedAt
+      description: 가입이 완료된 일반회원의 전체 프로필. Google 이메일과 ID·역할·최종 변경 시각은 서버가 결정합니다. 가능 시간은 Asia/Seoul 기준 매주 반복입니다.
+      additionalProperties: false
+      oneOf:
+      - properties:
+          experienceLevel:
+            const: NEW
+          careers:
+            maxItems: 0
+        required:
+        - experienceLevel
+        - careers
+        type: object
+      - properties:
+          experienceLevel:
+            const: EXPERIENCED
+          careers:
+            minItems: 1
+        required:
+        - experienceLevel
+        - careers
+        type: object
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
