@@ -22,10 +22,14 @@ python -m pytest
 
 로컬에서 DB 설정이 없으면 `database: not_configured`를 반환한다. `APP_ENV=dev|production`에서는 DB 설정이 필수이며, `/api/health`가 `SELECT 1`까지 확인한다. DB 장애 시 자격 증명을 노출하지 않고 503을 반환한다.
 
-## 인증·인가 API 설계
+## API 설계
 
-[Figma 기반 OpenAPI 명세](openapi.yaml)와 [화면 근거·인가 정책](docs/auth-design.md)을 제공합니다.
-구현 전 계약이며 실제 인증 endpoint는 아직 제공하지 않습니다.
+[Figma 기반 OpenAPI 명세](openapi.yaml)를 제공합니다.
+구현 전 계약이며 실제 인증·프로필 관리·승인 endpoint는 아직 제공하지 않습니다.
+
+- [인증 화면 근거·인가 정책](docs/auth-design.md)
+- [관리자 매장 승인 계약](docs/store-approval-design.md)
+- [일반회원 프로필 조회·기본 정보·근무 정보·가능 시간 수정 계약](docs/worker-profile-design.md)
 
 ```bash
 cd docs
