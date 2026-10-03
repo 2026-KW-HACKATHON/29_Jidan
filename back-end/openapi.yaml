@@ -1061,6 +1061,163 @@ paths:
       externalDocs:
         description: Figma 일반회원 / 기본 정보 수정
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=255-1465
+  /api/users/me/profile/careers:
+    put:
+      tags:
+      - 일반회원 프로필
+      operationId: replaceMyWorkerCareers
+      summary: 내 일반회원 근무 정보 전체 교체
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      description: |-
+        **인증·인가**
+
+        - 가입이 완료된 ACTIVE `WORKER`의 `jidan_session` 쿠키가 필요합니다.
+        - 가입 세션만으로는 사용할 수 없으며 **401 REGISTRATION_REQUIRED**입니다.
+        - 점주 등 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 대상 회원은 세션에서 결정합니다. 다른 회원의 ID를 입력받지 않습니다.
+        - Google 이메일은 읽기 전용이며 서버가 검증한 값만 반환합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **근무 정보 교체**
+
+        - `experienceLevel`과 `careers`를 함께 전송합니다. 기존 경력 목록을 요청 목록으로 교체하며 빠진 경력은 삭제됩니다.
+        - **신입**: `experienceLevel=NEW`, `careers=[]`로 전환합니다. 기존 경력을 전부 삭제합니다.
+        - **경력**: `experienceLevel=EXPERIENCED`, 최소 1건을 제출합니다. 최대 20건은 가입 계약을 따른 설계 제안입니다.
+        - 업종·담당 업무·시작/종료 연월·현재 근무 여부는 필수, 매장명은 선택입니다. 입력한 순서를 유지합니다. 항목 ID는 받지 않습니다.
+        - 현재 근무 중이면 `isCurrent=true`, `endMonth=null`입니다. 종료 경력은 `isCurrent=false`와 종료 연월이 필요합니다.
+        - 서버에서 시작/종료 연월이 Asia/Seoul 기준 현재 연월 이하이고 종료가 시작보다 이전이 아닌지 검증합니다. 위반 시 **422**입니다. 같은 달 시작·종료는 허용합니다.
+        - 담당 업무·선택 매장명은 앞뒤 공백을 제거한 뒤 검증하며 빈 문자열로 매장명을 지우지 않고 해당 필드를 생략합니다.
+
+        **저장 조건**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`이 함께 필요합니다.
+        - Origin은 허용 목록의 정확한 scheme/host/port로 검증합니다. 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 관리자 `password` 및 가입 세션은 이 수정 API의 인증 수단이 아닙니다.
+        - 유효성 검사에 실패하면 **422 VALIDATION_ERROR**와 `fieldErrors`를 반환하며 변경을 저장하지 않습니다.
+        - 해당 영역만 원자적으로 저장하고 다른 영역은 유지합니다. 성공 시 현재 전체 프로필을 반환합니다.
+        - 같은 값을 다시 저장해도 중복 항목을 만들지 않습니다. 실질 변경이 없으면 `updatedAt`을 유지합니다.
+        - 동시 요청은 서버에 저장된 순서대로 해당 영역의 마지막 요청이 반영됩니다. 다른 영역의 값을 덮어쓰지 않습니다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerCareersReplaceRequest'
+            examples:
+              newWorker:
+                summary: 신입으로 전환하고 경력 삭제
+                value:
+                  experienceLevel: NEW
+                  careers: []
+              currentCareer:
+                summary: 현재 근무 중 경력으로 전체 교체
+                value:
+                  experienceLevel: EXPERIENCED
+                  careers:
+                  - industry: CAFE
+                    duties: 음료 제조, 고객 응대
+                    storeName: 월계 카페
+                    startMonth: 2024-03
+                    endMonth: null
+                    isCurrent: true
+              endedCareer:
+                summary: 종료 경력 (선택 매장명 생략)
+                value:
+                  experienceLevel: EXPERIENCED
+                  careers:
+                  - industry: RESTAURANT
+                    duties: 홀 서빙
+                    startMonth: 2025-02
+                    endMonth: 2025-02
+                    isCurrent: false
+      responses:
+        '200':
+          description: 로그인한 일반회원의 전체 프로필
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerProfile'
+              example:
+                name: 김지수
+                phoneNumber: '01012345678'
+                birthDate: '2001-03-14'
+                gender: FEMALE
+                experienceLevel: EXPERIENCED
+                careers:
+                - industry: CAFE
+                  duties: 음료 제조, 고객 응대
+                  storeName: 월계 카페
+                  startMonth: 2024-03
+                  endMonth: null
+                  isCurrent: true
+                availabilities:
+                - days:
+                  - MON
+                  - WED
+                  - FRI
+                  startTime: 09:00
+                  endTime: '14:00'
+                  endsNextDay: false
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                role: WORKER
+                identity:
+                  provider: GOOGLE
+                  email: member@example.com
+                  emailVerified: true
+                updatedAt: '2026-10-03T01:20:00Z'
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: 'OWNER 등 일반회원 역할 아님: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. CSRF 토큰 또는 허용 Origin 불일치·누락: CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 일반회원만 사용할 수 있습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 해당 영역의 변경을 모두 rollback하고 기존 프로필을 유지합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 프로필 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 또는 지원하지 않는 요청 형식.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+      externalDocs:
+        description: Figma 일반회원 / 근무 정보 수정
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=255-1519
 components:
   securitySchemes:
     SessionCookie:
@@ -2059,6 +2216,44 @@ components:
           description: Figma의 남성/여성 선택지
           example: FEMALE
       description: 기본 정보 부분 수정. 적어도 하나의 필드가 필요하며 생략한 필드는 유지합니다. null은 허용하지 않습니다.
+    WorkerCareersReplaceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        experienceLevel:
+          type: string
+          enum:
+          - NEW
+          - EXPERIENCED
+          example: NEW
+        careers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Career'
+          maxItems: 20
+      required:
+      - experienceLevel
+      - careers
+      oneOf:
+      - properties:
+          experienceLevel:
+            const: NEW
+          careers:
+            maxItems: 0
+        required:
+        - experienceLevel
+        - careers
+        type: object
+      - properties:
+          experienceLevel:
+            const: EXPERIENCED
+          careers:
+            minItems: 1
+        required:
+        - experienceLevel
+        - careers
+        type: object
+      description: 근무 정보 전체 교체. 신입은 NEW와 빈 careers, 경력은 EXPERIENCED와 최소 1건을 함께 보냅니다. 최대 20건은 가입 계약을 따른 설계 제안입니다.
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
