@@ -40,6 +40,8 @@ tags:
   description: 요청 body의 관리자 password로 신청을 전체 조회하고 승인 처리
 - name: 일반회원 프로필
   description: 로그인한 일반회원의 프로필 조회 및 기본 정보·경력·가능 시간 수정
+- name: 점주 매장 관리
+  description: 내 관리 매장 조회·추가 신청과 운영 현황 요약
 security:
 - SessionCookie: []
 externalDocs:
@@ -1376,6 +1378,235 @@ paths:
       externalDocs:
         description: Figma 일반회원 / 가능 시간 수정
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=255-1565
+  /api/owners/me/stores:
+    get:
+      tags:
+      - 점주 매장 관리
+      operationId: listMyOwnerStores
+      summary: 내 관리 매장 목록 조회
+      description: |-
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        - 승인 대기와 승인 완료 매장을 모두 포함합니다. 새 매장 신청도 이 목록에 표시됩니다.
+        - `createdAt DESC, id DESC`로 정렬합니다.
+
+        **목록 조회**
+
+        - 기본 `page=1`, `size=20`, 최대 `size=100`은 설계 제안입니다.
+        - 빈 결과나 마지막 페이지 이후는 **200**, `items=[]`입니다.
+        - 목록·건수·`asOf`는 한 DB 읽기 스냅샷 기준입니다. 페이지 사이의 신규 등록/상태 변경으로 순서가 달라질 수 있습니다.
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerStorePage'
+              example:
+                items:
+                - name: 명랑핫도그 광운대점
+                  industry: RESTAURANT
+                  postalCode: '01897'
+                  address: 서울특별시 노원구 광운로 20
+                  detailAddress: 1층
+                  businessRegistrationNumber: '1234567890'
+                  phoneNumber: '029123456'
+                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                  approvalRequestId: 1a9dc30c-8f50-4930-aeb7-64fdf67a1f29
+                  approvalStatus: PENDING
+                  createdAt: '2026-10-02T01:00:00Z'
+                  approvedAt: null
+                  permissions:
+                  - READ_STORE_STATUS
+                page: 1
+                size: 20
+                totalItems: 1
+                totalPages: 1
+                asOf: '2026-10-05T01:00:00Z'
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+      parameters:
+      - name: page
+        in: query
+        description: 1부터 시작. 생략 시 1.
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+        example: 1
+      - name: size
+        in: query
+        description: 기본 20, 최대 100. 상한은 설계 제안.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+        example: 20
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5168
+  /api/stores/{storeId}:
+    get:
+      tags:
+      - 점주 매장 관리
+      operationId: getMyOwnerStore
+      summary: 내 관리 매장 상세·승인 상태 조회
+      description: |-
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        - 본인의 승인 대기 매장도 조회할 수 있습니다. 승인 대기는 운영 기능을 허용하지 않습니다.
+        - 점주 홈의 매장 선택과 승인 상태 안내에 사용합니다. 매장 정보 수정·삭제·소유권 이전은 이번 화면 범위에 없습니다.
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerStore'
+              example:
+                name: 명랑핫도그 광운대점
+                industry: RESTAURANT
+                postalCode: '01897'
+                address: 서울특별시 노원구 광운로 20
+                detailAddress: 1층
+                businessRegistrationNumber: '1234567890'
+                phoneNumber: '029123456'
+                id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                approvalRequestId: 1a9dc30c-8f50-4930-aeb7-64fdf67a1f29
+                approvalStatus: APPROVED
+                createdAt: '2026-10-02T01:00:00Z'
+                approvedAt: '2026-10-02T02:00:00Z'
+                permissions:
+                - READ_STORE_STATUS
+                - MANAGE_STORE
+                - INVITE_WORKERS
+                - MANAGE_JOB_POSTINGS
+                - MANAGE_MANUALS
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: 없는 매장 또는 다른 점주의 매장. 하위 리소스도 해당 매장에 속하는지 함께 확인합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STORE_NOT_FOUND
+                message: 매장을 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+      parameters:
+      - $ref: '#/components/parameters/StoreId'
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=335-1008
 components:
   securitySchemes:
     SessionCookie:
@@ -1427,6 +1658,15 @@ components:
         type: string
         format: uuid
       example: a1c2de34-56f7-4890-9abc-def012345678
+    StoreId:
+      name: storeId
+      in: path
+      required: true
+      description: 세션 점주가 관리하는 매장의 UUID
+      schema:
+        type: string
+        format: uuid
+      example: 51c1c743-d377-4e7a-8449-94377eecfce0
   headers: {}
   schemas:
     Error:
@@ -2425,6 +2665,148 @@ components:
       required:
       - availabilities
       description: 가능 시간 목록 전체 교체. 최소 1건·최대 100건은 기존 가입 계약을 따른 설계 제안입니다. 요일별 중첩과 기간은 서버에서 검증합니다.
+    OwnerStore:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+          example: 명랑핫도그 광운대점
+        industry:
+          $ref: '#/components/schemas/Industry'
+        postalCode:
+          type: string
+          pattern: ^\d{5}$
+          example: '01897'
+        address:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: \S
+          example: 서울특별시 노원구 광운로 20
+        detailAddress:
+          type: string
+          maxLength: 200
+          example: 1층
+        businessRegistrationNumber:
+          type: string
+          pattern: ^\d{10}$
+          description: 화면 하이픈 제거. 서버에서 검증한 번호로 중복 확인.
+          example: '1234567890'
+        phoneNumber:
+          type: string
+          pattern: ^0[0-9]{8,10}$
+          description: 하이픈 없는 매장 전화번호. 지역번호와 휴대전화 허용.
+          example: '029123456'
+        id:
+          type: string
+          format: uuid
+        approvalRequestId:
+          type: string
+          format: uuid
+        approvalStatus:
+          type: string
+          enum:
+          - PENDING
+          - APPROVED
+        createdAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        permissions:
+          type: array
+          items:
+            type: string
+            enum:
+            - READ_STORE_STATUS
+            - MANAGE_STORE
+            - INVITE_WORKERS
+            - MANAGE_JOB_POSTINGS
+            - MANAGE_MANUALS
+          uniqueItems: true
+          example:
+          - READ_STORE_STATUS
+      required:
+      - name
+      - industry
+      - postalCode
+      - address
+      - businessRegistrationNumber
+      - phoneNumber
+      - id
+      - approvalRequestId
+      - approvalStatus
+      - createdAt
+      - approvedAt
+      - permissions
+      description: 세션 점주의 관리 매장. 승인 신청 ID와 매장 ID는 서로 다릅니다. 승인 대기에는 READ_STORE_STATUS만, 승인 완료에는 운영 권한을 함께 반환합니다.
+      oneOf:
+      - type: object
+        properties:
+          approvalStatus:
+            const: PENDING
+          approvedAt:
+            type: 'null'
+          permissions:
+            items:
+              const: READ_STORE_STATUS
+            minItems: 1
+            maxItems: 1
+        required:
+        - approvalStatus
+        - approvedAt
+        - permissions
+      - type: object
+        properties:
+          approvalStatus:
+            const: APPROVED
+          approvedAt:
+            type: string
+          permissions:
+            minItems: 5
+            maxItems: 5
+        required:
+        - approvalStatus
+        - approvedAt
+        - permissions
+    OwnerStorePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OwnerStore'
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalItems:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+        asOf:
+          type: string
+          format: date-time
+      required:
+      - items
+      - page
+      - size
+      - totalItems
+      - totalPages
+      - asOf
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
