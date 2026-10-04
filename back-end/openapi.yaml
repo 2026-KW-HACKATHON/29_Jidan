@@ -3377,6 +3377,128 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5251
+  /api/stores/{storeId}/workers/{workerId}/access:
+    delete:
+      tags:
+      - 근무자 관리
+      operationId: revokeStoreWorkerAccess
+      summary: 근무자의 매장 자료 접근 종료
+      description: |-
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+
+        **매장 자료 접근 종료**
+
+        - 점주가 해당 근무자의 이 매장 자료 접근을 즉시 종료합니다. 정기 초대에 종료일이 있어도 더 일찍 종료할 수 있습니다.
+        - 미종료 정기/대타 접근을 함께 REVOKED로 바꾸고 서버 시각을 기록합니다. 이미 EXPIRED/REVOKED인 이력과 최초 revokedAt은 유지합니다.
+        - 같은 매장/근무자의 검증된 이메일에 보내 둔 유효 PENDING 초대도 CANCELED로 전환해 기존 대기 링크로 다시 접근을 만들지 못하게 합니다. 미발송 메일 outbox도 폐기합니다.
+        - 자료 접근·관련 대기 초대·미발송 메일 상태를 같은 트랜잭션으로 처리합니다. 수락/재전송과 같은 매장/이메일/근무자 단위에서 직렬화합니다.
+        - 완료 후 다음 매뉴얼·체크리스트·AI 질의응답 요청에서 접근을 거절합니다. 캐시·세션에 담긴 옛 권한으로 허용하지 않습니다.
+        - 진행 중인 긴 응답/AI 스트림도 권한 재검증으로 종료합니다. 이미 사용자에게 전달된 자료를 회수한다는 보장은 없습니다.
+        - 이미 모든 접근이 종료되었으면 **204**입니다. 수락했던 초대는 ACCEPTED 이력을 유지하며 재수락으로 접근을 복구하지 않습니다.
+        - 다른 매장의 접근·전체 회원 계정·프로필·고용 계약·확정된 대타 근무는 변경하지 않습니다. 이 기능은 자료 접근 종료입니다.
+        - 이후 점주가 새 초대를 보내고 근무자가 새로 수락하면 별도 권한을 만들 수 있습니다. 기존 종료 권한을 재활성화하지 않습니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '204':
+          description: 이 매장의 해당 근무자 자료 접근 종료 완료. 이미 종료된 경우도 204. 응답 body 없음.
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED. CSRF/Origin 오류:
+            CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: 없는/다른 점주 매장은 STORE_NOT_FOUND. 해당 매장에 접근 이력이 없는 근무자는 STORE_WORKER_NOT_FOUND.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STORE_WORKER_NOT_FOUND
+                message: 해당 매장의 근무자를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+      parameters:
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/StoreWorkerId'
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5251
 components:
   securitySchemes:
     SessionCookie:
