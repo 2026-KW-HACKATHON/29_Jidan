@@ -1,4 +1,5 @@
-.owner-home-store { display: flex; flex-direction: column; gap: 16px; padding: 20px; background: var(--ds-primary); }
+/* Keep the managed-store background above the shared .home-card rule, regardless of CSS load order. */
+.owner-home-store.home-card { display: flex; flex-direction: column; gap: 16px; padding: 20px; background: var(--ds-primary); }
 .owner-home-store > p { color: #d6e3fd; font-size: 13px; line-height: 20px; }
 .owner-home-store-title { display: flex; align-items: center; gap: 12px; }
 .owner-home-store-title h3 { flex: 1; min-width: 0; color: var(--ds-white); font-size: 19px; line-height: 29px; }
