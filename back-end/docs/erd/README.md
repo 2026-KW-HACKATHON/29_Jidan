@@ -1,6 +1,6 @@
 # 지단 MVP ERD
 
-Figma의 `Design`, `Design System`, `IR Deck`, `Image Assets`, `Wireframe` 5개 페이지 구조를 확인하고, 실제 입력·조회·상태 전이가 있는 `Design` 화면을 중심으로 작성한 **구현 전 관계형 데이터 설계**다. 2026-10-03 기준이며 DB 마이그레이션이나 API 구현 완료를 뜻하지 않는다.
+Figma의 `Design`, `Design System`, `IR Deck`, `Image Assets`, `Wireframe` 5개 페이지 구조를 확인하고, 실제 입력·조회·상태 전이가 있는 `Design` 화면을 중심으로 작성한 **구현 전 관계형 데이터 설계**다. Figma 확인은 2026-10-03 기준이며, AI 인터뷰의 필수 질문·Jev 판단·추가 질문 흐름은 2026-10-05 사용자 설명을 반영했다. DB 마이그레이션이나 API 구현 완료를 뜻하지 않는다.
 
 ```mermaid
 erDiagram
@@ -32,7 +32,8 @@ erDiagram
 | 점주 매장 등록·운영 승인 | [매장 승인](store.md) | `stores`, `store_approval_requests` |
 | 초대·정기/임시 자료 접근 | [매장 접근](access.md) | `store_invitations`, `store_access_grants` |
 | 대타 공고·지원·요청·확정 | [대타 공고](jobs.md) | `job_postings`, `job_applications`, `application_careers`, `work_requests`, `shift_assignments` |
-| AI 인터뷰·점주 게시·근무자 질의 | [업무 매뉴얼](manual.md) | `store_manuals`, `manual_versions`, `manual_shifts`, `manual_sections`, `manual_steps`, `manual_media`, `interview_sessions`, `interview_turns`, `manual_qa`, `manual_qa_citations` |
+| AI 인터뷰·점주 게시·근무자 질의 | [업무 매뉴얼](manual.md) | `store_manuals`, `manual_versions`, `manual_shifts`, `manual_sections`, `manual_steps`, `manual_media`, `interview_question_sets`, `interview_intents`, `interview_sessions`, `interview_session_intents`, `interview_probe_batches`, `interview_turns`, `interview_evaluations`, `manual_qa`, `manual_qa_citations` |
+| 필수 질문·답변 평가·추가 탐문 | [AI 인터뷰 실행 흐름](ai-interview-flow.md) | 질문·답변·추가 탐문의 진행 순서 |
 | 점주·일반회원 알림 | [앱 알림](notification.md) | `notifications` |
 
 ## 범위와 설계 기준
