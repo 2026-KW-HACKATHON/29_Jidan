@@ -40,3 +40,9 @@ ACTIVE는 수락 가능한 PENDING, PAST는 ACCEPTED/DECLINED/CANCELED/EXPIRED�
 body 없이 회원 세션·CSRF·Origin과 UUID Idempotency-Key로 요청한다. 새 요청은 유효 PENDING만 가능하며 수락/거절/취소는 409, 대기 기한 종료는 410이다. 메일 큐·lastSentAt·token hash를 한 트랜잭션으로 변경하고 이전 링크는 무효화한다. 생성 시각·7일 expiresAt·accessExpiresAt·수신 주소는 유지한다. 재전송 실패는 503과 rollback이며 기존 링크는 유지한다. 200의 QUEUED는 발송 요청 기록이다.
 
 같은 key의 재요청은 현재 인증/소유권/승인 확인 후 최초 성공 기록을 먼저 조회해 추가 메일 없이 재현한다. 이후 초대 상태가 바뀌었어도 최초 결과가 재현될 수 있으므로 최신 상태는 목록 조회로 확인한다. 이메일 발송 요청 기록·토큰 교체·재시도/수락과의 경쟁은 실제 서버 통합 테스트 대상이다.
+
+## 수락 대기 초대 취소
+
+`POST /api/stores/{storeId}/invitations/{invitationId}/cancel`
+
+body 없이 회원 세션·CSRF·Origin으로 요청한다. 유효 PENDING을 CANCELED로 바꾸고 200을 반환한다. 이미 CANCELED면 기한이 지나도 최초 canceledAt을 유지해 200이다. ACCEPTED/DECLINED는 409, 기한이 지난 PENDING/EXPIRED는 410이다. 수락한 사람의 접근은 초대 취소로 종료하지 않고 근무자 관리에서 종료한다. 수락/취소는 잠금/조건부 갱신으로 경쟁을 처리한다. 취소 후 미발송 outbox는 폐기하고 이미 발송한 링크는 상태 검증으로 거절한다. 실제 링크 차단·시각 유지·메일 처리·경쟁은 서버 통합 검증 대상이다.
