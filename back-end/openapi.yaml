@@ -5833,6 +5833,414 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=346-1421
+  /api/stores/{storeId}/manual/interviews/{sessionId}/completion:
+    post:
+      tags:
+      - 점주 AI 인터뷰
+      operationId: generateManualDraft
+      summary: 인터뷰 완료·매뉴얼 초안 생성 요청
+      description: |-
+        READY_TO_GENERATE에서만 실행합니다. 고정 질문 셋의 모든 필수 인텐트를 진행하고 점주 이해 확인을 완료해야 합니다. NEEDS_DETAIL은 허용하지만 미진행/PENDING 인텐트는 409 INTERVIEW_INCOMPLETE입니다.
+
+        - 같은 초안 versionId에 구조화 작업을 예약하고 세션 GENERATING 및 초안 RUNNING으로 전환합니다. 같은 매장에서 동시에 별도 생성 작업을 만들지 않습니다.
+        - 점주 답변·정정·확인 내용과 파일 참조만 매뉴얼의 사실 근거로 사용합니다. 다른 매장 절차·추측을 사실로 채우지 않습니다. 빠진 내용은 issues에 표시합니다.
+        - 작업이 완료되면 초안 content와 issues, generationStatus=READY, 세션 COMPLETED를 원자적으로 저장합니다. completedAt은 성공 시에만 기록합니다. 초안은 자동 발행되지 않습니다.
+        - 오류는 세션 ERROR 및 초안 ERROR로 표시하고 질문·답변·설정/입력 snapshot을 유지합니다. retries API로 같은 실패 작업을 재개합니다.
+        - GET 세션과 GET 초안으로 상태를 확인합니다. 생성 중에는 편집/발행 요청을 409로 거절하여 늦은 AI 결과가 점주 편집을 덮어쓰지 않게 합니다.
+
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+
+        **동시 수정과 재전송**
+
+        - 변경 요청의 `expectedRevision`은 해당 세션 또는 초안의 현재 revision과 같아야 합니다. 불일치는 **409 REVISION_CONFLICT**이며 최신 GET 결과로 다시 검토합니다.
+        - UUID `Idempotency-Key`는 주체·매장·endpoint·정규화 body(파일은 byte hash)로 24시간 보관합니다. 현재 권한을 확인한 후 같은 요청은 최초 결과를 재현하고 revision을 다시 올리지 않습니다.
+        - 같은 key의 다른 요청은 **409 IDEMPOTENCY_KEY_REUSED**입니다. 신규 요청만 revision을 검사하며 key 재현은 당시 스냅샷일 수 있습니다.
+        - 상태 갱신·작업 예약·outbox 저장은 원자적입니다. 예약 실패는 **503 JOB_QUEUE_UNAVAILABLE**이며 변경을 rollback합니다. AI/전사 실행 실패는 조회 응답의 ERROR 상태로 안내합니다.
+        - 워커 작업은 입력 revision과 작업 ID를 확인해 성공 결과를 한 번만 적용합니다. 오래된 작업 결과는 현재 상태를 덮어쓰지 않습니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED. CSRF/Origin 오류:
+            CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: '다른 점주/없는 매장: STORE_NOT_FOUND. 매장에 속하지 않는 초안/세션/파일: MANUAL_RESOURCE_NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MANUAL_RESOURCE_NOT_FOUND
+                message: 매뉴얼 리소스를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '409':
+          description: REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
+            최신 조회 후 현재 상태에 맞게 요청합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: REVISION_CONFLICT
+                message: 최신 내용을 다시 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '503':
+          description: 작업 예약 또는 저장소 실패. 변경 전체 rollback.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: JOB_QUEUE_UNAVAILABLE
+                message: 잠시 후 다시 시도해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '202':
+          description: 작업 접수. 완료 여부는 GET 상태로 확인합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualInterviewSession'
+              example:
+                id: c701b623-889c-4d28-b055-501251ac6773
+                storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                questionSetVersion: 1
+                revision: 5
+                status: IN_PROGRESS
+                phase: GENERATING
+                intents:
+                - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                  key: WORK_STRUCTURE
+                  stage: WORK_STRUCTURE
+                  coverage: COVERED
+                  depth: 0
+                  finishedAt: '2026-10-05T01:20:00Z'
+                  confirmedAt: '2026-10-05T01:20:00Z'
+                currentIntentId: null
+                questions: []
+                review: null
+                processing:
+                  taskId: 72096597-3ef2-41c5-8b8f-e962644e85ed
+                  kind: DRAFT_GENERATION
+                  attempt: 1
+                error: null
+                startedAt: '2026-10-05T01:00:00Z'
+                completedAt: null
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 대상 매장 UUID
+        schema:
+          type: string
+          format: uuid
+        example: 51c1c743-d377-4e7a-8449-94377eecfce0
+      - name: sessionId
+        in: path
+        required: true
+        description: 매장에 속한 리소스 UUID.
+        schema:
+          type: string
+          format: uuid
+        example: c701b623-889c-4d28-b055-501251ac6773
+      - $ref: '#/components/parameters/ManualCommandKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualRevisionCommand'
+            examples:
+              default:
+                value:
+                  expectedRevision: 4
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2757
+  /api/stores/{storeId}/manual/interviews/{sessionId}/retries:
+    post:
+      tags:
+      - 점주 AI 인터뷰
+      operationId: retryManualInterviewProcessing
+      summary: 실패한 AI 작업 재시도·인터뷰 재개
+      description: |-
+        ERROR에서만 새 Idempotency-Key와 현재 expectedRevision으로 요청합니다. 질문 생성/평가/이해 재구성/정정/초안 생성 중 실패한 taskId와 저장된 입력에서 재개합니다. RUNNING·완료 상태면 409 INTERVIEW_STATE_CONFLICT입니다.
+
+        - 자동 재시도와 fallback이 모두 실패한 뒤 공개 오류를 보여주며, 수동 재시도 횟수 상한/시도 간격은 서버 운영 설정으로 제어합니다. 제한 시 429 Retry-After입니다.
+        - 작업 attempt는 증가하지만 인텐트·depth·질문 batchId·원래 답변은 유지합니다. 부분 질문을 합치거나 새 depth를 만들지 않습니다.
+        - 평가마다 실제 입력 snapshot·설정 버전·시도 이력을 보존하고 같은 depth의 성공 진행 결과를 한 번만 적용합니다. 정정 재구성은 충분성 평가의 재적용과 구분합니다.
+        - 예약 성공 시 공개 error를 지우고 IN_PROGRESS/PROCESSING으로 복구합니다. DRAFT_GENERATION 실패 재시도는 GENERATING이며 같은 draftVersionId를 사용합니다.
+        - 같은 key는 이전 202 결과를 재현합니다. 완료 후 새 key 재시도는 거절하며 이미 발행된 버전을 변경할 수 없습니다.
+
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+
+        **동시 수정과 재전송**
+
+        - 변경 요청의 `expectedRevision`은 해당 세션 또는 초안의 현재 revision과 같아야 합니다. 불일치는 **409 REVISION_CONFLICT**이며 최신 GET 결과로 다시 검토합니다.
+        - UUID `Idempotency-Key`는 주체·매장·endpoint·정규화 body(파일은 byte hash)로 24시간 보관합니다. 현재 권한을 확인한 후 같은 요청은 최초 결과를 재현하고 revision을 다시 올리지 않습니다.
+        - 같은 key의 다른 요청은 **409 IDEMPOTENCY_KEY_REUSED**입니다. 신규 요청만 revision을 검사하며 key 재현은 당시 스냅샷일 수 있습니다.
+        - 상태 갱신·작업 예약·outbox 저장은 원자적입니다. 예약 실패는 **503 JOB_QUEUE_UNAVAILABLE**이며 변경을 rollback합니다. AI/전사 실행 실패는 조회 응답의 ERROR 상태로 안내합니다.
+        - 워커 작업은 입력 revision과 작업 ID를 확인해 성공 결과를 한 번만 적용합니다. 오래된 작업 결과는 현재 상태를 덮어쓰지 않습니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED. CSRF/Origin 오류:
+            CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: '다른 점주/없는 매장: STORE_NOT_FOUND. 매장에 속하지 않는 초안/세션/파일: MANUAL_RESOURCE_NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MANUAL_RESOURCE_NOT_FOUND
+                message: 매뉴얼 리소스를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '409':
+          description: REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
+            최신 조회 후 현재 상태에 맞게 요청합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: REVISION_CONFLICT
+                message: 최신 내용을 다시 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '503':
+          description: 작업 예약 또는 저장소 실패. 변경 전체 rollback.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: JOB_QUEUE_UNAVAILABLE
+                message: 잠시 후 다시 시도해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '202':
+          description: 작업 접수. 완료 여부는 GET 상태로 확인합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualInterviewSession'
+              example:
+                id: c701b623-889c-4d28-b055-501251ac6773
+                storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                questionSetVersion: 1
+                revision: 5
+                status: IN_PROGRESS
+                phase: PROCESSING
+                intents:
+                - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                  key: WORK_STRUCTURE
+                  stage: WORK_STRUCTURE
+                  coverage: PENDING
+                  depth: 0
+                  finishedAt: null
+                  confirmedAt: null
+                currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                questions: []
+                review: null
+                processing:
+                  taskId: fec19f33-1096-47c2-9612-78d336622930
+                  kind: EVALUATION
+                  attempt: 4
+                error: null
+                startedAt: '2026-10-05T01:00:00Z'
+                completedAt: null
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 대상 매장 UUID
+        schema:
+          type: string
+          format: uuid
+        example: 51c1c743-d377-4e7a-8449-94377eecfce0
+      - name: sessionId
+        in: path
+        required: true
+        description: 매장에 속한 리소스 UUID.
+        schema:
+          type: string
+          format: uuid
+        example: c701b623-889c-4d28-b055-501251ac6773
+      - $ref: '#/components/parameters/ManualCommandKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualRevisionCommand'
+            examples:
+              default:
+                value:
+                  expectedRevision: 4
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=376-1711
 components:
   securitySchemes:
     SessionCookie:
@@ -8999,6 +9407,15 @@ components:
       required:
       - expectedRevision
       - confirmed
+    ManualRevisionCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+      required:
+      - expectedRevision
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
