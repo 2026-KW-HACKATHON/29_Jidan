@@ -46,3 +46,11 @@ body 없이 회원 세션·CSRF·Origin과 UUID Idempotency-Key로 요청한다.
 `POST /api/stores/{storeId}/invitations/{invitationId}/cancel`
 
 body 없이 회원 세션·CSRF·Origin으로 요청한다. 유효 PENDING을 CANCELED로 바꾸고 200을 반환한다. 이미 CANCELED면 기한이 지나도 최초 canceledAt을 유지해 200이다. ACCEPTED/DECLINED는 409, 기한이 지난 PENDING/EXPIRED는 410이다. 수락한 사람의 접근은 초대 취소로 종료하지 않고 근무자 관리에서 종료한다. 수락/취소는 잠금/조건부 갱신으로 경쟁을 처리한다. 취소 후 미발송 outbox는 폐기하고 이미 발송한 링크는 상태 검증으로 거절한다. 실제 링크 차단·시각 유지·메일 처리·경쟁은 서버 통합 검증 대상이다.
+
+## 링크 확인
+
+`POST /api/store-invitations/preview`
+
+가입 완료 ACTIVE WORKER가 회원 세션과 body token으로 조회한다. 이메일/회원 ID/접근 기간은 입력받지 않는다. 토큰 hash를 조회한 뒤 세션의 검증된 Google 이메일과 초대 대상이 일치하는지 확인하고, 현재 매장 승인 상태와 소유자도 재확인한다. 이메일 불일치는 403 INVITATION_EMAIL_MISMATCH로 초대/매장 데이터를 노출하지 않는다. 없는/교체된 토큰은 404, 완료/취소는 409, 링크/접근 기한 종료는 410이다. 유효 PENDING에는 200으로 매장명·링크 기한·자료 접근 기간을 반환한다.
+
+민감 토큰을 URL에 넣지 않기 위한 조회 POST다. 상태/권한/조회 시각을 변경하지 않으며 토큰을 소비하지 않는다. 단순 링크 방문/스캐너는 수락하지 않는다. 수락/거절은 회원 세션·CSRF로 명시적으로 제출한다. Google 가입 중에는 같은 링크 문맥을 유지할 수 있으나 가입 세션만으로는 조회/수락하지 못한다. 계정 바인딩·원문 비노출·토큰 교체/만료 처리는 실제 서버 통합 검증 대상이다.
