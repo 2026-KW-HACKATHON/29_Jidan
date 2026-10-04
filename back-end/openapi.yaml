@@ -2813,6 +2813,157 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=248-1424
+  /api/store-invitations/decline:
+    post:
+      tags:
+      - 근무자 초대
+      operationId: declineStoreInvitation
+      summary: 초대 거절
+      description: |-
+        **수락자 인증**
+
+        - 가입 완료된 ACTIVE `WORKER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - Google 로그인/가입 후에도 프론트에서 링크 문맥을 이어갈 수 있지만 가입 세션 자체로는 확인/수락/거절할 수 없습니다.
+        - 요청 body에는 원문 `token`만 받습니다. 이메일·workerId·storeId·역할·접근 기간을 클라이언트가 지정하지 않습니다.
+        - 서버가 토큰을 hash로 조회한 뒤 세션의 검증된 Google 이메일과 초대 이메일을 정규화해 비교합니다. 불일치는 **403 INVITATION_EMAIL_MISMATCH**이며 매장/초대 정보를 반환하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다. 없는/재전송으로 교체된 토큰은 **404 INVITATION_NOT_FOUND**입니다.
+        - 토큰 조회 후에도 현재 매장 APPROVED 상태와 유효한 소유자를 확인합니다. 운영이 중지되었으면 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 초대 링크 만료는 **410 INVITATION_EXPIRED**, 지정 접근 기간 종료는 **410 ACCESS_PERIOD_ENDED**입니다. 종료 시각과 동일한 순간에도 사용할 수 없습니다.
+        - token은 body로만 제출하며 응답·URL query·로그·오류·분석에서 제외합니다. 응답은 `Cache-Control: no-store`입니다.
+
+        **거절**
+
+        - 유효 PENDING을 DECLINED로 바꾸고 세션의 근무자 ID와 서버 거절 시각을 기록합니다. 매장 자료 접근은 만들지 않습니다.
+        - 같은 세션 근무자가 이미 거절한 초대이며 링크/접근 기한이 남아 있으면 최초 거절 시각을 유지해 **200**으로 반환합니다. 다른 계정이 거절한 기록은 재현하지 않습니다.
+        - 이미 수락/취소된 초대 또는 다른 근무자의 거절은 **409**입니다. 기한에 도달한 토큰은 **410**입니다.
+        - 수락/거절/취소/재전송 경쟁은 초대와 토큰 상태를 원자적으로 처리합니다.
+        - 기존에 가진 다른 매장의 접근이나 이 매장의 다른 접근을 종료하지 않습니다. 자료 접근 종료는 점주 관리 API의 별도 작업입니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '200':
+          description: 초대 거절 완료 또는 같은 근무자의 거절 결과 재현
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreInvitationDeclineResult'
+              example:
+                invitationId: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                status: DECLINED
+                declinedAt: '2026-10-05T02:00:00Z'
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '이메일 불일치: INVITATION_EMAIL_MISMATCH. 역할·정지·매장 승인·CSRF 정책 위반. 이메일 불일치 시 초대 정보 미노출.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVITATION_EMAIL_MISMATCH
+                message: 초대 받은 Google 계정으로 로그인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: 없는 토큰 또는 교체된 토큰.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVITATION_NOT_FOUND
+                message: 초대를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '409':
+          description: '수락/거절/취소 등 현재 상태에서 사용할 수 없는 작업: INVITATION_STATE_CONFLICT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVITATION_STATE_CONFLICT
+                message: 현재 초대 상태에서는 이 작업을 할 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '410':
+          description: 현재 시각이 초대 링크 또는 지정 접근 종료 시각 이상. INVITATION_EXPIRED 또는 ACCESS_PERIOD_ENDED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVITATION_EXPIRED
+                message: 초대 유효 기간이 지났습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreInvitationTokenRequest'
+            examples:
+              token:
+                summary: 링크 토큰으로 거절
+                value:
+                  token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=248-1424
 components:
   securitySchemes:
     SessionCookie:
@@ -4590,6 +4741,23 @@ components:
       - storeId
       - workerId
       - accessGrant
+    StoreInvitationDeclineResult:
+      type: object
+      additionalProperties: false
+      properties:
+        invitationId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: DECLINED
+        declinedAt:
+          type: string
+          format: date-time
+      required:
+      - invitationId
+      - status
+      - declinedAt
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
