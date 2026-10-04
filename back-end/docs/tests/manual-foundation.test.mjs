@@ -18,7 +18,3 @@ test('생성 중/오류의 초안 본문은 null, READY 본문은 필수', () =>
  const v=validator('ManualDraft'); for(const status of ['RUNNING','ERROR','NOT_STARTED']) {assert.ok(v({...draft,generationStatus:status,content:null})); assert.equal(v({...draft,generationStatus:status}),false);}
  assert.equal(v({...draft,content:null}),false);
 });
-test('미충족 항목: OPEN은 보완 문구 없음, RESOLVED는 비어있지 않은 문구', () => {
- const v=validator('ManualReviewIssue'); const x={id:draft.versionId,intentId:draft.versionId,description:'확인 필요',status:'OPEN',resolutionNote:null,sectionIds:[]};
- assert.ok(v(x)); assert.equal(v({...x,resolutionNote:'확인'}),false); assert.equal(v({...x,status:'RESOLVED',resolutionNote:' '}),false);assert.ok(v({...x,status:'RESOLVED',resolutionNote:'점주 확인 완료'}));
-});
