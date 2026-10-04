@@ -54,6 +54,8 @@ tags:
   description: 점주 검토·편집·발행 및 초안 관리
 - name: 매뉴얼 미디어
   description: 매장에 귀속된 비공개 사진·음성 업로드와 보호 조회
+- name: 점주 AI 인터뷰
+  description: 점주 답변 수집·가변 추가 질문·이해 확인·오류 복구 및 초안 생성
 security:
 - SessionCookie: []
 externalDocs:
@@ -4669,6 +4671,349 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=376-1711
+  /api/stores/{storeId}/manual/interviews:
+    post:
+      tags:
+      - 점주 AI 인터뷰
+      operationId: startManualInterview
+      summary: AI 인터뷰 시작
+      description: |-
+        매장당 하나의 활성 초안과 인터뷰 세션을 생성하고 첫 질문을 예약합니다. 서버가 사용 중인 필수 질문 셋 버전을 고정하며 클라이언트는 모델·provider·질문 셋·점주 ID를 지정하지 않습니다. 빈 JSON 객체를 제출합니다.
+
+        - 같은 key 재요청은 최초 201, 다른 key로 이미 진행 중인 세션/미게시 초안이 있으면 409 INTERVIEW_ALREADY_EXISTS입니다. GET 매뉴얼 상태로 이어하기 합니다.
+        - 이미 게시본이 있으면 다음 versionNumber의 초안을 생성합니다. 기존 게시본을 수정하지 않으며 새 초안이 발행될 때까지 기존 게시본을 유지합니다.
+        - 필수 인텐트와 순서는 시작 시 고정되고 매장·업종 문맥에 맞춰 질문 문구만 조정합니다. 다른 매장 자료는 후보 질문 생성에만 사용하며 이 매장 답변/사실로 합치지 않습니다.
+        - 단계는 근무 구조 → 공통 업무 → 근무조별 업무 → 보완 사항입니다. 없는 설비/별도 업무 없음도 명시적 점주 답변으로 확인합니다.
+        - 첫 질문 생성은 비동기입니다. GET 세션 phase=COLLECTING이 되면 questions를 표시합니다. 미완성 질문 묶음은 제공하지 않습니다.
+
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+
+        **동시 수정과 재전송**
+
+        - 변경 요청의 `expectedRevision`은 해당 세션 또는 초안의 현재 revision과 같아야 합니다. 불일치는 **409 REVISION_CONFLICT**이며 최신 GET 결과로 다시 검토합니다.
+        - UUID `Idempotency-Key`는 주체·매장·endpoint·정규화 body(파일은 byte hash)로 24시간 보관합니다. 현재 권한을 확인한 후 같은 요청은 최초 결과를 재현하고 revision을 다시 올리지 않습니다.
+        - 같은 key의 다른 요청은 **409 IDEMPOTENCY_KEY_REUSED**입니다. 신규 요청만 revision을 검사하며 key 재현은 당시 스냅샷일 수 있습니다.
+        - 상태 갱신·작업 예약·outbox 저장은 원자적입니다. 예약 실패는 **503 JOB_QUEUE_UNAVAILABLE**이며 변경을 rollback합니다. AI/전사 실행 실패는 조회 응답의 ERROR 상태로 안내합니다.
+        - 워커 작업은 입력 revision과 작업 ID를 확인해 성공 결과를 한 번만 적용합니다. 오래된 작업 결과는 현재 상태를 덮어쓰지 않습니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED. CSRF/Origin 오류:
+            CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: '다른 점주/없는 매장: STORE_NOT_FOUND. 매장에 속하지 않는 초안/세션/파일: MANUAL_RESOURCE_NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MANUAL_RESOURCE_NOT_FOUND
+                message: 매뉴얼 리소스를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '409':
+          description: REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
+            최신 조회 후 현재 상태에 맞게 요청합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: REVISION_CONFLICT
+                message: 최신 내용을 다시 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '503':
+          description: 작업 예약 또는 저장소 실패. 변경 전체 rollback.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: JOB_QUEUE_UNAVAILABLE
+                message: 잠시 후 다시 시도해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualInterviewSession'
+              example:
+                id: c701b623-889c-4d28-b055-501251ac6773
+                storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                questionSetVersion: 1
+                revision: 1
+                status: IN_PROGRESS
+                phase: PROCESSING
+                intents:
+                - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                  key: WORK_STRUCTURE
+                  stage: WORK_STRUCTURE
+                  coverage: PENDING
+                  depth: 0
+                  finishedAt: null
+                  confirmedAt: null
+                currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                questions: []
+                review: null
+                processing:
+                  taskId: 06a4e263-0c2f-43f7-9d50-5e2b9c48e23d
+                  kind: INITIAL_QUESTION
+                  attempt: 1
+                error: null
+                startedAt: '2026-10-05T01:00:00Z'
+                completedAt: null
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 대상 매장 UUID
+        schema:
+          type: string
+          format: uuid
+        example: 51c1c743-d377-4e7a-8449-94377eecfce0
+      - $ref: '#/components/parameters/ManualCommandKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualInterviewStart'
+            examples:
+              default:
+                value: {}
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=560-4170
+  /api/stores/{storeId}/manual/interviews/{sessionId}:
+    get:
+      tags:
+      - 점주 AI 인터뷰
+      operationId: getManualInterview
+      summary: 인터뷰 진행·질문·이해 확인 상태 조회
+      description: |-
+        현재 질문 묶음, 답변 여부, 인텐트별 수집 상태, 이해 확인 내용, 비동기 처리/오류를 반환합니다. 2초 간격 polling과 429 Retry-After를 따릅니다. 새로고침 후 현재 위치로 재개할 수 있습니다.
+
+        **진행 규칙**
+
+        - 기본 질문 depth=0, 새 추가 질문 묶음마다 depth+1, 최대 5입니다. 묶음의 질문 수는 가변이며 전부 답변한 뒤 평가합니다. 공개 묶음 상한 20은 설계 제안입니다.
+        - Jev는 누적 질문·답변의 정보 충분성을 판단하고 질문 문구 생성은 별도 작업입니다. 충분성 판단과 생성 실패를 같은 판단 결과로 취급하지 않습니다.
+        - 5차 묶음 답변 후에도 부족하면 NEEDS_DETAIL을 유지하고 이해 확인 화면으로 이동합니다. 점주가 확인하면 다음 인텐트로 진행합니다.
+        - 사용자 결정: 부족 항목은 최종 검토에 표시하며, 점주 확인만으로 발행할 수 있습니다. 추가 보완 답변은 필수가 아닙니다. 확인이 정보 충분성 판단을 COVERED로 바꾸지 않습니다.
+        - 인터뷰 답변·평가 입력·사용 설정 버전은 불변 이력입니다. provider별 내부 응답/원문 오류/prompt는 공개하지 않습니다.
+        - 자동 재시도 → fallback까지 실패하면 ERROR로 정지하고 질문·답변·현재 인텐트/depth를 보존합니다. API 요청의 성공과 AI 실행 성공은 별개입니다.
+
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+      security:
+      - SessionCookie: []
+      responses:
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: '다른 점주/없는 매장: STORE_NOT_FOUND. 매장에 속하지 않는 초안/세션/파일: MANUAL_RESOURCE_NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MANUAL_RESOURCE_NOT_FOUND
+                message: 매뉴얼 리소스를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualInterviewSession'
+              example:
+                id: c701b623-889c-4d28-b055-501251ac6773
+                storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                questionSetVersion: 1
+                revision: 1
+                status: IN_PROGRESS
+                phase: COLLECTING
+                intents:
+                - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                  key: WORK_STRUCTURE
+                  stage: WORK_STRUCTURE
+                  coverage: PENDING
+                  depth: 0
+                  finishedAt: null
+                  confirmedAt: null
+                currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                questions:
+                - id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                  intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                  kind: BASE
+                  depth: 0
+                  batchId: null
+                  text: 근무조와 시간을 알려주세요.
+                  answered: false
+                review: null
+                processing: null
+                error: null
+                startedAt: '2026-10-05T01:00:00Z'
+                completedAt: null
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 대상 매장 UUID
+        schema:
+          type: string
+          format: uuid
+        example: 51c1c743-d377-4e7a-8449-94377eecfce0
+      - name: sessionId
+        in: path
+        required: true
+        description: 매장에 속한 리소스 UUID.
+        schema:
+          type: string
+          format: uuid
+        example: c701b623-889c-4d28-b055-501251ac6773
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2713
 components:
   securitySchemes:
     SessionCookie:
@@ -7178,6 +7523,418 @@ components:
         - status
         - text
         - error
+        - completedAt
+    ManualInterviewStart:
+      type: object
+      additionalProperties: false
+      properties: {}
+      required: []
+    ManualInterviewIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+        stage:
+          enum:
+          - WORK_STRUCTURE
+          - COMMON_TASKS
+          - SHIFT_TASKS
+          - COMPLEMENTS
+        coverage:
+          enum:
+          - PENDING
+          - NEEDS_DETAIL
+          - COVERED
+        depth:
+          type: integer
+          minimum: 0
+          maximum: 5
+        finishedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        confirmedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - key
+      - stage
+      - coverage
+      - depth
+      - finishedAt
+      - confirmedAt
+    ManualInterviewQuestion:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        intentId:
+          type: string
+          format: uuid
+        kind:
+          enum:
+          - BASE
+          - PROBE
+        depth:
+          type: integer
+          minimum: 0
+          maximum: 5
+        batchId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: \S
+        answered:
+          type: boolean
+      required:
+      - id
+      - intentId
+      - kind
+      - depth
+      - batchId
+      - text
+      - answered
+      oneOf:
+      - type: object
+        properties:
+          kind:
+            const: BASE
+          depth:
+            const: 0
+          batchId:
+            type: 'null'
+        required:
+        - kind
+        - depth
+        - batchId
+      - type: object
+        properties:
+          kind:
+            const: PROBE
+          depth:
+            type: integer
+            minimum: 1
+            maximum: 5
+          batchId:
+            type: string
+            format: uuid
+        required:
+        - kind
+        - depth
+        - batchId
+    ManualInterviewReview:
+      type: object
+      additionalProperties: false
+      properties:
+        intentId:
+          type: string
+          format: uuid
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          pattern: \S
+        shifts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualShift'
+          minItems: 0
+          maxItems: 20
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualSection'
+          minItems: 0
+          maxItems: 200
+        needsDetail:
+          type: boolean
+      required:
+      - intentId
+      - summary
+      - shifts
+      - sections
+      - needsDetail
+    ManualInterviewProcessing:
+      type: object
+      additionalProperties: false
+      properties:
+        taskId:
+          type: string
+          format: uuid
+        kind:
+          enum:
+          - INITIAL_QUESTION
+          - EVALUATION
+          - FOLLOWUP_GENERATION
+          - UNDERSTANDING
+          - CORRECTION
+          - DRAFT_GENERATION
+        attempt:
+          type: integer
+          minimum: 1
+      required:
+      - taskId
+      - kind
+      - attempt
+    ManualInterviewSession:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        storeId:
+          type: string
+          format: uuid
+        draftVersionId:
+          type: string
+          format: uuid
+        questionSetVersion:
+          type: integer
+          minimum: 1
+        revision:
+          type: integer
+          minimum: 1
+        status:
+          enum:
+          - IN_PROGRESS
+          - ERROR
+          - COMPLETED
+        phase:
+          enum:
+          - COLLECTING
+          - PROCESSING
+          - REVIEWING
+          - READY_TO_GENERATE
+          - GENERATING
+          - COMPLETED
+          - ERROR
+        intents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualInterviewIntent'
+          minItems: 1
+          maxItems: 50
+        currentIntentId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualInterviewQuestion'
+          minItems: 0
+          maxItems: 20
+        review:
+          oneOf:
+          - $ref: '#/components/schemas/ManualInterviewReview'
+          - type: 'null'
+        processing:
+          oneOf:
+          - $ref: '#/components/schemas/ManualInterviewProcessing'
+          - type: 'null'
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/ManualPublicProcessingError'
+          - type: 'null'
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - storeId
+      - draftVersionId
+      - questionSetVersion
+      - revision
+      - status
+      - phase
+      - intents
+      - currentIntentId
+      - questions
+      - review
+      - processing
+      - error
+      - startedAt
+      - completedAt
+      oneOf:
+      - type: object
+        properties:
+          status:
+            const: IN_PROGRESS
+          error:
+            type: 'null'
+          completedAt:
+            type: 'null'
+          phase:
+            const: COLLECTING
+          questions:
+            minItems: 1
+          currentIntentId:
+            type: string
+            format: uuid
+          review:
+            type: 'null'
+          processing:
+            type: 'null'
+        required:
+        - status
+        - error
+        - completedAt
+        - phase
+        - questions
+        - currentIntentId
+        - review
+        - processing
+      - type: object
+        properties:
+          status:
+            const: IN_PROGRESS
+          error:
+            type: 'null'
+          completedAt:
+            type: 'null'
+          phase:
+            const: REVIEWING
+          review:
+            $ref: '#/components/schemas/ManualInterviewReview'
+          currentIntentId:
+            type: string
+            format: uuid
+          processing:
+            type: 'null'
+          questions:
+            maxItems: 0
+        required:
+        - status
+        - error
+        - completedAt
+        - phase
+        - review
+        - currentIntentId
+        - processing
+        - questions
+      - type: object
+        properties:
+          status:
+            const: IN_PROGRESS
+          error:
+            type: 'null'
+          completedAt:
+            type: 'null'
+          phase:
+            enum:
+            - PROCESSING
+            - GENERATING
+          processing:
+            $ref: '#/components/schemas/ManualInterviewProcessing'
+          review:
+            type: 'null'
+          questions:
+            maxItems: 0
+        required:
+        - status
+        - error
+        - completedAt
+        - phase
+        - processing
+        - review
+        - questions
+      - type: object
+        properties:
+          status:
+            const: IN_PROGRESS
+          error:
+            type: 'null'
+          completedAt:
+            type: 'null'
+          phase:
+            const: READY_TO_GENERATE
+          processing:
+            type: 'null'
+          review:
+            type: 'null'
+          questions:
+            maxItems: 0
+          currentIntentId:
+            type: 'null'
+        required:
+        - status
+        - error
+        - completedAt
+        - phase
+        - processing
+        - review
+        - questions
+        - currentIntentId
+      - type: object
+        properties:
+          status:
+            const: ERROR
+          phase:
+            const: ERROR
+          error:
+            $ref: '#/components/schemas/ManualPublicProcessingError'
+          processing:
+            $ref: '#/components/schemas/ManualInterviewProcessing'
+          completedAt:
+            type: 'null'
+        required:
+        - status
+        - phase
+        - error
+        - processing
+        - completedAt
+      - type: object
+        properties:
+          status:
+            const: COMPLETED
+          phase:
+            const: COMPLETED
+          error:
+            type: 'null'
+          processing:
+            type: 'null'
+          review:
+            type: 'null'
+          currentIntentId:
+            type: 'null'
+          questions:
+            maxItems: 0
+          completedAt:
+            type: string
+            format: date-time
+        required:
+        - status
+        - phase
+        - error
+        - processing
+        - review
+        - currentIntentId
+        - questions
         - completedAt
   responses:
     AdminPasswordUnauthorized:
