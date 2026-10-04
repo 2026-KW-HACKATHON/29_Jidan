@@ -32,3 +32,11 @@ UUID Idempotency-Key를 요구하며 주체·경로·정규화 body 기준 24시
 `GET /api/stores/{storeId}/invitations?view=ACTIVE&page=1&size=20`
 
 ACTIVE는 수락 가능한 PENDING, PAST는 ACCEPTED/DECLINED/CANCELED/EXPIRED다. 완료된 상태는 시간이 지나도 유지한다. 대기 상태에서 링크 기한 또는 지정 접근 기한이 지났으면 DB 배치 상태 변경과 관계없이 EXPIRED로 계산한다. createdAt/ID 내림차순 정렬이며 activeCount/pastCount는 필터와 페이지에 무관한 해당 매장 전체 탭 건수다. items·totalItems·전체 탭 건수와 asOf는 같은 DB 스냅샷 기준이다. 빈 결과/페이지 이후는 200이다. 점주의 승인된 매장만 조회 가능하며 응답에 토큰/링크를 포함하지 않는다. 상태 계산·집계는 후속 실제 서버 통합 검증 대상이다.
+
+## 재전송
+
+`POST /api/stores/{storeId}/invitations/{invitationId}/resend`
+
+body 없이 회원 세션·CSRF·Origin과 UUID Idempotency-Key로 요청한다. 새 요청은 유효 PENDING만 가능하며 수락/거절/취소는 409, 대기 기한 종료는 410이다. 메일 큐·lastSentAt·token hash를 한 트랜잭션으로 변경하고 이전 링크는 무효화한다. 생성 시각·7일 expiresAt·accessExpiresAt·수신 주소는 유지한다. 재전송 실패는 503과 rollback이며 기존 링크는 유지한다. 200의 QUEUED는 발송 요청 기록이다.
+
+같은 key의 재요청은 현재 인증/소유권/승인 확인 후 최초 성공 기록을 먼저 조회해 추가 메일 없이 재현한다. 이후 초대 상태가 바뀌었어도 최초 결과가 재현될 수 있으므로 최신 상태는 목록 조회로 확인한다. 이메일 발송 요청 기록·토큰 교체·재시도/수락과의 경쟁은 실제 서버 통합 테스트 대상이다.
