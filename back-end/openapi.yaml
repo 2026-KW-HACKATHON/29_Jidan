@@ -6140,6 +6140,14 @@ paths:
       operationId: generateManualDraft
       summary: 인터뷰 완료·매뉴얼 초안 생성 요청
       description: |-
+        **미확정 정보와 점주 확인**
+
+        - 근무 시간이 불명확하면 해당 startTime/endTime/endsNextDay를 null로 유지합니다. 근무조나 업무 자체가 미확정이면 shifts/sections를 빈 배열로, 절차가 미확정이면 해당 steps를 빈 배열로 표현합니다. AI는 임의의 시간·업무를 만들어 채우지 않습니다.
+        - 모든 null 필드·빈 필수 배열은 missingInformation에 정확히 대응해야 합니다. MANUAL 대상의 shifts/sections는 targetId=null, SHIFT의 시간 필드는 해당 shift ID, SECTION의 steps는 해당 section ID를 지정합니다. 완성된 값에 대한 항목·다른 대상·중복 대상 필드는 422 VALIDATION_ERROR입니다. 교차 참조와 누락 대응은 서버 검증 사항입니다.
+        - missingInformation.id와 같은 ID의 부족 항목 issue를 서버가 만들고 OPEN으로 유지합니다. 인터뷰 유래는 원래 intentId, 편집으로 새로 생긴 미확정 필드는 intentId=null입니다. 클라이언트는 issues나 확인 상태를 편집하지 못합니다.
+        - 내용 수정 시 미확정 대상과 issue를 원자적으로 동기화하고 확인을 초기화합니다. 값이 채워진 항목의 현재 missingInformation과 연결 issue는 함께 제거하되 원래 평가와 확인 이력은 보존합니다. 같은 ID를 다른 대상으로 재사용할 수 없습니다.
+        - 시간 길이 검사는 필요한 시간 값이 모두 확정된 근무조에 적용합니다. 부족 항목에 대한 점주 확인은 null/빈 배열을 임의의 확정값으로 변경하지 않습니다.
+
         READY_TO_GENERATE에서만 실행합니다. 고정 질문 셋의 모든 필수 인텐트에 finishedAt이 있어야 합니다. 충분 판단의 COVERED와 상한에서 검수중으로 넘긴 NEEDS_DETAIL 모두 confirmedAt=null이어도 생성할 수 있습니다. 중간 점주 확인을 기다리지 않습니다. 미진행/PENDING 항목이 있으면 409 INTERVIEW_INCOMPLETE입니다.
 
         - 같은 초안 versionId에 구조화 작업을 예약하고 세션 GENERATING 및 초안 RUNNING으로 전환합니다. 같은 매장에서 동시에 별도 생성 작업을 만들지 않습니다.
@@ -6578,6 +6586,14 @@ paths:
       operationId: replaceManualDraftContent
       summary: 초안 근무 구조·업무·규정·사진 수정
       description: |-
+        **미확정 정보와 점주 확인**
+
+        - 근무 시간이 불명확하면 해당 startTime/endTime/endsNextDay를 null로 유지합니다. 근무조나 업무 자체가 미확정이면 shifts/sections를 빈 배열로, 절차가 미확정이면 해당 steps를 빈 배열로 표현합니다. AI는 임의의 시간·업무를 만들어 채우지 않습니다.
+        - 모든 null 필드·빈 필수 배열은 missingInformation에 정확히 대응해야 합니다. MANUAL 대상의 shifts/sections는 targetId=null, SHIFT의 시간 필드는 해당 shift ID, SECTION의 steps는 해당 section ID를 지정합니다. 완성된 값에 대한 항목·다른 대상·중복 대상 필드는 422 VALIDATION_ERROR입니다. 교차 참조와 누락 대응은 서버 검증 사항입니다.
+        - missingInformation.id와 같은 ID의 부족 항목 issue를 서버가 만들고 OPEN으로 유지합니다. 인터뷰 유래는 원래 intentId, 편집으로 새로 생긴 미확정 필드는 intentId=null입니다. 클라이언트는 issues나 확인 상태를 편집하지 못합니다.
+        - 내용 수정 시 미확정 대상과 issue를 원자적으로 동기화하고 확인을 초기화합니다. 값이 채워진 항목의 현재 missingInformation과 연결 issue는 함께 제거하되 원래 평가와 확인 이력은 보존합니다. 같은 ID를 다른 대상으로 재사용할 수 없습니다.
+        - 시간 길이 검사는 필요한 시간 값이 모두 확정된 근무조에 적용합니다. 부족 항목에 대한 점주 확인은 null/빈 배열을 임의의 확정값으로 변경하지 않습니다.
+
         READY 초안의 content 전체를 교체합니다. 근무조/시간, 공통·근무조별 업무, 규정/설비, 단계 지시문 및 사진의 설명·순서를 한 화면에서 편집할 수 있습니다. content 배열 순서가 표시 순서이며 별도 sortOrder를 받지 않습니다.
 
         **편집 검증**
@@ -6586,7 +6602,7 @@ paths:
         - 근무조/섹션/단계 ID는 해당 content 내에서 유일해야 합니다. SHIFT_TASK는 같은 버전의 shiftId 필수, 다른 분류는 shiftId=null입니다. 근무조에 별도 업무가 없으면 해당 조의 SHIFT_TASK를 만들지 않습니다.
         - 시간은 HH:mm의 00:00~23:59, 심야는 endsNextDay=true입니다. 0 < duration <= 24시간을 서버가 검증합니다. 같은 시작/끝은 endsNextDay=true인 24시간만 허용합니다. 근무조 간 시간 겹침은 허용합니다.
         - 실제 파일로 확인된 같은 매장의 MANUAL_PHOTO만 연결합니다. 섹션 내 사진 mediaId 중복은 422, 동일 사진을 여러 섹션에서 쓰는 것은 허용합니다. 기존 사진 연결이 지워져도 게시본에서 참조하는 파일은 삭제하지 않습니다.
-        - 빈/공백 업무 지시나 제목, 전체 근무조·전체 섹션 삭제는 422입니다. 항목 수·문자 길이 상한은 설계 제안입니다. UUID 참조·시간·중복 비교는 Schema 외 서버 검증 사항입니다.
+        - 빈/공백 업무 지시나 제목, 미확정 사유 없는 전체 근무조·전체 섹션 삭제는 422입니다. 항목 수·문자 길이 상한은 설계 제안입니다. UUID 참조·시간·중복 비교는 Schema 외 서버 검증 사항입니다.
         - 입력의 실질 변경이 없으면 revision/updatedAt을 유지합니다. 변경이 있으면 revision+1이며 부족 항목의 현재 확인을 초기화합니다. 이전 점주 확인은 별도 감사 이력에 남깁니다.
         - 수집된 원문 답변/평가/게시본을 수정하지 않습니다. 진행/생성/오류 초안 또는 게시본은 409 MANUAL_STATE_CONFLICT입니다. 클라이언트가 version/status/issues/점주 주체를 변경할 수 없습니다.
 
@@ -7137,6 +7153,14 @@ paths:
       operationId: publishManualDraft
       summary: 점주 확인 후 매뉴얼 발행
       description: |-
+        **미확정 정보와 점주 확인**
+
+        - 근무 시간이 불명확하면 해당 startTime/endTime/endsNextDay를 null로 유지합니다. 근무조나 업무 자체가 미확정이면 shifts/sections를 빈 배열로, 절차가 미확정이면 해당 steps를 빈 배열로 표현합니다. AI는 임의의 시간·업무를 만들어 채우지 않습니다.
+        - 모든 null 필드·빈 필수 배열은 missingInformation에 정확히 대응해야 합니다. MANUAL 대상의 shifts/sections는 targetId=null, SHIFT의 시간 필드는 해당 shift ID, SECTION의 steps는 해당 section ID를 지정합니다. 완성된 값에 대한 항목·다른 대상·중복 대상 필드는 422 VALIDATION_ERROR입니다. 교차 참조와 누락 대응은 서버 검증 사항입니다.
+        - missingInformation.id와 같은 ID의 부족 항목 issue를 서버가 만들고 OPEN으로 유지합니다. 인터뷰 유래는 원래 intentId, 편집으로 새로 생긴 미확정 필드는 intentId=null입니다. 클라이언트는 issues나 확인 상태를 편집하지 못합니다.
+        - 내용 수정 시 미확정 대상과 issue를 원자적으로 동기화하고 확인을 초기화합니다. 값이 채워진 항목의 현재 missingInformation과 연결 issue는 함께 제거하되 원래 평가와 확인 이력은 보존합니다. 같은 ID를 다른 대상으로 재사용할 수 없습니다.
+        - 시간 길이 검사는 필요한 시간 값이 모두 확정된 근무조에 적용합니다. 부족 항목에 대한 점주 확인은 null/빈 배열을 임의의 확정값으로 변경하지 않습니다.
+
         READY 초안의 현재 expectedRevision에 대해 confirmed=true로 최종 내용을 확인하고 발행합니다. 생성 중/실패 초안·미완료 인터뷰는 409 MANUAL_NOT_READY입니다. AI 및 자동 작업은 이 endpoint를 호출하거나 자동 발행할 수 없습니다.
 
         **부족 항목에 대한 사용자 결정**
@@ -7347,6 +7371,8 @@ paths:
       operationId: getPublishedManual
       summary: 게시된 매뉴얼 업무 목록·근무조 조회
       description: |-
+        공개 missingInformation을 반환해 미확정 내용을 숨기지 않습니다. 목록은 전체 게시본의 항목을, 상세는 해당 섹션과 참조 근무조의 항목만 반환합니다. 내부 issue/평가/점주 메모는 반환하지 않습니다. 빈 목록과 절차 미확정은 missingInformation으로 구별합니다.
+
         현재 게시본의 근무 구조와 업무 목록을 반환합니다. sections는 content 순서를 유지하고 단계/사진 건수를 제공합니다. filter=SHIFT는 선택 근무조 업무와 모든 조의 공통 업무·규정·설비를 함께 표시합니다. 해당 조에 별도 업무가 없거나 필터 결과가 비면 200 sections=[]입니다.
 
         filter/shiftId 조합과 해당 게시 버전 참조를 확인합니다. worker의 실제 근무조 자동 판정은 하지 않으며 모든 근무조의 승인된 매뉴얼을 열람할 수 있습니다. 각 요청은 한 스냅샷의 currentPublishedVersionId에 고정해 버전이 섞이지 않게 합니다.
@@ -7498,6 +7524,8 @@ paths:
       operationId: getPublishedManualSection
       summary: 게시된 업무의 단계·위치 사진 상세 조회
       description: |-
+        공개 missingInformation을 반환해 미확정 내용을 숨기지 않습니다. 목록은 전체 게시본의 항목을, 상세는 해당 섹션과 참조 근무조의 항목만 반환합니다. 내부 issue/평가/점주 메모는 반환하지 않습니다. 빈 목록과 절차 미확정은 missingInformation으로 구별합니다.
+
         현재 게시 버전에 속한 섹션만 순서대로 제공합니다. 점주 확인 표시·지시 단계·선택 사진 설명을 포함하며 사진 byte는 media/{mediaId}/content에서 현재 권한을 검사하여 받습니다.
 
         목록에서 받은 expectedVersionId를 보내면 그 사이 게시본이 바뀐 경우 409 MANUAL_VERSION_CHANGED입니다. 프론트는 최신 목록을 다시 조회합니다. expectedVersionId 생략 시 조회 시점 현재 게시본만 반환합니다. 같은 sectionId가 다른 버전에 존재해도 과거 게시본/초안을 반환하지 않습니다.
@@ -9865,13 +9893,19 @@ components:
           maxLength: 50
           pattern: \S
         startTime:
-          type: string
+          type:
+          - string
+          - 'null'
           pattern: ^([01]\d|2[0-3]):[0-5]\d$
         endTime:
-          type: string
+          type:
+          - string
+          - 'null'
           pattern: ^([01]\d|2[0-3]):[0-5]\d$
         endsNextDay:
-          type: boolean
+          type:
+          - boolean
+          - 'null'
       required:
       - id
       - name
@@ -9946,7 +9980,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ManualStep'
-          minItems: 1
+          minItems: 0
           maxItems: 100
         photos:
           type: array
@@ -9992,13 +10026,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ManualShift'
-          minItems: 1
+          minItems: 0
           maxItems: 20
         sections:
           type: array
           items:
             $ref: '#/components/schemas/ManualSection'
-          minItems: 1
+          minItems: 0
           maxItems: 200
         structurePhotos:
           type: array
@@ -10007,10 +10041,67 @@ components:
           minItems: 0
           maxItems: 20
           description: 근무표 등 근무 구조 전체에 연결한 선택 사진. 생략은 빈 배열입니다.
+        missingInformation:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualMissingInformation'
+          minItems: 0
+          maxItems: 200
+          description: 미확정 필드와 공개 설명. 생략은 빈 배열. ID는 같은 초안의 부족 항목 issue ID와 일치합니다.
       required:
       - shifts
       - sections
       description: 배열 순서가 표시 순서입니다. UUID 중복·같은 버전의 shift 참조·시간 비교·업무 연결은 서버에서 검증합니다.
+      allOf:
+      - if:
+          anyOf:
+          - properties:
+              shifts:
+                maxItems: 0
+            required:
+            - shifts
+          - properties:
+              sections:
+                maxItems: 0
+            required:
+            - sections
+          - properties:
+              shifts:
+                contains:
+                  anyOf:
+                  - properties:
+                      startTime:
+                        type: 'null'
+                    required:
+                    - startTime
+                  - properties:
+                      endTime:
+                        type: 'null'
+                    required:
+                    - endTime
+                  - properties:
+                      endsNextDay:
+                        type: 'null'
+                    required:
+                    - endsNextDay
+            required:
+            - shifts
+          - properties:
+              sections:
+                contains:
+                  properties:
+                    steps:
+                      maxItems: 0
+                  required:
+                  - steps
+            required:
+            - sections
+        then:
+          required:
+          - missingInformation
+          properties:
+            missingInformation:
+              minItems: 1
     ManualReviewIssue:
       type: object
       additionalProperties: false
@@ -10019,8 +10110,11 @@ components:
           type: string
           format: uuid
         intentId:
-          type: string
+          type:
+          - string
+          - 'null'
           format: uuid
+          description: 인터뷰에서 유래한 부족 항목의 인텐트. 점주 편집으로 추가된 미확정 필드는 null입니다.
         description:
           type: string
           minLength: 1
@@ -10145,6 +10239,45 @@ components:
         required:
         - generationStatus
         - content
+      examples:
+      - versionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+        storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+        versionNumber: 1
+        revision: 1
+        status: DRAFT
+        generationStatus: READY
+        interviewSessionId: c701b623-889c-4d28-b055-501251ac6773
+        content:
+          shifts:
+          - id: 44b35781-3e98-4f28-9505-2178b2863c5e
+            name: 야간조
+            startTime: '22:00'
+            endTime: null
+            endsNextDay: true
+          sections:
+          - id: 00c38e75-0e6a-43c1-8fc8-644e969842e5
+            category: COMMON_TASK
+            shiftId: null
+            title: 재고 정리
+            steps:
+            - id: 15a9721b-2e65-4d03-8fd0-a5999e19d27a
+              instruction: 먼저 들어온 제품을 앞쪽에 진열하세요.
+              checklistItem: true
+            photos: []
+          missingInformation:
+          - id: 7f6ae980-fba3-4a26-a7f8-a3dff29dd90d
+            target: SHIFT
+            targetId: 44b35781-3e98-4f28-9505-2178b2863c5e
+            field: endTime
+            description: 야간조 종료 시간이 아직 정해지지 않았습니다.
+        issues:
+        - id: 7f6ae980-fba3-4a26-a7f8-a3dff29dd90d
+          intentId: null
+          description: 야간조 종료 시간이 아직 정해지지 않았습니다.
+          status: OPEN
+          ownerNote: null
+          acknowledgedAt: null
+        updatedAt: '2026-10-05T01:00:00Z'
     ManualState:
       type: object
       additionalProperties: false
@@ -10570,12 +10703,59 @@ components:
           minItems: 0
           maxItems: 20
           description: 근무표 등 근무 구조 전체에 연결한 선택 사진. 생략은 빈 배열입니다.
+        missingInformation:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualMissingInformation'
+          minItems: 0
+          maxItems: 200
+          description: 미확정 필드와 공개 설명. 생략은 빈 배열. ID는 같은 초안의 부족 항목 issue ID와 일치합니다.
       required:
       - intentId
       - summary
       - shifts
       - sections
       - needsDetail
+      allOf:
+      - if:
+          anyOf:
+          - properties:
+              shifts:
+                contains:
+                  anyOf:
+                  - properties:
+                      startTime:
+                        type: 'null'
+                    required:
+                    - startTime
+                  - properties:
+                      endTime:
+                        type: 'null'
+                    required:
+                    - endTime
+                  - properties:
+                      endsNextDay:
+                        type: 'null'
+                    required:
+                    - endsNextDay
+            required:
+            - shifts
+          - properties:
+              sections:
+                contains:
+                  properties:
+                    steps:
+                      maxItems: 0
+                  required:
+                  - steps
+            required:
+            - sections
+        then:
+          required:
+          - missingInformation
+          properties:
+            missingInformation:
+              minItems: 1
     ManualInterviewProcessing:
       type: object
       additionalProperties: false
@@ -11308,6 +11488,36 @@ components:
       - ownerConfirmed
       - content
       - publishedAt
+      examples:
+      - versionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+        storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+        versionNumber: 1
+        status: PUBLISHED
+        ownerConfirmed: true
+        content:
+          shifts:
+          - id: 44b35781-3e98-4f28-9505-2178b2863c5e
+            name: 야간조
+            startTime: '22:00'
+            endTime: null
+            endsNextDay: true
+          sections:
+          - id: 00c38e75-0e6a-43c1-8fc8-644e969842e5
+            category: COMMON_TASK
+            shiftId: null
+            title: 재고 정리
+            steps:
+            - id: 15a9721b-2e65-4d03-8fd0-a5999e19d27a
+              instruction: 먼저 들어온 제품을 앞쪽에 진열하세요.
+              checklistItem: true
+            photos: []
+          missingInformation:
+          - id: 7f6ae980-fba3-4a26-a7f8-a3dff29dd90d
+            target: SHIFT
+            targetId: 44b35781-3e98-4f28-9505-2178b2863c5e
+            field: endTime
+            description: 야간조 종료 시간이 아직 정해지지 않았습니다.
+        publishedAt: '2026-10-05T01:50:00Z'
     PublishedManualSectionSummary:
       type: object
       additionalProperties: false
@@ -11333,7 +11543,7 @@ components:
           pattern: \S
         stepCount:
           type: integer
-          minimum: 1
+          minimum: 0
           maximum: 100
         photoCount:
           type: integer
@@ -11391,7 +11601,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ManualShift'
-          minItems: 1
+          minItems: 0
           maxItems: 20
         sections:
           type: array
@@ -11406,6 +11616,13 @@ components:
           minItems: 0
           maxItems: 20
           description: 근무표 등 근무 구조 사진. 생략은 빈 배열.
+        missingInformation:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualMissingInformation'
+          minItems: 0
+          maxItems: 200
+          description: 미확정 필드와 공개 설명. 생략은 빈 배열. ID는 같은 초안의 부족 항목 issue ID와 일치합니다.
       required:
       - versionId
       - storeId
@@ -11414,6 +11631,41 @@ components:
       - publishedAt
       - shifts
       - sections
+      allOf:
+      - if:
+          anyOf:
+          - properties:
+              shifts:
+                maxItems: 0
+            required:
+            - shifts
+          - properties:
+              shifts:
+                contains:
+                  anyOf:
+                  - properties:
+                      startTime:
+                        type: 'null'
+                    required:
+                    - startTime
+                  - properties:
+                      endTime:
+                        type: 'null'
+                    required:
+                    - endTime
+                  - properties:
+                      endsNextDay:
+                        type: 'null'
+                    required:
+                    - endsNextDay
+            required:
+            - shifts
+        then:
+          required:
+          - missingInformation
+          properties:
+            missingInformation:
+              minItems: 1
     PublishedManualSectionDetail:
       type: object
       additionalProperties: false
@@ -11431,12 +11683,36 @@ components:
           format: date-time
         section:
           $ref: '#/components/schemas/ManualSection'
+        missingInformation:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualMissingInformation'
+          minItems: 0
+          maxItems: 200
+          description: 미확정 필드와 공개 설명. 생략은 빈 배열. ID는 같은 초안의 부족 항목 issue ID와 일치합니다.
       required:
       - versionId
       - storeId
       - ownerConfirmed
       - publishedAt
       - section
+      allOf:
+      - if:
+          properties:
+            section:
+              properties:
+                steps:
+                  maxItems: 0
+              required:
+              - steps
+          required:
+          - section
+        then:
+          required:
+          - missingInformation
+          properties:
+            missingInformation:
+              minItems: 1
     ManualInterviewPhotoUpdate:
       type: object
       additionalProperties: false
@@ -11484,6 +11760,72 @@ components:
         required:
         - target
         - sectionId
+    ManualMissingInformation:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        target:
+          enum:
+          - MANUAL
+          - SHIFT
+          - SECTION
+        targetId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        field:
+          enum:
+          - shifts
+          - sections
+          - startTime
+          - endTime
+          - endsNextDay
+          - steps
+        description:
+          type: string
+          minLength: 1
+          maxLength: 300
+          pattern: \S
+          description: 점주와 근무자에게 표시할 미확정 정보 설명. 대화 원문·평가·내부 오류를 포함하지 않습니다.
+      required:
+      - id
+      - target
+      - targetId
+      - field
+      - description
+      oneOf:
+      - properties:
+          target:
+            const: MANUAL
+          targetId:
+            type: 'null'
+          field:
+            enum:
+            - shifts
+            - sections
+      - properties:
+          target:
+            const: SHIFT
+          targetId:
+            type: string
+            format: uuid
+          field:
+            enum:
+            - startTime
+            - endTime
+            - endsNextDay
+      - properties:
+          target:
+            const: SECTION
+          targetId:
+            type: string
+            format: uuid
+          field:
+            const: steps
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.

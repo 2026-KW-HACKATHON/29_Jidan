@@ -129,3 +129,7 @@ OpenAPI lint, 모든 요청/응답 예시의 JSON Schema 검사, 상태별 필�
 - [최종 검토·게시](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2757), [사진 관리](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-2979)
 - [근무자 미리보기](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3203), [업무 목록](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=624-2990), [업무 상세](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=624-2603)
 - ERD 검수 초안 `manual.md`, `ai-interview-flow.md`의 질문 셋 버전·Jev/생성 분리·불변 평가 이력·게시 버전 정책 참조. 최신 사용자 정정에 따라 이 계약의 질문별 판단 흐름이 우선한다. 기존 ERD 초안의 묶음 전체 답변 대기 문구는 이 동작의 기준으로 사용하지 않는다. 이 API 작업은 다른 브랜치의 ERD 파일을 수정하지 않았다. 해당 초안의 미확정 발행 정책은 이번 사용자의 확인 결정으로 이 계약에서 구체화했다.
+
+## 미확정 값의 초안·게시 표현
+
+알 수 없는 근무 시간은 null, 확보하지 못한 근무조·업무·절차는 빈 배열로 보존한다. 모든 미확정 필드에는 missingInformation의 대상·필드·공개 설명이 필요하다. 동일 ID의 OPEN issue를 서버가 생성하고 최종 점주 확인으로 발행한다. 값이 채워지면 연결 항목을 원자적으로 제거하며 원래 평가 이력은 유지한다. 미확정 사실은 게시 후에도 근무자에게 표시한다. 완성된 값과 사유 없는 빈 배열·잘못된 대상 연결은 허용하지 않는다.

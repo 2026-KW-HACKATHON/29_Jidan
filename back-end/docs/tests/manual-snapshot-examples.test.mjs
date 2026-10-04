@@ -53,6 +53,7 @@ test('전체 매뉴얼 예시: 근무조 참조·시간 길이·ID·사진 순�
             else assert.equal(section.shiftId, null, path);
           }
           for (const shift of value.shifts) {
+            if ([shift.startTime, shift.endTime, shift.endsNextDay].includes(null)) continue;
             const minutes = text => Number(text.slice(0, 2)) * 60 + Number(text.slice(3));
             const duration = minutes(shift.endTime) - minutes(shift.startTime) + (shift.endsNextDay ? 1440 : 0);
             assert.ok(duration > 0 && duration <= 1440, path);
