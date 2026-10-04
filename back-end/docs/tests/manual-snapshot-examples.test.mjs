@@ -33,7 +33,7 @@ test('세션 조회 예시: 모든 공개 phase와 실패/완료 경계 제공',
     }
     if (value.review) assert.equal(value.review.intentId, value.currentIntentId);
     if (['READY_TO_GENERATE', 'GENERATING', 'COMPLETED'].includes(value.phase)) {
-      assert.ok(value.intents.every(intent => intent.finishedAt && intent.confirmedAt && intent.coverage !== 'PENDING'));
+      assert.ok(value.intents.every(intent => intent.finishedAt && (intent.coverage === 'COVERED' ? Boolean(intent.confirmedAt) : intent.coverage === 'NEEDS_DETAIL' && intent.depth === 5 && intent.confirmedAt === null)));
     }
     if (value.completedAt) assert.ok(Date.parse(value.startedAt) <= Date.parse(value.completedAt));
   }
