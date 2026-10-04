@@ -33,6 +33,7 @@ python -m pytest
 - [점주 관리 매장 조회·추가·현황 요약](docs/owner-store-design.md)
 - [근무자 초대·재전송·취소·수락·거절](docs/store-invitation-design.md)
 - [근무자 조회·자료 접근 기간·수동 종료](docs/store-worker-design.md)
+- [매뉴얼·AI 인터뷰·음성/사진·점주 확인 발행·근무자 열람](docs/manual-interview-design.md)
 
 ```bash
 cd docs
