@@ -3499,6 +3499,124 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5251
+  /api/stores/{storeId}/management-summary:
+    get:
+      tags:
+      - 점주 매장 관리
+      operationId: getStoreManagementSummary
+      summary: 매장 관리의 초대·근무자 현황 요약
+      description: |-
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+
+        **관리 카드 집계**
+
+        - 초대 관리 카드의 현재 수락 가능한 PENDING 수와 근무 상태 관리 카드의 현재/만료 예정 근무자 수를 반환합니다.
+        - pendingInvitationCount는 초대 목록의 activeCount와 같은 조건입니다. 링크/접근 기한이 지난 초대는 제외합니다.
+        - activeWorkerCount는 같은 매장에 유효 자료 접근이 있는 서로 다른 근무자 수입니다. 여러 접근을 가진 사람을 중복으로 세지 않으며 expiringWorkerCount를 포함합니다.
+        - expiringWorkerCount는 모든 유효 접근이 24시간 이내 종료되는 근무자 수입니다. 무기한 접근이 있으면 제외합니다.
+        - 모든 건수와 asOf는 같은 DB 읽기 스냅샷입니다. 다른 시각의 목록 조회와 수치가 달라질 수 있습니다.
+        - 공고 모집/지원 승인 및 캘린더 집계는 후속 공고·일정 API 범위이며 이번 요약 응답에는 포함하지 않습니다.
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 매장 관리의 초대·근무자 카드 건수
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerStoreManagementSummary'
+              examples:
+                summary:
+                  summary: 수락 대기 1명·현재 4명·만료 예정 1명
+                  value:
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    pendingInvitationCount: 1
+                    activeWorkerCount: 4
+                    expiringWorkerCount: 1
+                    asOf: '2026-10-05T01:00:00Z'
+                empty:
+                  summary: 초대와 근무자 없음
+                  value:
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    pendingInvitationCount: 0
+                    activeWorkerCount: 0
+                    expiringWorkerCount: 0
+                    asOf: '2026-10-05T01:00:00Z'
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: 없는 매장 또는 다른 점주의 매장. 하위 리소스도 해당 매장에 속하는지 함께 확인합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STORE_NOT_FOUND
+                message: 매장을 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+      parameters:
+      - $ref: '#/components/parameters/StoreId'
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5218
 components:
   securitySchemes:
     SessionCookie:
@@ -5462,6 +5580,33 @@ components:
       - activeCount
       - expiringCount
       - endedCount
+    OwnerStoreManagementSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+          format: uuid
+        pendingInvitationCount:
+          type: integer
+          minimum: 0
+        activeWorkerCount:
+          type: integer
+          minimum: 0
+          description: 유효 자료 접근이 있는 서로 다른 근무자 수. 만료 예정 포함.
+        expiringWorkerCount:
+          type: integer
+          minimum: 0
+          description: 모든 유효 접근이 24시간 이내에 끝나는 근무자 수. activeWorkerCount의 부분집합.
+        asOf:
+          type: string
+          format: date-time
+      required:
+      - storeId
+      - pendingInvitationCount
+      - activeWorkerCount
+      - expiringWorkerCount
+      - asOf
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
