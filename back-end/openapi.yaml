@@ -2626,6 +2626,193 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=248-1424
+  /api/store-invitations/accept:
+    post:
+      tags:
+      - 근무자 초대
+      operationId: acceptStoreInvitation
+      summary: 초대 수락 및 매장 자료 접근 부여
+      description: |-
+        **수락자 인증**
+
+        - 가입 완료된 ACTIVE `WORKER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - Google 로그인/가입 후에도 프론트에서 링크 문맥을 이어갈 수 있지만 가입 세션 자체로는 확인/수락/거절할 수 없습니다.
+        - 요청 body에는 원문 `token`만 받습니다. 이메일·workerId·storeId·역할·접근 기간을 클라이언트가 지정하지 않습니다.
+        - 서버가 토큰을 hash로 조회한 뒤 세션의 검증된 Google 이메일과 초대 이메일을 정규화해 비교합니다. 불일치는 **403 INVITATION_EMAIL_MISMATCH**이며 매장/초대 정보를 반환하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다. 없는/재전송으로 교체된 토큰은 **404 INVITATION_NOT_FOUND**입니다.
+        - 토큰 조회 후에도 현재 매장 APPROVED 상태와 유효한 소유자를 확인합니다. 운영이 중지되었으면 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 초대 링크 만료는 **410 INVITATION_EXPIRED**, 지정 접근 기간 종료는 **410 ACCESS_PERIOD_ENDED**입니다. 종료 시각과 동일한 순간에도 사용할 수 없습니다.
+        - token은 body로만 제출하며 응답·URL query·로그·오류·분석에서 제외합니다. 응답은 `Cache-Control: no-store`입니다.
+
+        **수락과 자료 접근**
+
+        - 유효 PENDING을 ACCEPTED로 전환하고 세션의 `workerId`·서버 수락 시각을 기록합니다. 초대 전이와 REGULAR 접근 권한을 같은 트랜잭션으로 생성합니다.
+        - `startedAt`은 수락 시각이며 `validUntil`은 초대의 `accessExpiresAt`을 그대로 사용합니다. null이면 점주가 종료하기 전까지입니다.
+        - 수락한 근무자에게 해당 매장의 업무 매뉴얼·체크리스트·AI 질의응답 접근을 함께 허용합니다. 실제 자료 API는 후속 범위입니다.
+        - 이미 다른 유효 접근이 있으면 **409 WORKER_ALREADY_HAS_ACCESS**입니다. 같은 초대의 재수락으로 중복 권한을 만들지 않습니다.
+        - 같은 세션 근무자가 이미 수락한 초대이고 링크/접근 기한이 남아 있으며 원래 권한도 유효하면 **200**으로 현재 권한을 반환합니다. 최초 startedAt/validUntil을 변경하지 않습니다.
+        - 수락했던 접근이 점주에 의해 종료되었으면 **409**입니다. 다른 근무자가 수락했거나 거절/취소한 초대도 **409**이며 기존 권한을 복구하지 않습니다.
+        - 종료 시각에 도달한 링크/접근의 재요청은 **410**입니다. 초대 레코드의 ACCEPTED 상태는 유지합니다.
+        - 수락/취소/거절/재전송/접근 종료 경쟁과 중복 수락은 토큰·초대·매장/근무자 접근 단위의 잠금 또는 조건부 갱신으로 처리합니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '200':
+          description: 초대 수락·접근 부여 완료 또는 같은 근무자의 유효 접근 결과 재현
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreInvitationAcceptance'
+              examples:
+                unlimited:
+                  summary: 점주 종료 전까지 정기 접근
+                  value:
+                    invitationId: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    accessGrant:
+                      id: 97008da4-9315-4580-8d31-e56d1c41fe3d
+                      type: REGULAR
+                      dutyLabel: null
+                      startedAt: '2026-10-05T02:00:00Z'
+                      validUntil: null
+                      revokedAt: null
+                      status: ACTIVE
+                      permissions:
+                      - READ_MANUALS
+                      - READ_CHECKLISTS
+                      - USE_AI_QA
+                limited:
+                  summary: 초대에 지정된 시각까지 정기 접근
+                  value:
+                    invitationId: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    accessGrant:
+                      id: 97008da4-9315-4580-8d31-e56d1c41fe3d
+                      type: REGULAR
+                      dutyLabel: null
+                      startedAt: '2026-10-05T02:00:00Z'
+                      validUntil: '2026-10-26T15:00:00Z'
+                      revokedAt: null
+                      status: ACTIVE
+                      permissions:
+                      - READ_MANUALS
+                      - READ_CHECKLISTS
+                      - USE_AI_QA
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '이메일 불일치: INVITATION_EMAIL_MISMATCH. 역할·정지·매장 승인·CSRF 정책 위반. 이메일 불일치 시 초대 정보 미노출.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVITATION_EMAIL_MISMATCH
+                message: 초대 받은 Google 계정으로 로그인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: 없는 토큰 또는 교체된 토큰.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVITATION_NOT_FOUND
+                message: 초대를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '409':
+          description: '이미 거절/취소, 다른 사용자가 수락, 수락했던 접근이 종료된 경우: INVITATION_STATE_CONFLICT. 이미 다른 유효 매장 접근 보유: WORKER_ALREADY_HAS_ACCESS.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVITATION_STATE_CONFLICT
+                message: 현재 초대 상태에서는 수락할 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '410':
+          description: 현재 시각이 초대 링크 또는 지정 접근 종료 시각 이상. INVITATION_EXPIRED 또는 ACCESS_PERIOD_ENDED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVITATION_EXPIRED
+                message: 초대 유효 기간이 지났습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreInvitationTokenRequest'
+            examples:
+              token:
+                summary: 링크 토큰으로 수락
+                value:
+                  token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=248-1424
 components:
   securitySchemes:
     SessionCookie:
@@ -4168,6 +4355,241 @@ components:
       - expiresAt
       - accessType
       - accessExpiresAt
+    StoreAccessGrant:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+          - REGULAR
+          - TEMPORARY
+        dutyLabel:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 300
+          pattern: \S
+          description: 초대 화면에는 담당 업무 입력이 없어 정기 근무는 null 가능. 대타는 후속 확정 공고의 업무를 조회합니다.
+        startedAt:
+          type: string
+          format: date-time
+        validUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: 자료 접근 종료 시각(종료 제외). 정기 초대는 선택 기한 또는 null, 대타는 확정 근무 종료 시각.
+        revokedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - EXPIRING
+          - EXPIRED
+          - REVOKED
+        permissions:
+          type: array
+          items:
+            type: string
+            enum:
+            - READ_MANUALS
+            - READ_CHECKLISTS
+            - USE_AI_QA
+          uniqueItems: true
+      required:
+      - id
+      - type
+      - dutyLabel
+      - startedAt
+      - validUntil
+      - revokedAt
+      - status
+      - permissions
+      oneOf:
+      - type: object
+        properties:
+          type:
+            const: REGULAR
+          status:
+            const: ACTIVE
+          revokedAt:
+            type: 'null'
+          permissions:
+            minItems: 3
+            maxItems: 3
+        required:
+        - type
+        - status
+        - revokedAt
+        - permissions
+      - type: object
+        properties:
+          type:
+            const: REGULAR
+          status:
+            const: EXPIRING
+          revokedAt:
+            type: 'null'
+          permissions:
+            minItems: 3
+            maxItems: 3
+          validUntil:
+            type: string
+        required:
+        - type
+        - status
+        - revokedAt
+        - permissions
+        - validUntil
+      - type: object
+        properties:
+          type:
+            const: REGULAR
+          status:
+            const: EXPIRED
+          revokedAt:
+            type: 'null'
+          permissions:
+            minItems: 0
+            maxItems: 0
+          validUntil:
+            type: string
+        required:
+        - type
+        - status
+        - revokedAt
+        - permissions
+        - validUntil
+      - type: object
+        properties:
+          type:
+            const: REGULAR
+          status:
+            const: REVOKED
+          revokedAt:
+            type: string
+          permissions:
+            minItems: 0
+            maxItems: 0
+        required:
+        - type
+        - status
+        - revokedAt
+        - permissions
+      - type: object
+        properties:
+          type:
+            const: TEMPORARY
+          status:
+            const: ACTIVE
+          revokedAt:
+            type: 'null'
+          permissions:
+            minItems: 3
+            maxItems: 3
+          validUntil:
+            type: string
+        required:
+        - type
+        - status
+        - revokedAt
+        - permissions
+        - validUntil
+      - type: object
+        properties:
+          type:
+            const: TEMPORARY
+          status:
+            const: EXPIRING
+          revokedAt:
+            type: 'null'
+          permissions:
+            minItems: 3
+            maxItems: 3
+          validUntil:
+            type: string
+        required:
+        - type
+        - status
+        - revokedAt
+        - permissions
+        - validUntil
+      - type: object
+        properties:
+          type:
+            const: TEMPORARY
+          status:
+            const: EXPIRED
+          revokedAt:
+            type: 'null'
+          permissions:
+            minItems: 0
+            maxItems: 0
+          validUntil:
+            type: string
+        required:
+        - type
+        - status
+        - revokedAt
+        - permissions
+        - validUntil
+      - type: object
+        properties:
+          type:
+            const: TEMPORARY
+          status:
+            const: REVOKED
+          revokedAt:
+            type: string
+          permissions:
+            minItems: 0
+            maxItems: 0
+          validUntil:
+            type: string
+        required:
+        - type
+        - status
+        - revokedAt
+        - permissions
+        - validUntil
+      description: 매장 자료에 대한 개별 접근 권한. REGULAR는 초대 수락, TEMPORARY는 후속 대타 확정에서 생성합니다. 기간은 [startedAt, validUntil)이며 revokedAt이
+        있으면 REVOKED가 우선입니다. EXPIRING은 종료까지 24시간 이내인 유효 권한으로 설계 제안입니다. 서버가 매 요청 실제 시간·매장 승인·계정 상태를 확인합니다.
+    StoreInvitationAcceptance:
+      type: object
+      additionalProperties: false
+      properties:
+        invitationId:
+          type: string
+          format: uuid
+        storeId:
+          type: string
+          format: uuid
+        workerId:
+          type: string
+          format: uuid
+        accessGrant:
+          $ref: '#/components/schemas/StoreAccessGrant'
+          properties:
+            type:
+              const: REGULAR
+            status:
+              enum:
+              - ACTIVE
+              - EXPIRING
+      required:
+      - invitationId
+      - storeId
+      - workerId
+      - accessGrant
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
