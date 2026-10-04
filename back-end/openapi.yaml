@@ -6241,6 +6241,224 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=376-1711
+  /api/stores/{storeId}/manual/draft/content:
+    put:
+      tags:
+      - 점주 매뉴얼
+      operationId: replaceManualDraftContent
+      summary: 초안 근무 구조·업무·규정·사진 수정
+      description: |-
+        READY 초안의 content 전체를 교체합니다. 근무조/시간, 공통·근무조별 업무, 규정/설비, 단계 지시문 및 사진의 설명·순서를 한 화면에서 편집할 수 있습니다. content 배열 순서가 표시 순서이며 별도 sortOrder를 받지 않습니다.
+
+        **편집 검증**
+
+        - 신규 항목 UUID는 클라이언트가 생성하며 기존 UUID는 현재 초안에서만 재사용합니다. 다른 버전/매장의 항목 ID와 섞거나 서로 다른 entity ID를 재사용할 수 없습니다.
+        - 근무조/섹션/단계 ID는 해당 content 내에서 유일해야 합니다. SHIFT_TASK는 같은 버전의 shiftId 필수, 다른 분류는 shiftId=null입니다. 근무조에 별도 업무가 없으면 해당 조의 SHIFT_TASK를 만들지 않습니다.
+        - 시간은 HH:mm의 00:00~23:59, 심야는 endsNextDay=true입니다. 0 < duration <= 24시간을 서버가 검증합니다. 같은 시작/끝은 endsNextDay=true인 24시간만 허용합니다. 근무조 간 시간 겹침은 허용합니다.
+        - 실제 파일로 확인된 같은 매장의 MANUAL_PHOTO만 연결합니다. 섹션 내 사진 mediaId 중복은 422, 동일 사진을 여러 섹션에서 쓰는 것은 허용합니다. 기존 사진 연결이 지워져도 게시본에서 참조하는 파일은 삭제하지 않습니다.
+        - 빈/공백 업무 지시나 제목, 전체 근무조·전체 섹션 삭제는 422입니다. 항목 수·문자 길이 상한은 설계 제안입니다. UUID 참조·시간·중복 비교는 Schema 외 서버 검증 사항입니다.
+        - 입력의 실질 변경이 없으면 revision/updatedAt을 유지합니다. 변경이 있으면 revision+1이며 부족 항목의 현재 확인을 초기화합니다. 이전 점주 확인은 별도 감사 이력에 남깁니다.
+        - 수집된 원문 답변/평가/게시본을 수정하지 않습니다. 진행/생성/오류 초안 또는 게시본은 409 MANUAL_STATE_CONFLICT입니다. 클라이언트가 version/status/issues/점주 주체를 변경할 수 없습니다.
+
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+
+        **동시 수정과 재전송**
+
+        - 변경 요청의 `expectedRevision`은 해당 세션 또는 초안의 현재 revision과 같아야 합니다. 불일치는 **409 REVISION_CONFLICT**이며 최신 GET 결과로 다시 검토합니다.
+        - UUID `Idempotency-Key`는 주체·매장·endpoint·정규화 body(파일은 byte hash)로 24시간 보관합니다. 현재 권한을 확인한 후 같은 요청은 최초 결과를 재현하고 revision을 다시 올리지 않습니다.
+        - 같은 key의 다른 요청은 **409 IDEMPOTENCY_KEY_REUSED**입니다. 신규 요청만 revision을 검사하며 key 재현은 당시 스냅샷일 수 있습니다.
+        - 상태 갱신·작업 예약·outbox 저장은 원자적입니다. 예약 실패는 **503 JOB_QUEUE_UNAVAILABLE**이며 변경을 rollback합니다. AI/전사 실행 실패는 조회 응답의 ERROR 상태로 안내합니다.
+        - 워커 작업은 입력 revision과 작업 ID를 확인해 성공 결과를 한 번만 적용합니다. 오래된 작업 결과는 현재 상태를 덮어쓰지 않습니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED. CSRF/Origin 오류:
+            CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: '다른 점주/없는 매장: STORE_NOT_FOUND. 매장에 속하지 않는 초안/세션/파일: MANUAL_RESOURCE_NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MANUAL_RESOURCE_NOT_FOUND
+                message: 매뉴얼 리소스를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '409':
+          description: REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
+            최신 조회 후 현재 상태에 맞게 요청합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: REVISION_CONFLICT
+                message: 최신 내용을 다시 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '503':
+          description: 작업 예약 또는 저장소 실패. 변경 전체 rollback.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: JOB_QUEUE_UNAVAILABLE
+                message: 잠시 후 다시 시도해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualDraft'
+              example:
+                versionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                versionNumber: 1
+                revision: 2
+                status: DRAFT
+                generationStatus: READY
+                interviewSessionId: c701b623-889c-4d28-b055-501251ac6773
+                content:
+                  shifts:
+                  - id: 44b35781-3e98-4f28-9505-2178b2863c5e
+                    name: 야간조
+                    startTime: '22:00'
+                    endTime: 07:00
+                    endsNextDay: true
+                  sections:
+                  - id: 00c38e75-0e6a-43c1-8fc8-644e969842e5
+                    category: COMMON_TASK
+                    shiftId: null
+                    title: 재고 정리
+                    steps:
+                    - id: 15a9721b-2e65-4d03-8fd0-a5999e19d27a
+                      instruction: 먼저 들어온 제품을 앞쪽에 진열하세요.
+                      checklistItem: true
+                    photos: []
+                issues: []
+                updatedAt: '2026-10-05T01:40:00Z'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 대상 매장 UUID
+        schema:
+          type: string
+          format: uuid
+        example: 51c1c743-d377-4e7a-8449-94377eecfce0
+      - $ref: '#/components/parameters/ManualCommandKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualContentUpdate'
+            examples:
+              default:
+                value:
+                  expectedRevision: 1
+                  content:
+                    shifts:
+                    - id: 44b35781-3e98-4f28-9505-2178b2863c5e
+                      name: 야간조
+                      startTime: '22:00'
+                      endTime: 07:00
+                      endsNextDay: true
+                    sections:
+                    - id: 00c38e75-0e6a-43c1-8fc8-644e969842e5
+                      category: COMMON_TASK
+                      shiftId: null
+                      title: 재고 정리
+                      steps:
+                      - id: 15a9721b-2e65-4d03-8fd0-a5999e19d27a
+                        instruction: 먼저 들어온 제품을 앞쪽에 진열하세요.
+                        checklistItem: true
+                      photos: []
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2757
 components:
   securitySchemes:
     SessionCookie:
@@ -9416,6 +9634,18 @@ components:
           minimum: 1
       required:
       - expectedRevision
+    ManualContentUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+        content:
+          $ref: '#/components/schemas/ManualContent'
+      required:
+      - expectedRevision
+      - content
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
