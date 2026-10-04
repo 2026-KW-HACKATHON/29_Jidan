@@ -4360,6 +4360,315 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=624-2603
+  /api/stores/{storeId}/manual/transcriptions:
+    post:
+      tags:
+      - 매뉴얼 미디어
+      operationId: createManualTranscription
+      summary: 음성 전사 요청·실패 작업 재시도
+      description: |-
+        이 매장의 INTERVIEW_AUDIO 파일만 전사할 수 있습니다. 다른 매장/삭제/기한 종료 파일은 404, 사진은 422 MEDIA_PURPOSE_INVALID입니다. 작업은 매장·mediaId별 한 개로 유지합니다.
+
+        - 첫 요청은 비동기 전사 작업을 예약하고 202 RUNNING입니다. RUNNING 중 새 요청도 같은 작업으로 202, READY는 기존 전사를 200으로 반환합니다.
+        - ERROR에서 새 Idempotency-Key로 요청하면 같은 전사 ID와 보존된 파일로 재시도합니다. 원본이 정리된 경우 새 파일 업로드가 필요합니다. 같은 key는 최초 응답 재현입니다.
+        - 조회한 READY 텍스트를 보여주고 점주가 확인한 뒤 인터뷰 답변에서 transcriptionId로 연결합니다. 전사 작업 자체가 인터뷰 답변을 자동 제출하지 않습니다.
+        - 무음/인식 결과가 비면 ERROR TRANSCRIPTION_FAILED이며 빈 답변을 만들지 않습니다. provider명·원본 응답·내부 stack은 공개하지 않습니다.
+        - 전사 텍스트는 매장 점주만 조회합니다. 작업 완료 시각은 UTC입니다. 실제 파일 보존·동시성·STT는 후속 구현 대상입니다.
+
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+
+        **동시 수정과 재전송**
+
+        - 변경 요청의 `expectedRevision`은 해당 세션 또는 초안의 현재 revision과 같아야 합니다. 불일치는 **409 REVISION_CONFLICT**이며 최신 GET 결과로 다시 검토합니다.
+        - UUID `Idempotency-Key`는 주체·매장·endpoint·정규화 body(파일은 byte hash)로 24시간 보관합니다. 현재 권한을 확인한 후 같은 요청은 최초 결과를 재현하고 revision을 다시 올리지 않습니다.
+        - 같은 key의 다른 요청은 **409 IDEMPOTENCY_KEY_REUSED**입니다. 신규 요청만 revision을 검사하며 key 재현은 당시 스냅샷일 수 있습니다.
+        - 상태 갱신·작업 예약·outbox 저장은 원자적입니다. 예약 실패는 **503 JOB_QUEUE_UNAVAILABLE**이며 변경을 rollback합니다. AI/전사 실행 실패는 조회 응답의 ERROR 상태로 안내합니다.
+        - 워커 작업은 입력 revision과 작업 ID를 확인해 성공 결과를 한 번만 적용합니다. 오래된 작업 결과는 현재 상태를 덮어쓰지 않습니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED. CSRF/Origin 오류:
+            CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: '다른 점주/없는 매장: STORE_NOT_FOUND. 매장에 속하지 않는 초안/세션/파일: MANUAL_RESOURCE_NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MANUAL_RESOURCE_NOT_FOUND
+                message: 매뉴얼 리소스를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '409':
+          description: REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
+            최신 조회 후 현재 상태에 맞게 요청합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: REVISION_CONFLICT
+                message: 최신 내용을 다시 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '503':
+          description: 작업 예약 또는 저장소 실패. 변경 전체 rollback.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: JOB_QUEUE_UNAVAILABLE
+                message: 잠시 후 다시 시도해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '202':
+          description: 작업 접수. 완료 여부는 GET 상태로 확인합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualTranscription'
+              example:
+                id: 28d477da-8a0f-4b60-a5b5-497c5d5ec114
+                mediaId: 666f06ba-47f8-4199-8f86-c2abf69d2dcd
+                status: RUNNING
+                text: null
+                error: null
+                createdAt: '2026-10-05T01:00:00Z'
+                completedAt: null
+        '200':
+          description: 이미 완료된 동일 파일의 전사.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualTranscription'
+              example:
+                id: 28d477da-8a0f-4b60-a5b5-497c5d5ec114
+                mediaId: 666f06ba-47f8-4199-8f86-c2abf69d2dcd
+                status: READY
+                text: 야간조는 밤 10시부터 다음 날 아침 7시까지예요.
+                error: null
+                createdAt: '2026-10-05T01:00:00Z'
+                completedAt: '2026-10-05T01:00:05Z'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 대상 매장 UUID
+        schema:
+          type: string
+          format: uuid
+        example: 51c1c743-d377-4e7a-8449-94377eecfce0
+      - $ref: '#/components/parameters/ManualCommandKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualTranscriptionInput'
+            examples:
+              default:
+                value:
+                  mediaId: 666f06ba-47f8-4199-8f86-c2abf69d2dcd
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=376-1711
+  /api/stores/{storeId}/manual/transcriptions/{transcriptionId}:
+    get:
+      tags:
+      - 매뉴얼 미디어
+      operationId: getManualTranscription
+      summary: 음성 전사 상태·텍스트 조회
+      description: |-
+        RUNNING / READY / ERROR를 200으로 반환합니다. ERROR는 공개 오류와 retryable을 포함하며 실패를 성공으로 표시하지 않습니다. 2초 간격 polling을 권장하며 429 Retry-After를 따릅니다. 전사 ID는 매장에 귀속됩니다.
+
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+      security:
+      - SessionCookie: []
+      responses:
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: '다른 점주/없는 매장: STORE_NOT_FOUND. 매장에 속하지 않는 초안/세션/파일: MANUAL_RESOURCE_NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MANUAL_RESOURCE_NOT_FOUND
+                message: 매뉴얼 리소스를 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualTranscription'
+              example:
+                id: 28d477da-8a0f-4b60-a5b5-497c5d5ec114
+                mediaId: 666f06ba-47f8-4199-8f86-c2abf69d2dcd
+                status: READY
+                text: 야간조는 밤 10시부터 다음 날 아침 7시까지예요.
+                error: null
+                createdAt: '2026-10-05T01:00:00Z'
+                completedAt: '2026-10-05T01:00:05Z'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 대상 매장 UUID
+        schema:
+          type: string
+          format: uuid
+        example: 51c1c743-d377-4e7a-8449-94377eecfce0
+      - name: transcriptionId
+        in: path
+        required: true
+        description: 매장에 속한 리소스 UUID.
+        schema:
+          type: string
+          format: uuid
+        example: 28d477da-8a0f-4b60-a5b5-497c5d5ec114
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=376-1711
 components:
   securitySchemes:
     SessionCookie:
@@ -6751,6 +7060,125 @@ components:
       required:
       - purpose
       - file
+    ManualPublicProcessingError:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          enum:
+          - AI_PROCESSING_FAILED
+          - TRANSCRIPTION_FAILED
+        message:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: \S
+        retryable:
+          const: true
+      required:
+      - code
+      - message
+      - retryable
+    ManualTranscriptionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        mediaId:
+          type: string
+          format: uuid
+      required:
+      - mediaId
+    ManualTranscription:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        mediaId:
+          type: string
+          format: uuid
+        status:
+          enum:
+          - RUNNING
+          - READY
+          - ERROR
+        text:
+          type:
+          - string
+          - 'null'
+          maxLength: 10000
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/ManualPublicProcessingError'
+          - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - mediaId
+      - status
+      - text
+      - error
+      - createdAt
+      - completedAt
+      oneOf:
+      - type: object
+        properties:
+          status:
+            const: RUNNING
+          text:
+            type: 'null'
+          error:
+            type: 'null'
+          completedAt:
+            type: 'null'
+        required:
+        - status
+        - text
+        - error
+        - completedAt
+      - type: object
+        properties:
+          status:
+            const: READY
+          text:
+            type: string
+            minLength: 1
+            maxLength: 10000
+            pattern: \S
+          error:
+            type: 'null'
+          completedAt:
+            type: string
+            format: date-time
+        required:
+        - status
+        - text
+        - error
+        - completedAt
+      - type: object
+        properties:
+          status:
+            const: ERROR
+          text:
+            type: 'null'
+          error:
+            $ref: '#/components/schemas/ManualPublicProcessingError'
+          completedAt:
+            type: string
+            format: date-time
+        required:
+        - status
+        - text
+        - error
+        - completedAt
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
