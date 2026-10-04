@@ -15,19 +15,19 @@ test('상한 부족: 검수중 항목 확인 없이 다음 인텐트 질문으�
   assert.equal(skipped.coverage, 'NEEDS_DETAIL');
   assert.equal(skipped.depth, 5);
   assert.ok(skipped.finishedAt);
-  assert.equal(skipped.confirmedAt, null);
+  assert.equal(skipped.confirmedAt, undefined);
   assert.equal(next.currentIntentId, next.intents[1].id);
   assert.equal(next.phase, 'PROCESSING');
-  assert.equal(next.review, null);
+  assert.equal(next.review, undefined);
   assert.equal(next.processing.kind, 'INITIAL_QUESTION');
 });
 test('마지막 상한 부족: 주제별 확인 없이 초안 생성 준비와 생성 가능', () => {
   for (const value of [last, generate]) {
     assert.ok(validateSession(value), JSON.stringify(validateSession.errors));
-    assert.equal(value.intents[0].confirmedAt, null);
+    assert.equal(value.intents[0].confirmedAt, undefined);
     assert.equal(value.intents[0].coverage, 'NEEDS_DETAIL');
     assert.equal(value.currentIntentId, null);
-    assert.equal(value.review, null);
+    assert.equal(value.review, undefined);
   }
   assert.equal(last.phase, 'READY_TO_GENERATE');
   assert.equal(last.processing, null);
@@ -46,12 +46,12 @@ test('검수중 항목: depth 5·진행 종료 시각·중간 확인 없음의 �
 test('초안 생성은 진행이 끝나지 않은 항목이 있으면 거절', () => {
   const intent = last.intents[0];
   for (const coverage of ['PENDING', 'COVERED']) {
-    const waiting = { ...intent, coverage, finishedAt: null, confirmedAt: null };
+    const waiting = { ...intent, coverage, finishedAt: null };
     for (const sample of [last, generate]) assert.equal(validateSession({ ...sample, intents: [waiting] }), false);
   }
 });
 test('평가 실패는 상한에 도달해도 검수중 진행으로 간주하지 않음', () => {
-  const intent = { ...last.intents[0], coverage: 'PENDING', finishedAt: null, confirmedAt: null };
+  const intent = { ...last.intents[0], coverage: 'PENDING', finishedAt: null };
   const failed = {
     ...last,
     status: 'ERROR', phase: 'ERROR', intents: [intent], currentIntentId: intent.id,

@@ -25,7 +25,7 @@ test('충분 판단 성공: 점주 확인 없이 다음 필수 질문 생성', (
   assert.ok(validate(next), JSON.stringify(validate.errors));
   assert.equal(next.intents[0].coverage, 'COVERED');
   assert.ok(next.intents[0].finishedAt);
-  assert.equal(next.intents[0].confirmedAt, null);
+  assert.equal(next.intents[0].confirmedAt, undefined);
   assert.notEqual(next.currentIntentId, next.intents[0].id);
   assert.equal(next.processing.kind, 'INITIAL_QUESTION');
 });
@@ -39,18 +39,18 @@ test('부족 판단: 같은 인텐트의 추가 질문 하나만 제시', () => 
 });
 test('마지막 충분 판단도 중간 점주 확인 없이 초안 생성 가능', () => {
   const ready = structuredClone(states.readyToGeneratePendingReview.value);
-  ready.intents[0] = { ...ready.intents[0], coverage: 'COVERED', depth: 0, confirmedAt: null };
+  ready.intents[0] = { ...ready.intents[0], coverage: 'COVERED', depth: 0 };
   assert.ok(validate(ready), JSON.stringify(validate.errors));
   const generating = spec.paths[root + '/completion'].post.responses['202'].content['application/json'].examples.allCovered.value;
   assert.ok(validate(generating));
-  assert.ok(generating.intents.every(intent => intent.confirmedAt === null));
+  assert.ok(generating.intents.every(intent => intent.confirmedAt === undefined));
 });
-test('확인·정정·사진 API는 유지하며 수집 후 선택 도구로 분리', () => {
+test('완료 인텐트별 검토를 질문 진행과 독립적으로 제공', () => {
   for (const route of ['/confirmations', '/corrections', '/photos']) {
-    assert.ok(spec.paths[root + route]);
-    const operation = Object.values(spec.paths[root + route])[0];
-    assert.match(operation.description, /READY_TO_GENERATE/);
+    assert.ok(spec.paths[root + '/intents/{intentId}/review' + route]);
+    const operation = Object.values(spec.paths[root + '/intents/{intentId}/review' + route])[0];
+    assert.match(operation.description, /COLLECTING, PROCESSING, READY_TO_GENERATE/);
   }
-  assert.match(spec.paths[root + '/confirmations'].post.description, /선행 조건이 아닙니다/);
-  assert.match(spec.paths[root + '/photos'].put.description, /선행 조건이 아닙니다/);
+  assert.match(spec.paths[root + '/intents/{intentId}/review/confirmations'].post.description, /선행 조건이 아닙니다/);
+  assert.match(spec.paths[root + '/intents/{intentId}/review/photos'].put.description, /선행 조건이 아닙니다/);
 });
