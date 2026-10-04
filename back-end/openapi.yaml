@@ -3018,27 +3018,6 @@ paths:
                   summary: 정기 근무와 만료 예정 대타
                   value:
                     items:
-                    - workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                      name: 김지수
-                      storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
-                      accessStatus: ACTIVE
-                      accessGrants:
-                      - id: 97008da4-9315-4580-8d31-e56d1c41fe3d
-                        type: REGULAR
-                        dutyLabel: null
-                        startedAt: '2026-10-04T02:00:00Z'
-                        validUntil: null
-                        revokedAt: null
-                        status: ACTIVE
-                        permissions:
-                        - READ_MANUALS
-                        - READ_CHECKLISTS
-                        - USE_AI_QA
-                      permissions:
-                      - READ_MANUALS
-                      - READ_CHECKLISTS
-                      - USE_AI_QA
-                      asOf: '2026-10-05T01:00:00Z'
                     - workerId: c6945624-997f-410d-a65f-5f21d02d37cb
                       name: 최유진
                       storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
@@ -3060,12 +3039,75 @@ paths:
                       - READ_CHECKLISTS
                       - USE_AI_QA
                       asOf: '2026-10-05T01:00:00Z'
+                    - workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                      name: 김지수
+                      storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                      accessStatus: ACTIVE
+                      accessGrants:
+                      - id: 97008da4-9315-4580-8d31-e56d1c41fe3d
+                        type: REGULAR
+                        dutyLabel: null
+                        startedAt: '2026-10-04T02:00:00Z'
+                        validUntil: null
+                        revokedAt: null
+                        status: ACTIVE
+                        permissions:
+                        - READ_MANUALS
+                        - READ_CHECKLISTS
+                        - USE_AI_QA
+                      permissions:
+                      - READ_MANUALS
+                      - READ_CHECKLISTS
+                      - USE_AI_QA
+                      asOf: '2026-10-05T01:00:00Z'
+                    - workerId: 6415df4e-e9c4-47c1-84c1-88876c9a88e0
+                      name: 이민준
+                      storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                      accessStatus: ACTIVE
+                      accessGrants:
+                      - id: 06a6cb8e-a515-4cbb-a62b-35684fa0bec9
+                        type: REGULAR
+                        dutyLabel: null
+                        startedAt: '2026-10-04T02:00:00Z'
+                        validUntil: null
+                        revokedAt: null
+                        status: ACTIVE
+                        permissions:
+                        - READ_MANUALS
+                        - READ_CHECKLISTS
+                        - USE_AI_QA
+                      permissions:
+                      - READ_MANUALS
+                      - READ_CHECKLISTS
+                      - USE_AI_QA
+                      asOf: '2026-10-05T01:00:00Z'
+                    - workerId: 4351fc4a-ec58-4e57-8a8a-fc1121188d67
+                      name: 박서연
+                      storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                      accessStatus: ACTIVE
+                      accessGrants:
+                      - id: d1c65c3c-54b3-4467-a356-71c64d4a215d
+                        type: REGULAR
+                        dutyLabel: null
+                        startedAt: '2026-10-04T02:00:00Z'
+                        validUntil: null
+                        revokedAt: null
+                        status: ACTIVE
+                        permissions:
+                        - READ_MANUALS
+                        - READ_CHECKLISTS
+                        - USE_AI_QA
+                      permissions:
+                      - READ_MANUALS
+                      - READ_CHECKLISTS
+                      - USE_AI_QA
+                      asOf: '2026-10-05T01:00:00Z'
                     page: 1
                     size: 20
-                    totalItems: 2
+                    totalItems: 4
                     totalPages: 1
                     asOf: '2026-10-05T01:00:00Z'
-                    activeCount: 2
+                    activeCount: 4
                     expiringCount: 1
                     endedCount: 1
                 ended:
@@ -3092,7 +3134,7 @@ paths:
                     totalItems: 1
                     totalPages: 1
                     asOf: '2026-10-05T01:00:00Z'
-                    activeCount: 2
+                    activeCount: 4
                     expiringCount: 1
                     endedCount: 1
                 empty:
