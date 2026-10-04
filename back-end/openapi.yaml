@@ -42,6 +42,8 @@ tags:
   description: 로그인한 일반회원의 프로필 조회 및 기본 정보·경력·가능 시간 수정
 - name: 점주 매장 관리
   description: 내 관리 매장 조회·추가 신청과 운영 현황 요약
+- name: 근무자 초대
+  description: 승인된 매장의 이메일 초대와 발송·수락·거절 관리
 security:
 - SessionCookie: []
 externalDocs:
@@ -1760,6 +1762,190 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=220-401
+  /api/stores/{storeId}/invitations:
+    post:
+      tags:
+      - 근무자 초대
+      operationId: createStoreInvitation
+      summary: 근무자 초대와 메일 발송 요청
+      description: |-
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **운영 승인 조건**
+
+        - 이 기능은 해당 점주의 `APPROVED` 매장만 사용할 수 있습니다.
+        - 본인의 승인 대기 매장은 **403 STORE_APPROVAL_REQUIRED**입니다.
+        - 승인 대기 매장 목록/상세 조회와 새 매장 추가 신청은 허용합니다.
+
+        **초대 생성**
+
+        - 검증된 Google 계정과 일치할 대상 이메일을 입력합니다. 이메일을 정규화해 비교하며 점/plus 별칭으로 다른 주소를 자동 통합하지 않습니다.
+        - 대상이 아직 가입하지 않아도 초대할 수 있지만 수락은 가입 완료 WORKER만 가능합니다. 점주 자신의 검증 이메일은 **422**입니다.
+        - `accessExpiresAt`은 선택입니다. 생략/null이면 점주가 직접 종료할 때까지, 값이 있으면 해당 시각까지 자료 접근을 허용합니다. 지정 시각은 현재보다 미래여야 합니다.
+        - 접근 종료는 매장 자료 접근 종료이며 고용 계약 종료를 뜻하지 않습니다. 점주는 기간과 무관하게 나중에 직접 종료할 수 있습니다.
+        - 링크는 생성 후 **7일**입니다. 접근 종료가 더 빠르면 그 이후 수락도 **410 ACCESS_PERIOD_ENDED**입니다.
+        - 같은 매장/이메일의 유효 초대와 이미 유효한 매장 자료 접근은 각각 **409**입니다. 과거 초대/종료된 접근만 있으면 새로 초대할 수 있습니다.
+        - 메일 outbox와 초대를 한 트랜잭션으로 저장한 뒤 **201**, `deliveryStatus=QUEUED`를 반환합니다. 실제 이메일 발송·수신 완료는 보장하지 않습니다. 실패 시 **503**과 전체 rollback입니다.
+        - UUID `Idempotency-Key`는 필수이며 같은 key/body의 재시도는 최초 결과를 재현하고 중복 메일 요청을 만들지 않습니다.
+
+        **링크 토큰**
+
+        - 서버가 256bit 이상의 일회용 불투명 토큰을 생성하고 hash만 저장합니다. 메일은 서버가 고정한 frontend origin의 fragment로 토큰을 전달합니다. 임의 URL은 받지 않습니다.
+        - 프론트는 fragment를 읽어 history에서 제거하고 body로만 제출합니다. token/초대 링크는 API 응답·URL query·로그·분석·오류에서 제외합니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '201':
+          description: 초대와 메일 발송 요청을 같은 트랜잭션으로 저장. 실제 발송은 비동기.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreInvitationDelivery'
+              example:
+                invitation:
+                  id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                  storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                  email: jisu@example.com
+                  status: PENDING
+                  createdAt: '2026-10-05T01:00:00Z'
+                  lastSentAt: '2026-10-05T01:00:00Z'
+                  expiresAt: '2026-10-12T01:00:00Z'
+                  accessExpiresAt: null
+                  acceptedAt: null
+                  acceptedBy: null
+                  declinedAt: null
+                  canceledAt: null
+                deliveryStatus: QUEUED
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. 승인 대기: STORE_APPROVAL_REQUIRED. CSRF/Origin 오류:
+            CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '404':
+          description: 없는 매장 또는 다른 점주의 매장. 하위 리소스도 해당 매장에 속하는지 함께 확인합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STORE_NOT_FOUND
+                message: 매장을 찾을 수 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '409':
+          description: '같은 매장/이메일의 유효 PENDING 초대: INVITATION_ALREADY_PENDING. 현재 자료 접근이 이미 유효한 근무자: WORKER_ALREADY_HAS_ACCESS.
+            key/body 충돌: IDEMPOTENCY_KEY_REUSED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVITATION_ALREADY_PENDING
+                message: 이미 수락 대기 중인 초대가 있습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '503':
+          description: 메일 발송 요청을 내구성 큐에 기록할 수 없어 초대 생성 전체 rollback. 같은 key로 재시도 가능.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: DELIVERY_UNAVAILABLE
+                message: 초대 메일 발송을 요청하지 못했습니다. 잠시 후 다시 시도해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+      parameters:
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/InvitationCreationKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreInvitationCreateRequest'
+            examples:
+              unlimited:
+                summary: 별도 종료 전까지 접근
+                value:
+                  email: jisu@example.com
+              limited:
+                summary: 10월 31일까지 접근 (KST 다음 날 자정)
+                value:
+                  email: jisu@example.com
+                  accessExpiresAt: '2026-11-01T00:00:00+09:00'
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=220-1333
 components:
   securitySchemes:
     SessionCookie:
@@ -1826,6 +2012,16 @@ components:
       required: true
       description: 매장 추가 요청마다 생성한 UUID. 세션 점주·endpoint·정규화 body로 24시간 보관. 같은 key/body는 최초 201 재현, 다른 body는 409 IDEMPOTENCY_KEY_REUSED.
         재시도에도 현재 회원 인증을 검증합니다.
+      schema:
+        type: string
+        format: uuid
+      example: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+    InvitationCreationKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 초대 생성마다 만든 UUID. 회원 주체·endpoint·정규화 body로 24시간 기록. 같은 key는 최초 결과 재현, 다른 body는 409 IDEMPOTENCY_KEY_REUSED.
+        인증·현재 매장 소유/승인 상태는 재검증합니다.
       schema:
         type: string
         format: uuid
@@ -2970,6 +3166,213 @@ components:
       - totalItems
       - totalPages
       - asOf
+    StoreInvitation:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        storeId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          pattern: ^\S+$
+          description: 검증된 Google 이메일과 비교할 초대 대상. 앞뒤 공백 제거 후 전체 소문자로 비교·저장합니다. Gmail 점/plus/다른 별칭은 통합하지 않습니다.
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACCEPTED
+          - DECLINED
+          - CANCELED
+          - EXPIRED
+        createdAt:
+          type: string
+          format: date-time
+        lastSentAt:
+          type: string
+          format: date-time
+          description: 마지막 메일 발송 요청이 내구성 큐에 기록된 시각. 실제 메일 수신 완료 보장이 아닙니다.
+        expiresAt:
+          type: string
+          format: date-time
+          description: 생성 후 정확히 7일. 재전송해도 유지하는 초대 링크의 수락 가능 시각(종료 제외).
+        accessExpiresAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: 수락 후 매장 자료 접근 종료 시각(종료 제외). null은 점주가 직접 종료할 때까지. 초대 링크 기간과 별개.
+        acceptedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        acceptedBy:
+          type:
+          - object
+          - 'null'
+          additionalProperties: false
+          properties:
+            workerId:
+              type: string
+              format: uuid
+            name:
+              $ref: '#/components/schemas/Name'
+          required:
+          - workerId
+          - name
+        declinedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        canceledAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - storeId
+      - email
+      - status
+      - createdAt
+      - lastSentAt
+      - expiresAt
+      - accessExpiresAt
+      - acceptedAt
+      - acceptedBy
+      - declinedAt
+      - canceledAt
+      oneOf:
+      - type: object
+        properties:
+          status:
+            const: PENDING
+          acceptedAt:
+            type: 'null'
+          acceptedBy:
+            type: 'null'
+          declinedAt:
+            type: 'null'
+          canceledAt:
+            type: 'null'
+        required:
+        - status
+        - acceptedAt
+        - acceptedBy
+        - declinedAt
+        - canceledAt
+      - type: object
+        properties:
+          status:
+            const: ACCEPTED
+          acceptedAt:
+            type: string
+          acceptedBy:
+            type: object
+          declinedAt:
+            type: 'null'
+          canceledAt:
+            type: 'null'
+        required:
+        - status
+        - acceptedAt
+        - acceptedBy
+        - declinedAt
+        - canceledAt
+      - type: object
+        properties:
+          status:
+            const: DECLINED
+          acceptedAt:
+            type: 'null'
+          acceptedBy:
+            type: 'null'
+          declinedAt:
+            type: string
+          canceledAt:
+            type: 'null'
+        required:
+        - status
+        - acceptedAt
+        - acceptedBy
+        - declinedAt
+        - canceledAt
+      - type: object
+        properties:
+          status:
+            const: CANCELED
+          acceptedAt:
+            type: 'null'
+          acceptedBy:
+            type: 'null'
+          declinedAt:
+            type: 'null'
+          canceledAt:
+            type: string
+        required:
+        - status
+        - acceptedAt
+        - acceptedBy
+        - declinedAt
+        - canceledAt
+      - type: object
+        properties:
+          status:
+            const: EXPIRED
+          acceptedAt:
+            type: 'null'
+          acceptedBy:
+            type: 'null'
+          declinedAt:
+            type: 'null'
+          canceledAt:
+            type: 'null'
+        required:
+        - status
+        - acceptedAt
+        - acceptedBy
+        - declinedAt
+        - canceledAt
+      description: 메일 주소에 바인딩한 초대. PENDING은 수락 가능한 초대이며 두 종료 시각 중 먼저 도달하면 EXPIRED로 조회합니다. 수락/거절/취소가 완료된 상태는 링크 기간이 지나도
+        유지합니다. 원문 토큰/링크는 응답에 포함하지 않습니다.
+    StoreInvitationCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          pattern: ^\S+$
+          description: 검증된 Google 이메일과 비교할 초대 대상. 앞뒤 공백 제거 후 전체 소문자로 비교·저장합니다. Gmail 점/plus/다른 별칭은 통합하지 않습니다.
+        accessExpiresAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          default: null
+          description: 선택한 접근 종료 시각. 생략/null은 별도 종료 전까지. 생성 시각보다 미래여야 하며 Asia/Seoul 화면 날짜는 종료 다음 날 00:00을 ISO 시각으로 변환합니다.
+      required:
+      - email
+    StoreInvitationDelivery:
+      type: object
+      additionalProperties: false
+      properties:
+        invitation:
+          $ref: '#/components/schemas/StoreInvitation'
+        deliveryStatus:
+          type: string
+          const: QUEUED
+      required:
+      - invitation
+      - deliveryStatus
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
