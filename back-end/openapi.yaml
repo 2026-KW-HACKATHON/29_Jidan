@@ -5229,6 +5229,7 @@ paths:
                       structurePhotos:
                       - mediaId: 5329e5a1-0293-44eb-b11b-69df76660be1
                         caption: 근무표
+                        title: 업무 참고 사진
                     processing: null
                     error: null
                     startedAt: '2026-10-05T01:00:00Z'
@@ -7809,6 +7810,7 @@ paths:
                   structurePhotos:
                   - mediaId: 5329e5a1-0293-44eb-b11b-69df76660be1
                     caption: 근무표
+                    title: 업무 참고 사진
                 processing: null
                 error: null
                 startedAt: '2026-10-05T01:00:00Z'
@@ -7846,6 +7848,7 @@ paths:
                   photos:
                   - mediaId: 5329e5a1-0293-44eb-b11b-69df76660be1
                     caption: 근무표
+                    title: 업무 참고 사진
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=346-1421
@@ -9906,9 +9909,16 @@ components:
           - string
           - 'null'
           maxLength: 300
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+          description: '사진 이름. 예: 재고 배치, 열쇠 위치. caption은 별도의 선택 설명입니다.'
       required:
       - mediaId
       - caption
+      - title
     ManualSection:
       type: object
       additionalProperties: false
