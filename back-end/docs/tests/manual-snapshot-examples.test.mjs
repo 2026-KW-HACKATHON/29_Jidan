@@ -31,13 +31,13 @@ test('세션 조회 예시: 모든 공개 phase와 실패/완료 경계 제공',
       assert.equal(question.intentId, value.currentIntentId);
       assert.equal(question.depth, intents.get(question.intentId).depth);
     }
-    if (value.review) assert.equal(value.review.intentId, value.currentIntentId);
+    if (value.review) { assert.ok(intents.has(value.review.intentId)); assert.equal(value.phase, 'READY_TO_GENERATE'); }
     if (['READY_TO_GENERATE', 'GENERATING', 'COMPLETED'].includes(value.phase)) {
-      assert.ok(value.intents.every(intent => intent.finishedAt && (intent.coverage === 'COVERED' ? Boolean(intent.confirmedAt) : intent.coverage === 'NEEDS_DETAIL' && intent.depth === 5 && intent.confirmedAt === null)));
+      assert.ok(value.intents.every(intent => intent.finishedAt && (intent.coverage === 'COVERED' ? true : intent.coverage === 'NEEDS_DETAIL' && intent.depth === 5 && intent.confirmedAt === null)));
     }
     if (value.completedAt) assert.ok(Date.parse(value.startedAt) <= Date.parse(value.completedAt));
   }
-  assert.deepEqual([...phases].sort(), ['COLLECTING', 'COMPLETED', 'ERROR', 'GENERATING', 'PROCESSING', 'READY_TO_GENERATE', 'REVIEWING']);
+  assert.deepEqual([...phases].sort(), ['COLLECTING', 'COMPLETED', 'ERROR', 'GENERATING', 'PROCESSING', 'READY_TO_GENERATE']);
 });
 test('전체 매뉴얼 예시: 근무조 참조·시간 길이·ID·사진 순서 일관성', () => {
   for (const [path, item] of Object.entries(spec.paths)) {
@@ -64,15 +64,19 @@ test('전체 매뉴얼 예시: 근무조 참조·시간 길이·ID·사진 순�
     }
   }
 });
-test('추가 질문 예시: 기본 질문 UUID와 묶음/질문 UUID를 재사용하지 않음', () => {
+test('추가 질문은 하나만 제시하고 해당 답변은 바로 평가', () => {
   const operation = spec.paths[root + '/interviews/{sessionId}/answers'].post;
-  const basicQuestionId = operation.requestBody.content['application/json'].examples.default.value.questionId;
-  const partial = operation.responses['202'].content['application/json'].examples.remainingQuestions.value;
+  const basicId = operation.requestBody.content['application/json'].examples.default.value.questionId;
+  const followup = spec.paths[root + '/interviews/{sessionId}'].get.responses['200'].content['application/json'].examples.followupQuestion.value;
   const request = operation.requestBody.content['application/json'].examples.followupAnswer.value;
-  uniqueIds(partial.questions);
-  assert.ok(partial.questions.every(question => question.id !== basicQuestionId && question.batchId !== basicQuestionId));
-  assert.equal(partial.questions[0].id, request.questionId);
-  assert.equal(partial.revision, request.expectedRevision + 1);
-  assert.equal(partial.questions[0].answered, true);
-  assert.ok(partial.questions.some(question => !question.answered));
+  assert.equal(followup.questions.length, 1);
+  const question = followup.questions[0];
+  assert.notEqual(question.id, basicId);
+  assert.notEqual(question.batchId, basicId);
+  assert.equal(question.id, request.questionId);
+  assert.equal(question.answered, false);
+  const accepted = operation.responses['202'].content['application/json'].examples.evaluatingFollowup.value;
+  assert.equal(accepted.revision, request.expectedRevision + 1);
+  assert.equal(accepted.processing.kind, 'EVALUATION');
+  assert.deepEqual(accepted.questions, []);
 });

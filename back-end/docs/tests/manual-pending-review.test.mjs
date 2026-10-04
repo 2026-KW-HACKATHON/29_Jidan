@@ -43,11 +43,10 @@ test('검수중 항목: depth 5·진행 종료 시각·중간 확인 없음의 �
     { ...intent, confirmedAt: intent.finishedAt },
   ]) assert.equal(validateIntent(invalid), false);
 });
-test('초안 생성은 미진행 항목이나 확인 대기 정상 항목이 있으면 거절', () => {
+test('초안 생성은 진행이 끝나지 않은 항목이 있으면 거절', () => {
   const intent = last.intents[0];
   for (const coverage of ['PENDING', 'COVERED']) {
     const waiting = { ...intent, coverage, finishedAt: null, confirmedAt: null };
-    assert.ok(validateIntent(waiting));
     for (const sample of [last, generate]) assert.equal(validateSession({ ...sample, intents: [waiting] }), false);
   }
 });
@@ -63,10 +62,7 @@ test('평가 실패는 상한에 도달해도 검수중 진행으로 간주하�
   assert.equal(failed.intents[0].coverage, 'PENDING');
   assert.equal(failed.intents[0].finishedAt, null);
 });
-test('정상 주제별 확인과 최종 검수중 항목 확인은 분리', () => {
-  const confirmation = spec.paths[root + '/confirmations'].post;
-  assert.match(confirmation.description, /이미 넘어간 항목.*409/);
-  assert.equal(confirmation.responses['202'].content['application/json'].example.intents[0].coverage, 'COVERED');
+test('최종 검수중 항목 확인은 발행 시 수행하고 질문 진행에는 불필요', () => {
   const publish = spec.paths['/api/stores/{storeId}/manual/draft/publication'].post;
   assert.match(publish.description, /현재 OPEN인 항목 ID를 정확히 모두/);
   assert.match(publish.description, /MANUAL_REVIEW_REQUIRED/);
