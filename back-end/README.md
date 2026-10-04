@@ -25,11 +25,14 @@ python -m pytest
 ## API 설계
 
 [Figma 기반 OpenAPI 명세](openapi.yaml)를 제공합니다.
-구현 전 계약이며 실제 인증·프로필 관리·승인 endpoint는 아직 제공하지 않습니다.
+구현 전 계약이며 실제 인증·프로필·매장·초대·근무자 관리 endpoint는 아직 제공하지 않습니다.
 
 - [인증 화면 근거·인가 정책](docs/auth-design.md)
 - [관리자 매장 승인 계약](docs/store-approval-design.md)
 - [일반회원 프로필 조회·기본 정보·근무 정보·가능 시간 수정 계약](docs/worker-profile-design.md)
+- [점주 관리 매장 조회·추가·현황 요약](docs/owner-store-design.md)
+- [근무자 초대·재전송·취소·수락·거절](docs/store-invitation-design.md)
+- [근무자 조회·자료 접근 기간·수동 종료](docs/store-worker-design.md)
 
 ```bash
 cd docs
