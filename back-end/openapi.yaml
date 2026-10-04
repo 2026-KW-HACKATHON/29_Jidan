@@ -4987,36 +4987,207 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManualInterviewSession'
-              example:
-                id: c701b623-889c-4d28-b055-501251ac6773
-                storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
-                draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
-                questionSetVersion: 1
-                revision: 1
-                status: IN_PROGRESS
-                phase: COLLECTING
-                intents:
-                - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
-                  key: WORK_STRUCTURE
-                  stage: WORK_STRUCTURE
-                  coverage: PENDING
-                  depth: 0
-                  finishedAt: null
-                  confirmedAt: null
-                currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
-                questions:
-                - id: 08d19610-3c04-4b22-8f56-765af2d236b8
-                  intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
-                  kind: BASE
-                  depth: 0
-                  batchId: null
-                  text: 근무조와 시간을 알려주세요.
-                  answered: false
-                review: null
-                processing: null
-                error: null
-                startedAt: '2026-10-05T01:00:00Z'
-                completedAt: null
+              examples:
+                collecting:
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 2
+                    status: IN_PROGRESS
+                    phase: COLLECTING
+                    intents:
+                    - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      key: WORK_STRUCTURE
+                      stage: WORK_STRUCTURE
+                      coverage: PENDING
+                      depth: 0
+                      finishedAt: null
+                      confirmedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions:
+                    - id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                      intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      kind: BASE
+                      depth: 0
+                      batchId: null
+                      text: 근무조와 시간을 알려주세요.
+                      answered: false
+                    review: null
+                    processing: null
+                    error: null
+                    startedAt: '2026-10-05T01:00:00Z'
+                    completedAt: null
+                processing:
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 3
+                    status: IN_PROGRESS
+                    phase: PROCESSING
+                    intents:
+                    - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      key: WORK_STRUCTURE
+                      stage: WORK_STRUCTURE
+                      coverage: PENDING
+                      depth: 0
+                      finishedAt: null
+                      confirmedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions: []
+                    review: null
+                    processing:
+                      taskId: fec19f33-1096-47c2-9612-78d336622930
+                      kind: EVALUATION
+                      attempt: 1
+                    error: null
+                    startedAt: '2026-10-05T01:00:00Z'
+                    completedAt: null
+                reviewing:
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 4
+                    status: IN_PROGRESS
+                    phase: REVIEWING
+                    intents:
+                    - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      key: WORK_STRUCTURE
+                      stage: WORK_STRUCTURE
+                      coverage: COVERED
+                      depth: 0
+                      finishedAt: null
+                      confirmedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions: []
+                    review:
+                      intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      summary: 야간조는 22시부터 다음 날 7시까지입니다.
+                      shifts:
+                      - id: 44b35781-3e98-4f28-9505-2178b2863c5e
+                        name: 야간조
+                        startTime: '22:00'
+                        endTime: 07:00
+                        endsNextDay: true
+                      sections: []
+                      needsDetail: false
+                      structurePhotos:
+                      - mediaId: 5329e5a1-0293-44eb-b11b-69df76660be1
+                        caption: 근무표
+                    processing: null
+                    error: null
+                    startedAt: '2026-10-05T01:00:00Z'
+                    completedAt: null
+                readyToGenerateWithMissingInformation:
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 4
+                    status: IN_PROGRESS
+                    phase: READY_TO_GENERATE
+                    intents:
+                    - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      key: WORK_STRUCTURE
+                      stage: WORK_STRUCTURE
+                      coverage: NEEDS_DETAIL
+                      depth: 5
+                      finishedAt: '2026-10-05T01:20:00Z'
+                      confirmedAt: '2026-10-05T01:20:00Z'
+                    currentIntentId: null
+                    questions: []
+                    review: null
+                    processing: null
+                    error: null
+                    startedAt: '2026-10-05T01:00:00Z'
+                    completedAt: null
+                generating:
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 5
+                    status: IN_PROGRESS
+                    phase: GENERATING
+                    intents:
+                    - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      key: WORK_STRUCTURE
+                      stage: WORK_STRUCTURE
+                      coverage: COVERED
+                      depth: 0
+                      finishedAt: '2026-10-05T01:20:00Z'
+                      confirmedAt: '2026-10-05T01:20:00Z'
+                    currentIntentId: null
+                    questions: []
+                    review: null
+                    processing:
+                      taskId: 72096597-3ef2-41c5-8b8f-e962644e85ed
+                      kind: DRAFT_GENERATION
+                      attempt: 1
+                    error: null
+                    startedAt: '2026-10-05T01:00:00Z'
+                    completedAt: null
+                failedEvaluation:
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 4
+                    status: ERROR
+                    phase: ERROR
+                    intents:
+                    - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      key: WORK_STRUCTURE
+                      stage: WORK_STRUCTURE
+                      coverage: PENDING
+                      depth: 0
+                      finishedAt: null
+                      confirmedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions: []
+                    review: null
+                    processing:
+                      taskId: fec19f33-1096-47c2-9612-78d336622930
+                      kind: EVALUATION
+                      attempt: 3
+                    error:
+                      code: AI_PROCESSING_FAILED
+                      message: 저장한 답변으로 다시 시도할 수 있어요.
+                      retryable: true
+                    startedAt: '2026-10-05T01:00:00Z'
+                    completedAt: null
+                completed:
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 6
+                    status: COMPLETED
+                    phase: COMPLETED
+                    intents:
+                    - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      key: WORK_STRUCTURE
+                      stage: WORK_STRUCTURE
+                      coverage: COVERED
+                      depth: 0
+                      finishedAt: '2026-10-05T01:20:00Z'
+                      confirmedAt: '2026-10-05T01:20:00Z'
+                    currentIntentId: null
+                    questions: []
+                    review: null
+                    processing: null
+                    error: null
+                    startedAt: '2026-10-05T01:00:00Z'
+                    completedAt: '2026-10-05T01:30:00Z'
       parameters:
       - name: storeId
         in: path
@@ -5346,7 +5517,7 @@ paths:
                     storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
                     draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
                     questionSetVersion: 1
-                    revision: 2
+                    revision: 3
                     status: IN_PROGRESS
                     phase: PROCESSING
                     intents:
@@ -5373,7 +5544,7 @@ paths:
                     storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
                     draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
                     questionSetVersion: 1
-                    revision: 2
+                    revision: 5
                     status: IN_PROGRESS
                     phase: COLLECTING
                     intents:
@@ -5386,18 +5557,18 @@ paths:
                       confirmedAt: null
                     currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
                     questions:
-                    - id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                    - id: b1729cba-e3d2-4f91-a171-556955088a9c
                       intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
                       kind: PROBE
                       depth: 1
-                      batchId: 08d19610-3c04-4b22-8f56-765af2d236b8
+                      batchId: 073112d0-6e14-438c-b073-5bd18e014362
                       text: 근무조와 시간을 알려주세요.
                       answered: true
                     - id: 03257553-cb54-4114-b2ee-a1849b0c8ea7
                       intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
                       kind: PROBE
                       depth: 1
-                      batchId: 08d19610-3c04-4b22-8f56-765af2d236b8
+                      batchId: 073112d0-6e14-438c-b073-5bd18e014362
                       text: 예외 상황에서는 어떻게 하나요?
                       answered: false
                     review: null
@@ -5432,20 +5603,27 @@ paths:
             examples:
               default:
                 value:
-                  expectedRevision: 1
+                  expectedRevision: 2
                   questionId: 08d19610-3c04-4b22-8f56-765af2d236b8
                   input:
                     method: TEXT
                     text: ' 야간조는 22시부터 다음 날 7시까지예요.'
               voice:
                 value:
-                  expectedRevision: 1
+                  expectedRevision: 2
                   questionId: 08d19610-3c04-4b22-8f56-765af2d236b8
                   input:
                     method: VOICE
                     transcriptionId: 28d477da-8a0f-4b60-a5b5-497c5d5ec114
                   photoIds:
                   - 5329e5a1-0293-44eb-b11b-69df76660be1
+              followupAnswer:
+                value:
+                  expectedRevision: 4
+                  questionId: b1729cba-e3d2-4f91-a171-556955088a9c
+                  input:
+                    method: TEXT
+                    text: 휴일에도 같은 시간에 운영해요.
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=376-1711
