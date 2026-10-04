@@ -1607,6 +1607,159 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=335-1008
+  /api/stores:
+    post:
+      tags:
+      - 점주 매장 관리
+      operationId: createMyOwnerStore
+      summary: 관리 매장 추가 및 승인 신청
+      description: |-
+        **회원 인증과 리소스 권한**
+
+        - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
+        - 대상 회원은 세션에서 결정하며 body의 `password`나 역할/점주 ID를 인증에 사용하지 않습니다.
+        - 다른 역할은 **403 FORBIDDEN**, 정지 계정은 **403 ACCOUNT_SUSPENDED**입니다.
+        - 세션/역할 확인 후 매장 소유권을 서버에서 확인합니다. 없는 매장과 다른 점주의 매장은 같은 **404 STORE_NOT_FOUND**로 처리합니다.
+        - 응답의 `permissions`는 UI 힌트이며 매 요청 현재 DB의 소유권·승인 상태를 확인합니다.
+        - 응답에는 `Cache-Control: no-store`를 적용합니다.
+
+        **매장 추가**
+
+        - 승인된 매장이 없어도 가입 완료한 점주는 새 매장을 신청할 수 있습니다.
+        - 점주 가입의 `StoreRegistrationInput`과 동일한 매장 정보만 받습니다. 이름·주소는 앞뒤 공백을 정규화하고 하이픈 없는 사업자 번호·연락처를 검증합니다.
+        - 서버의 주소 데이터로 월계1동 소재지를 확인합니다. 정책 위반은 **422**이며 주소 문자열만으로 판단하지 않습니다.
+        - 이미 있는 사업자 번호는 **409 STORE_ALREADY_REGISTERED**입니다. 중복 생성하거나 새 점주에게 관리 권한을 주지 않습니다.
+        - 세션 점주를 소유자로 매장·PENDING 승인 신청을 같은 트랜잭션으로 저장합니다. 관리자 조회에도 새 신청이 나타납니다.
+        - 승인 상태·신청 ID·소유자·권한은 서버가 결정합니다. 기존 매장의 승인/운영 권한은 변경하지 않습니다.
+        - 성공 후 다음 `/api/auth/session`과 내 관리 매장 조회에 새 PENDING 매장을 포함합니다.
+
+        **중복 제출**
+
+        - `Idempotency-Key`는 필수입니다. 24시간 안에 동일 주체·경로·정규화 body로 재시도하면 최초 **201** 결과를 재현합니다.
+        - 같은 key에 다른 body는 **409 IDEMPOTENCY_KEY_REUSED**입니다. DB의 사업자 번호 UNIQUE와 key 기록을 같이 사용해 동시 중복을 차단합니다.
+
+        **변경 요청**
+
+        - 회원 세션과 `/api/auth/csrf`에서 받은 `X-CSRF-Token`을 함께 보냅니다.
+        - 허용 Origin의 scheme/host/port를 정확히 검증합니다. Origin 또는 토큰 누락·불일치는 **403 CSRF_INVALID**입니다.
+        - 권한 확인 후 요청을 검증하고 같은 트랜잭션으로 저장합니다. 실패 시 전체 rollback합니다.
+        - 잘못된 JSON은 **400 INVALID_REQUEST**, 필드/UUID/페이지 형식 오류는 **422 VALIDATION_ERROR**입니다.
+        - 동시 요청의 상태 전이는 잠금 또는 조건부 갱신으로 한 번만 반영합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '201':
+          description: 매장과 승인 신청 생성 완료. 승인 대기 상태.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerStore'
+              example:
+                name: 명랑핫도그 광운대점
+                industry: RESTAURANT
+                postalCode: '01897'
+                address: 서울특별시 노원구 광운로 20
+                detailAddress: 1층
+                businessRegistrationNumber: '1234567890'
+                phoneNumber: '029123456'
+                id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                approvalRequestId: 1a9dc30c-8f50-4930-aeb7-64fdf67a1f29
+                approvalStatus: PENDING
+                createdAt: '2026-10-02T01:00:00Z'
+                approvedAt: null
+                permissions:
+                - READ_STORE_STATUS
+        '401':
+          description: '세션 없음·만료·폐기: SESSION_EXPIRED. 가입 세션만 존재: REGISTRATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SESSION_EXPIRED
+                message: Google 로그인부터 다시 시작해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '403':
+          description: '다른 역할: FORBIDDEN. 정지 계정: ACCOUNT_SUSPENDED. CSRF/Origin 오류: CSRF_INVALID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 이 기능을 사용할 권한이 없습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '422':
+          description: 필드·UUID·페이지 또는 업무 규칙 검증 실패. fieldErrors로 필드를 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 입력한 정보를 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 서버 처리 실패. 모든 변경을 rollback합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 처리에 실패했습니다.
+                requestId: req_profile_001
+                fieldErrors: []
+        '400':
+          description: 잘못된 JSON 요청.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REQUEST
+                message: JSON 요청 형식을 확인해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+        '409':
+          description: '동일 사업자 번호: STORE_ALREADY_REGISTERED. 같은 key의 다른 body: IDEMPOTENCY_KEY_REUSED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STORE_ALREADY_REGISTERED
+                message: 이미 등록된 매장입니다. 운영자에게 관리 권한을 문의해 주세요.
+                requestId: req_profile_001
+                fieldErrors: []
+      parameters:
+      - $ref: '#/components/parameters/OwnerStoreCreationKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreRegistrationInput'
+            examples:
+              store:
+                summary: 추가 매장 신청
+                value:
+                  name: 명랑핫도그 광운대점
+                  industry: RESTAURANT
+                  postalCode: '01897'
+                  address: 서울특별시 노원구 광운로 20
+                  detailAddress: 1층
+                  businessRegistrationNumber: '1234567890'
+                  phoneNumber: '029123456'
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=220-401
 components:
   securitySchemes:
     SessionCookie:
@@ -1667,6 +1820,16 @@ components:
         type: string
         format: uuid
       example: 51c1c743-d377-4e7a-8449-94377eecfce0
+    OwnerStoreCreationKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 매장 추가 요청마다 생성한 UUID. 세션 점주·endpoint·정규화 body로 24시간 보관. 같은 key/body는 최초 201 재현, 다른 body는 409 IDEMPOTENCY_KEY_REUSED.
+        재시도에도 현재 회원 인증을 검증합니다.
+      schema:
+        type: string
+        format: uuid
+      example: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
   headers: {}
   schemas:
     Error:
