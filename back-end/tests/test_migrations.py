@@ -15,7 +15,8 @@ BASELINE_TABLES = {
     "shift_assignments", "application_selection_effects",
 }
 SESSION_TABLES = {"auth_sessions", "registration_sessions"}
-EXPECTED_TABLES = BASELINE_TABLES | SESSION_TABLES
+IDEMPOTENCY_TABLES = {"idempotency_records"}
+EXPECTED_TABLES = BASELINE_TABLES | SESSION_TABLES | IDEMPOTENCY_TABLES
 
 
 def test_history_is_linear_with_a_single_head():
@@ -27,10 +28,11 @@ def test_history_is_linear_with_a_single_head():
     assert all(not isinstance(revision.down_revision, tuple) for revision in revisions)
 
 
-def test_baseline_revision_is_untouched_and_sessions_build_on_it():
+def test_revisions_form_a_chain_on_top_of_the_untouched_baseline():
     script = ScriptDirectory.from_config(alembic_config())
     assert script.get_revision("0001").down_revision is None
     assert script.get_revision("0002").down_revision == "0001"
+    assert script.get_revision("0003").down_revision == "0002"
 
 
 def test_upgrade_creates_every_baseline_table(engine):
@@ -48,7 +50,7 @@ def test_downgrade_one_step_then_upgrade_again(engine):
         config = alembic_config(connection)
         command.downgrade(config, "-1")
         connection.commit()
-        assert set(inspect(connection).get_table_names()) == BASELINE_TABLES | {"alembic_version"}
+        assert set(inspect(connection).get_table_names()) == BASELINE_TABLES | SESSION_TABLES | {"alembic_version"}
         command.upgrade(config, "head")
         connection.commit()
         assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
