@@ -7,7 +7,7 @@ import {draftFixture} from '../dev/manualDraftFixtures'
 import {ManualError} from './service'
 vi.mock('./ManualVoiceComposer',()=>({ManualVoiceComposer:({onRecording,disabled}:{onRecording:(recording:unknown,signal:AbortSignal)=>Promise<void>;disabled?:boolean})=><button disabled={disabled} onClick={()=>void onRecording({blob:new Blob(['voice'],{type:'audio/webm'}),duration:3},new AbortController().signal)}>테스트 음성 정정</button>}))
 beforeEach(()=>{vi.stubGlobal('URL',Object.assign(URL,{createObjectURL:vi.fn(()=> 'blob:photo'),revokeObjectURL:vi.fn()}))})
-afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.useRealTimers()})
+afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();vi.useRealTimers()})
 function setup(scenario='draft') {const service=createManualPreviewService(true,scenario),call=vi.spyOn(service,'call'),onReload=vi.fn();render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={onReload}/>);return {service,call,onReload}}
 it('최종 검토 진입에서 confirmedAt 없이 생성하고 서버 초안을 다시 읽는다',async()=>{
  const service=createManualPreviewService(true,'ready'),call=vi.spyOn(service,'call');render(<ManualAuthoring service={service} onBack={vi.fn()}/> )
@@ -58,4 +58,10 @@ it('재시도 불가 conflict는 최신 초안 조회를 요구하고 게시 성
  const service=createManualPreviewService(true,'draft'),original=service.call.bind(service),onReload=vi.fn()
  vi.spyOn(service,'call').mockImplementation(async(...args)=>{if(args[0]==='publishManualDraft')throw new ManualError('REVISION_CONFLICT');return original(...args)})
  render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={onReload}/>);await screen.findByText('먼저 들어온 제품을 앞쪽에 진열하세요.');fireEvent.click(screen.getByRole('button',{name:'확인하고 게시'}));await screen.findByRole('alert');fireEvent.click(screen.getByRole('button',{name:'최신 작성 상태 다시 불러오기'}));expect(onReload).toHaveBeenCalled();expect(screen.queryByRole('heading',{name:'매뉴얼을 게시했어요'})).not.toBeInTheDocument()
+})
+
+it('숨겨진 화면의 대기 중 이탈은 요청 없이 취소되며 처리되지 않은 오류를 만들지 않는다',async()=>{
+ vi.spyOn(document,'visibilityState','get').mockReturnValue('hidden');const service=createManualPreviewService(true,'draft'),call=vi.spyOn(service,'call')
+ const {unmount}=render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={vi.fn()}/>)
+ unmount();await act(async()=>{await Promise.resolve()});expect(call).not.toHaveBeenCalled()
 })

@@ -28,7 +28,7 @@ export function ManualDraftReview({service,versionId,onBack,onReload}:{service:M
     if(job.data.status!=='RUNNING'){const updated=await service.call('getManualDraft',{},undefined,{signal});signal.throwIfAborted();if(readEpoch===epoch.current)apply(updated.data)}
    }
    setReadError('');await pause(result.retryAfterMs,signal)
-  }catch(e){if(signal.aborted)return;setReadError(errorMessage(e));if(e instanceof ManualError&&['MANUAL_VERSION_CONFLICT','MANUAL_RESOURCE_NOT_FOUND'].includes(e.code))return;await pause(2000,signal)}}})()
+  }catch(e){if(signal.aborted)return;setReadError(errorMessage(e));if(e instanceof ManualError&&['MANUAL_VERSION_CONFLICT','MANUAL_RESOURCE_NOT_FOUND'].includes(e.code))return;await pause(2000,signal)}}})().catch(e=>{if(!signal.aborted)setReadError(errorMessage(e))})
   return()=>controller.abort()
  },[service,versionId,refresh,published,apply])
  function acceptJob(job:ManualDraftCorrection){epoch.current++;if(job.versionId!==versionId)throw new ManualError('MANUAL_VERSION_CONFLICT');setDraft(old=>old&&old.versionId===job.versionId&&old.revision===job.baseRevision?{...old,latestCorrection:job} as ManualDraft:old);setPreview(null);setTarget(null);setConfirmed('');setRefresh(v=>v+1)}
