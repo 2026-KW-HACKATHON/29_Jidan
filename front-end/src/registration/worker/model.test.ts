@@ -52,3 +52,10 @@ it('명세의 휴대전화와 담당 업무 길이 및 배열 상한을 적용�
  expect(validateWorker({...emptyWorker,experience:'경력 있음',careers:Array(21).fill(career)},2).careers).toBeTruthy()
  expect(validateWorker({...emptyWorker,availability:Array(101).fill({id:'a',days:[0],start:0,end:30,overnight:false})},3).availability).toBeTruthy()
 })
+
+it('신입 제출에서는 보존된 임시 경력의 상한을 검사하지 않는다', () => {
+ const draft={...emptyWorker,experience:'신입' as const,careers:Array(21).fill(emptyCareer)}
+ expect(validateWorker(draft,2)).toEqual({})
+ expect(validateWorker(draft,4).careers).toBeUndefined()
+ expect(normalizedWorker(draft).careers).toEqual([])
+})

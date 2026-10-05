@@ -50,7 +50,7 @@ export function validateWorker(d: WorkerDraft, step: number, current = today()):
   }
   if (step === 2 || step === 4) {
     if (!['신입','경력 있음'].includes(d.experience)) e.experience = '근무 경력을 선택해 주세요.'
-    if (d.careers.length > 20) e.careers = '경력은 20건까지 등록할 수 있어요.'
+    if (d.experience === '경력 있음' && d.careers.length > 20) e.careers = '경력은 20건까지 등록할 수 있어요.'
     if (d.experience === '경력 있음' && (!d.careers.length || d.careers.some(c => Object.keys(validateCareer(c,d.birth,current)).length))) e.careers = '올바른 경력을 한 건 이상 등록해 주세요.'
   }
   if (step === 3 || step === 4) {
