@@ -84,6 +84,7 @@ Figma의 Design 화면을 주요 근거로 사용했고 Design System/Wireframe/
 | 시각 | UTC `DATETIME(6)`, 애플리케이션에서는 timezone-aware UTC만 허용. 연결 시 `time_zone='+00:00'` |
 | 근무 날짜·시간 | `work_date`(DATE)·`start_time`·`end_time`은 `Asia/Seoul` 현지 값, 심야는 `ends_next_day` |
 | enum | `VARCHAR` + 이름 있는 `CHECK`. 이름 규칙은 `ck_/uq_/fk_/ix_/pk_` 접두사 |
+| 대소문자 구분 컬럼 | MySQL 기본 collation(`utf8mb4_0900_ai_ci`)은 대소문자를 구분하지 않아 `role IN ('WORKER','OWNER')`가 `'worker'`를 통과시키고 UNIQUE가 `'Ab'`와 `'ab'`를 같은 값으로 본다. 그래서 enum 성격 CHECK 컬럼 전부(role·status·gender·experience_level·weekday·approval_status·work_part·payment_timing·previous_status)와 불투명 식별자 UNIQUE 컬럼(`users.google_sub`, `store_invitations.token_hash`)은 MySQL에서 `utf8mb4_0900_as_cs`로 정의한다(`app.db.types.cs_string`, SQLite는 원래 구분하므로 variant). `utf8mb4_bin`은 PAD SPACE라 `'WORKER '`가 CHECK를 통과하고 UNIQUE에서 `'a'`와 `'a '`가 충돌해 쓰지 않았다(`0900_as_cs`는 NO PAD). enum은 어떤 FK에도 쓰이지 않으므로 FK/PK collation 불일치가 생기지 않는다. **이메일(`google_email`, `invited_email`)은 의도적으로 기본(대소문자 무시) collation을 유지**한다. 초대 이메일은 대소문자만 다른 주소를 같은 사람으로 매칭해야 하고 소문자 정규화는 서비스 책임이다. `CHAR(36)` UUID는 현행 유지: 서비스가 소문자 `uuid4`만 생성하고, 대소문자만 다른 id는 별개 행이 아니라 같은 행으로 해석되므로(별개 행으로 갈라질 수 없고 다른 소유자의 행에 닿지도 않음) 안전한 쪽의 차이다. 모델과 DB collation 일치는 `tests/test_collation.py`가 `information_schema`로 검증한다 |
 | 삭제 정책 | 모든 FK는 기본(RESTRICT). cascade 삭제 없음 |
 | 활성 유일성 | 활성 지원·확정·대기 요청은 생성 컬럼(`active_worker_id` 등)에 UNIQUE를 걸어 DB에서 중복을 막음. 공고당 유효 PENDING 요청의 직렬화는 공고 잠금과 서비스 검증으로 보완 |
 | `users.name`·`phone_number` | NOT NULL. 가입 최종 확인에서 한 번에 저장하므로 부분 가입 행을 만들지 않는다는 해석 |
