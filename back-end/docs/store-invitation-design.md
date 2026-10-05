@@ -29,7 +29,7 @@ UUID Idempotency-Key를 요구하며 주체·경로·정규화 body 기준 24시
 
 ## 보낸 초대 조회
 
-`GET /api/stores/{storeId}/invitations?view=ACTIVE&page=1&size=20`
+`GET /api/stores/{storeId}/invitations?view=ACTIVE&page=0&size=20`
 
 ACTIVE는 수락 가능한 PENDING, PAST는 ACCEPTED/DECLINED/CANCELLED/EXPIRED다. 완료된 상태는 시간이 지나도 유지한다. 대기 상태에서 링크 기한 또는 지정 접근 기한이 지났으면 DB 배치 상태 변경과 관계없이 EXPIRED로 계산한다. createdAt/ID 내림차순 정렬이며 activeCount/pastCount는 필터와 페이지에 무관한 해당 매장 전체 탭 건수다. items·totalItems·전체 탭 건수와 asOf는 같은 DB 스냅샷 기준이다. 빈 결과/페이지 이후는 200이다. 점주의 승인된 매장만 조회 가능하며 응답에 토큰/링크를 포함하지 않는다. 상태 계산·집계는 후속 실제 서버 통합 검증 대상이다.
 

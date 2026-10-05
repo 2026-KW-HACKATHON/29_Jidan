@@ -29,7 +29,7 @@ test('매장 조회: 페이지/크기와 UUID 입력 경계 및 회원 세션 �
   const size = parameterValidator(list.parameters.find(p => p.name === 'size'));
   const number = parameterValidator(list.parameters.find(p => p.name === 'page'));
   assert.ok(size(100)); for (const v of [0, 101, 1.5]) assert.equal(size(v), false);
-  assert.ok(number(1)); for (const v of [0, -1, 1.5]) assert.equal(number(v), false);
+  assert.ok(number(0)); assert.ok(number(1)); for (const v of [-1, 1.5]) assert.equal(number(v), false);
   const id = parameterValidator(detail.parameters[0]); assert.ok(id(pending.id)); assert.equal(id('other'), false);
   assert.match(detail.responses['404'].description, /다른 점주/);
 });
