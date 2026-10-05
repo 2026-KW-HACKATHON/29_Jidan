@@ -68,6 +68,8 @@ tags:
   description: 점주 공고 등록·모집 중/마감 관리
 - name: 대타 공고 탐색
   description: 일반회원 공고 검색·필터·상세
+- name: 일반회원 공고 지원
+  description: 일반회원 자기소개 지원·철회·탭별 이력
 security:
 - SessionCookie: []
 externalDocs:
@@ -9309,6 +9311,562 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=468-2992
+  /api/users/me/applications/{applicationId}:
+    get:
+      tags:
+      - 일반회원 공고 지원
+      operationId: getMyJobApplication
+      summary: 내 지원 상세·승인 대기·철회 확인
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        본인의 지원서와 공고 조건, 현재 상태를 반환합니다. 공고가 마감되어도 본인 이력은 유지합니다. APPLIED/REQUESTED일 때만 철회할 수 있으며 확정된 근무의 취소는 별도 제품 정책입니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        description: 'applicationId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobApplication'
+              example:
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                job:
+                  title: 주말 오픈 대타
+                  description: 음료 제조와 고객 응대
+                  workPart: WEEKEND_OPEN
+                  workDate: '2026-10-10'
+                  startTime: 09:00
+                  endTime: '14:00'
+                  endsNextDay: false
+                  minimumExperience: ANY
+                  experienceNotes: ''
+                  hourlyPay: 12000
+                  paymentTiming: WORK_DAY
+                  paymentNotes: ''
+                  id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                  store:
+                    id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    name: 컴포즈커피 광운대점
+                    industry: CAFE
+                    address: 서울특별시 노원구 광운로 20
+                    neighborhood: 월계1동
+                  status: RECRUITING
+                  recruitmentCount: 1
+                  applicantCount: 0
+                  startAt: '2026-10-10T00:00:00Z'
+                  endAt: '2026-10-10T05:00:00Z'
+                  estimatedPay: 60000
+                  createdAt: '2026-10-05T01:00:00Z'
+                  closedAt: null
+                  revision: 1
+                status: APPLIED
+                introduction: 음료 제조와 고객 응대 경험이 있어요.
+                submittedAt: '2026-10-05T01:00:00Z'
+                withdrawnAt: null
+                revision: 1
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=635-2273
+  /api/users/me/applications/{applicationId}/withdrawal:
+    post:
+      tags:
+      - 일반회원 공고 지원
+      operationId: withdrawJobApplication
+      summary: 공고 신청 철회
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        APPLIED/REQUESTED→WITHDRAWN. 유효 미결 근무 요청도 같은 트랜잭션에서 CANCELLED로 만들고 지원자 수를 줄입니다. owner 요청/worker 수락/마감과 공고 잠금을 공유합니다. 이미 WITHDRAWN이면 최신 revision으로 200 현재 결과, CONFIRMED/COMPLETED/NOT_SELECTED는 409 APPLICATION_NOT_WITHDRAWABLE입니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        description: 'applicationId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: APPLICATION_REVISION_CONFLICT, APPLICATION_NOT_WITHDRAWABLE. 수락과 철회의 첫 성공만 반영합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: APPLICATION_REVISION_CONFLICT, APPLICATION_NOT_WITHDRAWABLE. 수락과 철회의 첫 성공만 반영합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobApplication'
+              example:
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                job:
+                  title: 주말 오픈 대타
+                  description: 음료 제조와 고객 응대
+                  workPart: WEEKEND_OPEN
+                  workDate: '2026-10-10'
+                  startTime: 09:00
+                  endTime: '14:00'
+                  endsNextDay: false
+                  minimumExperience: ANY
+                  experienceNotes: ''
+                  hourlyPay: 12000
+                  paymentTiming: WORK_DAY
+                  paymentNotes: ''
+                  id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                  store:
+                    id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    name: 컴포즈커피 광운대점
+                    industry: CAFE
+                    address: 서울특별시 노원구 광운로 20
+                    neighborhood: 월계1동
+                  status: RECRUITING
+                  recruitmentCount: 1
+                  applicantCount: 0
+                  startAt: '2026-10-10T00:00:00Z'
+                  endAt: '2026-10-10T05:00:00Z'
+                  estimatedPay: 60000
+                  createdAt: '2026-10-05T01:00:00Z'
+                  closedAt: null
+                  revision: 1
+                status: WITHDRAWN
+                introduction: 음료 제조와 고객 응대 경험이 있어요.
+                submittedAt: '2026-10-05T01:00:00Z'
+                withdrawnAt: '2026-10-05T01:00:00Z'
+                revision: 2
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=635-2483
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationRevision'
+            example:
+              expectedRevision: 1
+  /api/job-postings/{jobId}/applications:
+    post:
+      tags:
+      - 일반회원 공고 지원
+      operationId: applyForJobPosting
+      summary: 자기소개 작성 후 공고 지원
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        자기소개 1~500자(공백만 거절). 세션 근무자를 서버가 결정하고 이름·나이·직접 등록 경력의 제출 당시 스냅샷을 저장합니다. 경력은 본인 기재임을 표시하며 연락처·생일·Google 이메일은 지원서에 포함하지 않습니다. 최소 경력은 표시용 모집 조건이며 자동 지원 차단하지 않습니다.
+
+        모집 중·미래 시작·미확정 공고만 지원 가능합니다. 공고+근무자 유일성을 유지하며 철회 후 재지원은 이번 설계에서 409 APPLICATION_ALREADY_EXISTS입니다. 동일 key 재시도는 원래 201, 다른 key 중복은 409입니다. 공고 마감/확정과 같은 잠금으로 검증·지원·지원자 수 갱신·알림 outbox 저장을 원자 처리합니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        description: 'jobId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: APPLICATION_ALREADY_EXISTS, JOB_NOT_RECRUITING, JOB_STARTED 또는 JOB_FILLED. 조건 변화는 조회 후 다시 지원하도록
+            안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: APPLICATION_ALREADY_EXISTS, JOB_NOT_RECRUITING, JOB_STARTED 또는 JOB_FILLED. 조건 변화는 조회 후 다시
+                  지원하도록 안내합니
+                requestId: req_chapter_100
+                fieldErrors: []
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobApplication'
+              example:
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                job:
+                  title: 주말 오픈 대타
+                  description: 음료 제조와 고객 응대
+                  workPart: WEEKEND_OPEN
+                  workDate: '2026-10-10'
+                  startTime: 09:00
+                  endTime: '14:00'
+                  endsNextDay: false
+                  minimumExperience: ANY
+                  experienceNotes: ''
+                  hourlyPay: 12000
+                  paymentTiming: WORK_DAY
+                  paymentNotes: ''
+                  id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                  store:
+                    id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    name: 컴포즈커피 광운대점
+                    industry: CAFE
+                    address: 서울특별시 노원구 광운로 20
+                    neighborhood: 월계1동
+                  status: RECRUITING
+                  recruitmentCount: 1
+                  applicantCount: 0
+                  startAt: '2026-10-10T00:00:00Z'
+                  endAt: '2026-10-10T05:00:00Z'
+                  estimatedPay: 60000
+                  createdAt: '2026-10-05T01:00:00Z'
+                  closedAt: null
+                  revision: 1
+                status: APPLIED
+                introduction: 음료 제조와 고객 응대 경험이 있어요.
+                submittedAt: '2026-10-05T01:00:00Z'
+                withdrawnAt: null
+                revision: 1
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=530-3183
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationCreate'
+            example:
+              introduction: 음료 제조와 고객 응대 경험이 있어요.
+  /api/users/me/applications:
+    get:
+      tags:
+      - 일반회원 공고 지원
+      operationId: listMyJobApplications
+      summary: 신청 중·확정·종료 공고 목록
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        tab=PENDING은 APPLIED/REQUESTED, CONFIRMED는 미래/진행 중 확정, ENDED는 WITHDRAWN/NOT_SELECTED/COMPLETED입니다. confirmed 근무 종료 시 COMPLETED로 투영합니다. counts는 필터와 페이지와 무관한 세 탭 전체 건수이고 동일 asOf 시점입니다. 최신 지원순(submittedAt DESC,id DESC), 빈 목록은 200입니다. REQUESTED는 신청 중 탭에 표시합니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: 0부터 시작
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        description: 페이지 크기; 기본 20, 최대 100
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: tab
+        in: query
+        required: false
+        description: Figma 3개 탭
+        schema:
+          type: string
+          enum:
+          - PENDING
+          - CONFIRMED
+          - ENDED
+          default: PENDING
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobApplicationPage'
+              example:
+                items:
+                - id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                  job:
+                    title: 주말 오픈 대타
+                    description: 음료 제조와 고객 응대
+                    workPart: WEEKEND_OPEN
+                    workDate: '2026-10-10'
+                    startTime: 09:00
+                    endTime: '14:00'
+                    endsNextDay: false
+                    minimumExperience: ANY
+                    experienceNotes: ''
+                    hourlyPay: 12000
+                    paymentTiming: WORK_DAY
+                    paymentNotes: ''
+                    id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                    store:
+                      id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                      name: 컴포즈커피 광운대점
+                      industry: CAFE
+                      address: 서울특별시 노원구 광운로 20
+                      neighborhood: 월계1동
+                    status: RECRUITING
+                    recruitmentCount: 1
+                    applicantCount: 0
+                    startAt: '2026-10-10T00:00:00Z'
+                    endAt: '2026-10-10T05:00:00Z'
+                    estimatedPay: 60000
+                    createdAt: '2026-10-05T01:00:00Z'
+                    closedAt: null
+                    revision: 1
+                  status: APPLIED
+                  introduction: 음료 제조와 고객 응대 경험이 있어요.
+                  submittedAt: '2026-10-05T01:00:00Z'
+                  withdrawnAt: null
+                  revision: 1
+                page: 0
+                size: 20
+                totalItems: 1
+                asOf: '2026-10-05T01:00:00Z'
+                counts:
+                  pending: 1
+                  confirmed: 0
+                  ended: 0
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=506-3929
 components:
   securitySchemes:
     SessionCookie:
@@ -13760,6 +14318,133 @@ components:
       - myApplicationId
       - canApply
       - cannotApplyReason
+    ApplicationCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        introduction:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: \S
+      required:
+      - introduction
+    JobApplication:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        job:
+          $ref: '#/components/schemas/JobPosting'
+        status:
+          type: string
+          enum:
+          - APPLIED
+          - REQUESTED
+          - CONFIRMED
+          - WITHDRAWN
+          - NOT_SELECTED
+          - COMPLETED
+        introduction:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: \S
+        submittedAt:
+          type: string
+          format: date-time
+        withdrawnAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revision:
+          type: integer
+          minimum: 1
+      required:
+      - id
+      - job
+      - status
+      - introduction
+      - submittedAt
+      - withdrawnAt
+      - revision
+      oneOf:
+      - properties:
+          status:
+            const: WITHDRAWN
+          withdrawnAt:
+            type: string
+            format: date-time
+      - properties:
+          status:
+            type: string
+            enum:
+            - APPLIED
+            - REQUESTED
+            - CONFIRMED
+            - NOT_SELECTED
+            - COMPLETED
+          withdrawnAt:
+            type: 'null'
+    ApplicationRevision:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+      required:
+      - expectedRevision
+    JobApplicationPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobApplication'
+          minItems: 0
+          maxItems: 100
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalItems:
+          type: integer
+          minimum: 0
+        asOf:
+          type: string
+          format: date-time
+        counts:
+          type: object
+          additionalProperties: false
+          properties:
+            pending:
+              type: integer
+              minimum: 0
+            confirmed:
+              type: integer
+              minimum: 0
+            ended:
+              type: integer
+              minimum: 0
+          required:
+          - pending
+          - confirmed
+          - ended
+      required:
+      - items
+      - page
+      - size
+      - totalItems
+      - asOf
+      - counts
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
