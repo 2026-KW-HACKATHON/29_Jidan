@@ -1,4 +1,4 @@
-import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
+import {act,cleanup,fireEvent,render,screen} from '@testing-library/react'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {JobRegistration} from './JobRegistration'
 import {emptyJobDraft,type JobDraft,type OwnerJob} from './model'
@@ -7,7 +7,23 @@ const job={id:'created',title:'오픈'} as OwnerJob
 beforeEach(()=>{Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:function(){this.setAttribute('open','')}});Object.defineProperty(HTMLDialogElement.prototype,'close',{configurable:true,value:function(){this.removeAttribute('open')}})})
 afterEach(()=>{cleanup();Reflect.deleteProperty(HTMLDialogElement.prototype,'showModal');Reflect.deleteProperty(HTMLDialogElement.prototype,'close')})
 it('단계 이동에도 입력을 유지하고 완료 콜백은 한 번만 호출한다',async()=>{
- const create=vi.fn().mockResolvedValue(job),onCreated=vi.fn();render(<JobRegistration initialDraft={draft} service={{create}} onBack={vi.fn()} onCreated={onCreated}/>);fireEvent.change(screen.getByLabelText('담당 업무명 *'),{target:{value:'변경한 제목'}});fireEvent.click(screen.getByText('다음'));fireEvent.click(screen.getByText('이전'));expect(screen.getByLabelText('담당 업무명 *')).toHaveValue('변경한 제목');fireEvent.click(screen.getByText('다음'));fireEvent.click(screen.getByText('다음'));fireEvent.click(screen.getByText('공고 등록하기'));await screen.findByText('공고를 등록했어요');fireEvent.click(screen.getByText('공고 보기'));await waitFor(()=>expect(onCreated).toHaveBeenCalledTimes(1));expect(create.mock.calls[0][0].title).toBe('변경한 제목')
+ const create=vi.fn().mockResolvedValue(job),onCreated=vi.fn()
+ render(<JobRegistration initialDraft={draft} service={{create}} onBack={vi.fn()} onCreated={onCreated}/>)
+ fireEvent.change(screen.getByLabelText('담당 업무명 *'),{target:{value:'변경한 제목'}})
+ fireEvent.click(screen.getByText('다음'))
+ fireEvent.click(screen.getByText('이전'))
+ expect(screen.getByLabelText('담당 업무명 *')).toHaveValue('변경한 제목')
+ fireEvent.click(screen.getByText('다음'))
+ fireEvent.click(screen.getByText('다음'))
+ await act(async()=>{fireEvent.click(screen.getByText('공고 등록하기'))})
+ expect(screen.getByRole('dialog',{name:'공고를 등록했어요'})).toBeVisible()
+ const view=screen.getByRole('button',{name:'공고 보기'})
+ // Modal.confirm은 await 이후 닫히므로 React의 비동기 처리를 완료한 뒤 검증한다.
+ await act(async()=>{fireEvent.click(view);fireEvent.click(view)})
+ expect(onCreated).toHaveBeenCalledExactlyOnceWith(job,'detail')
+ expect(screen.queryByRole('dialog',{name:'공고를 등록했어요'})).not.toBeInTheDocument()
+ expect(create).toHaveBeenCalledTimes(1)
+ expect(create.mock.calls[0][0].title).toBe('변경한 제목')
 })
 it('선택창에서 닫기를 누르면 변경을 취소한다',()=>{render(<JobRegistration initialDraft={draft} onBack={vi.fn()} onCreated={vi.fn()}/>);fireEvent.click(screen.getByText('주말 오픈'));fireEvent.click(screen.getByText('평일 마감'));fireEvent.click(screen.getByText('닫기'));expect(screen.getByText('주말 오픈')).toBeVisible()})
 it('실패 후 같은 입력으로 재시도한다',async()=>{const create=vi.fn().mockRejectedValueOnce(Error('offline')).mockResolvedValue(job);render(<JobRegistration initialStep={3} initialDraft={draft} service={{create}} onBack={vi.fn()} onCreated={vi.fn()}/>);fireEvent.click(screen.getByText('공고 등록하기'));await screen.findByText('다시 시도');fireEvent.click(screen.getByText('다시 시도'));await screen.findByText('공고를 등록했어요');expect(create).toHaveBeenCalledTimes(2);expect(create.mock.calls[1][0]).toEqual(draft)})
