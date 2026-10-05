@@ -81,7 +81,7 @@ tags:
 - name: 근무자 매장 선택
   description: 본인 매장 자료 접근과 매뉴얼 매장 선택
 - name: 근무 캘린더
-  description: 점주 일정 등록·관리와 본인 근무 월별 조회
+  description: 전체 매장 월별 확정 대타 조회; 정기 일정과 편집은 MVP 제외
 - name: 관심 매장
   description: 홈 관심 매장 건수와 본인 목록 관리
 - name: 홈 요약
@@ -11783,13 +11783,19 @@ paths:
       tags:
       - 근무 캘린더
       operationId: getMyWorkCalendarMonth
-      summary: 근무자의 정기·확정 대타 월별 캘린더
+      summary: 본인의 전체 매장 대타 월별 캘린더
       description: |-
         ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
 
-        조회 월의 서울 00:00부터 다음 월 00:00까지와 겹치는 [startAt,endAt) 일정을 startAt ASC,id ASC로 반환합니다. 월말 심야와 여러 날 일정은 원래 시작/종료를 유지합니다. 경계만 닿으면 제외합니다. 최대 1000개를 넘으면 잘린 결과 대신 422 CALENDAR_RANGE_TOO_LARGE입니다. 이벤트가 없으면 events=[]입니다. 정기 접근 기간/가입 가능한 시간/매뉴얼 근무조는 실제 근무 일정으로 자동 생성하지 않습니다. 본인 정기/확정 대타만 반환하고 매장 일반 일정·다른 근무자 이름은 노출하지 않습니다. 자료 접근 종료 후에도 본인의 과거/확정 근무 이력은 조회할 수 있으나 매뉴얼 접근을 복원하지 않습니다.
+        사용자 확정 MVP 범위: 전체 매장 월별 캘린더 조회만 제공합니다. 확정 대타 TEMPORARY_WORK만 반환하고 정기 근무·매장 일반 일정 및 일정 등록/수정/삭제/개별 상세 API는 제외합니다. 정기 접근 기간·가입 가능 시간·매뉴얼 근무조는 실제 일정으로 생성하지 않습니다.
 
-        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+        조회 월의 서울 00:00부터 다음 월 00:00까지와 겹치는 [startAt,endAt) 일정을 startAt ASC,id ASC로 반환합니다. 월말 심야 일정은 원래 시작/종료를 유지하며 경계만 닿으면 제외합니다. 최대 1000개를 넘으면 잘린 결과 대신 422 CALENDAR_RANGE_TOO_LARGE입니다. 빈 월은 200 events=[]입니다.
+
+        근무 요청 수락의 현재 확정 및 완료된 과거 대타 이력만 반환합니다. CONFIRMATION_WITHDRAWN 일정 연결은 제외하고 감사 이력은 저장합니다. 이미 CANCELLED/DECLINED/EXPIRED인 요청은 일정이 생성되지 않습니다. 조회 asOf로 시작·종료/철회 상태를 판정하며 배치 지연으로 취소 일정이 노출되지 않습니다.
+
+        본인이 확정된 모든 매장의 대타만 반환하고 다른 근무자 이름은 노출하지 않습니다. 자료 접근 종료 후에도 본인의 완료 이력은 조회할 수 있으나 매뉴얼 접근을 복원하지 않습니다. 현재 정기 자료 접근이 남아 있어도 철회한 대타 일정은 나오지 않습니다.
+
+        응답은 Cache-Control: no-store입니다.
       security:
       - SessionCookie: []
       parameters:
@@ -11826,123 +11832,14 @@ paths:
                 requestId: req_chapter_100
                 fieldErrors: []
         '422':
-          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          description: 연월 오류는 VALIDATION_ERROR, 해당 월 1000개 초과는 CALENDAR_RANGE_TOO_LARGE입니다.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
-                code: VALIDATION_ERROR
-                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: INTERNAL_ERROR
-                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '200':
-          description: 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkerCalendarMonth'
-              example:
-                month: 2026-10
-                timezone: Asia/Seoul
-                events:
-                - kind: TEMPORARY_WORK
-                  title: 주말 오픈 대타
-                  startAt: '2026-10-10T00:00:00Z'
-                  endAt: '2026-10-10T05:00:00Z'
-                  allDay: false
-                  workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                  id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                  store:
-                    id: 51c1c743-d377-4e7a-8449-94377eecfce0
-                    name: 컴포즈커피 광운대점
-                    industry: CAFE
-                    address: 서울특별시 노원구 광운로 20
-                    neighborhood: 월계1동
-                  workerName: 박지원
-                  jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                  revision: 1
-                  editable: false
-                asOf: '2026-10-05T01:00:00Z'
-      externalDocs:
-        description: 기준 Figma 화면
-        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=223-5461
-  /api/stores/{storeId}/calendar/events:
-    get:
-      tags:
-      - 근무 캘린더
-      operationId: getStoreCalendarMonth
-      summary: 점주 매장 월별 캘린더
-      description: |-
-        ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
-
-        조회 월의 서울 00:00부터 다음 월 00:00까지와 겹치는 [startAt,endAt) 일정을 startAt ASC,id ASC로 반환합니다. 월말 심야와 여러 날 일정은 원래 시작/종료를 유지합니다. 경계만 닿으면 제외합니다. 최대 1000개를 넘으면 잘린 결과 대신 422 CALENDAR_RANGE_TOO_LARGE입니다. 이벤트가 없으면 events=[]입니다. 정기 접근 기간/가입 가능한 시간/매뉴얼 근무조는 실제 근무 일정으로 자동 생성하지 않습니다. 점주는 소유 매장의 일반 일정·정기 근무·확정 대타를 조회합니다.
-
-        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
-      security:
-      - SessionCookie: []
-      parameters:
-      - name: storeId
-        in: path
-        required: true
-        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
-        schema:
-          type: string
-          format: uuid
-      - name: month
-        in: query
-        required: true
-        description: 서울 기준 조회 연월, 필수
-        schema:
-          type: string
-          pattern: ^\d{4}-(0[1-9]|1[0-2])$
-      responses:
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: FORBIDDEN
-                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '404':
-          description: 리소스를 찾을 수 없습니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: RESOURCE_NOT_FOUND
-                message: 리소스를 찾을 수 없습니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '422':
-          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: VALIDATION_ERROR
-                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                code: CALENDAR_RANGE_TOO_LARGE
+                message: 연월 오류는 VALIDATION_ERROR, 해당 월 1000개 초과는 CALENDAR_RANGE_TOO_LARGE입니다.
                 requestId: req_chapter_100
                 fieldErrors: []
         '429':
@@ -11964,611 +11861,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CalendarMonth'
-              example:
-                month: 2026-10
-                timezone: Asia/Seoul
-                events:
-                - kind: TEMPORARY_WORK
-                  title: 주말 오픈 대타
-                  startAt: '2026-10-10T00:00:00Z'
-                  endAt: '2026-10-10T05:00:00Z'
-                  allDay: false
-                  workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                  id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                  store:
-                    id: 51c1c743-d377-4e7a-8449-94377eecfce0
-                    name: 컴포즈커피 광운대점
-                    industry: CAFE
-                    address: 서울특별시 노원구 광운로 20
-                    neighborhood: 월계1동
-                  workerName: 박지원
-                  jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                  revision: 1
-                  editable: false
-                asOf: '2026-10-05T01:00:00Z'
-      externalDocs:
-        description: 기준 Figma 화면
-        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5168
-    post:
-      tags:
-      - 근무 캘린더
-      operationId: createStoreCalendarEvent
-      summary: 점주 일반 일정·정기 근무 등록
-      description: |-
-        ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
-
-        점주의 일정 등록 버튼에 대한 입력 상세 화면은 없으므로 입력 필드는 보완 설계입니다. STORE_EVENT는 점주 전용 일반 일정(workerId=null), REGULAR_WORK는 현재 유효 정기 접근이 있는 본인 매장 근무자를 선택합니다. 양의 구간만 허용하며 startAt<endAt, allDay=true이면 서울 자정 경계를 요구합니다. 정기 근무는 하루 미만이며 0분/24시간 이상/종일 근무는 422; 일반 일정은 최대 31일입니다. 신규 정기 일정 시작은 과거가 아니고 선택 근무자의 현재 정기 접근 시작 이상·유한 종료 이하입니다. 같은 근무자의 기존 정기·대타와 겹치면 409 SCHEDULE_OVERLAP, 인접 구간은 허용합니다. 일반 일정은 근무자에게 공개하지 않습니다. 확정 대타는 근무 요청 수락 시 자동 생성하며 이 API로 생성하지 않습니다.
-
-        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
-
-        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
-      security:
-      - SessionCookie: []
-        CsrfToken: []
-      parameters:
-      - name: storeId
-        in: path
-        required: true
-        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
-        schema:
-          type: string
-          format: uuid
-      - name: Idempotency-Key
-        in: header
-        required: true
-        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
-        schema:
-          type: string
-          format: uuid
-      responses:
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: FORBIDDEN
-                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '404':
-          description: 리소스를 찾을 수 없습니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: RESOURCE_NOT_FOUND
-                message: 리소스를 찾을 수 없습니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '422':
-          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: VALIDATION_ERROR
-                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: INTERNAL_ERROR
-                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '409':
-          description: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: STATE_CONFLICT
-                message: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '201':
-          description: 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CalendarEvent'
-              example:
-                kind: REGULAR_WORK
-                title: 정기 오픈 근무
-                startAt: '2026-10-10T00:00:00Z'
-                endAt: '2026-10-10T05:00:00Z'
-                allDay: false
-                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
-                store:
-                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
-                  name: 컴포즈커피 광운대점
-                  industry: CAFE
-                  address: 서울특별시 노원구 광운로 20
-                  neighborhood: 월계1동
-                workerName: 박지원
-                jobId: null
-                revision: 1
-                editable: true
-      externalDocs:
-        description: 기준 Figma 화면
-        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5168
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CalendarEventInput'
-            example:
-              kind: REGULAR_WORK
-              title: 정기 오픈 근무
-              startAt: '2026-10-10T00:00:00Z'
-              endAt: '2026-10-10T05:00:00Z'
-              allDay: false
-              workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-  /api/stores/{storeId}/calendar/events/{eventId}:
-    get:
-      tags:
-      - 근무 캘린더
-      operationId: getStoreCalendarEvent
-      summary: 점주 캘린더 일정 상세
-      description: |-
-        ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
-
-        알림/캘린더의 소유 매장 일정만 조회합니다. 일반 일정·정기 근무·자동 대타의 구분과 수정 가능 여부를 반환합니다.
-
-        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
-      security:
-      - SessionCookie: []
-      parameters:
-      - name: storeId
-        in: path
-        required: true
-        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
-        schema:
-          type: string
-          format: uuid
-      - name: eventId
-        in: path
-        required: true
-        description: 'eventId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
-        schema:
-          type: string
-          format: uuid
-      responses:
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: FORBIDDEN
-                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '404':
-          description: 리소스를 찾을 수 없습니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: RESOURCE_NOT_FOUND
-                message: 리소스를 찾을 수 없습니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '422':
-          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: VALIDATION_ERROR
-                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: INTERNAL_ERROR
-                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '200':
-          description: 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CalendarEvent'
-              example:
-                kind: REGULAR_WORK
-                title: 정기 오픈 근무
-                startAt: '2026-10-10T00:00:00Z'
-                endAt: '2026-10-10T05:00:00Z'
-                allDay: false
-                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
-                store:
-                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
-                  name: 컴포즈커피 광운대점
-                  industry: CAFE
-                  address: 서울특별시 노원구 광운로 20
-                  neighborhood: 월계1동
-                workerName: 박지원
-                jobId: null
-                revision: 1
-                editable: true
-      externalDocs:
-        description: 기준 Figma 화면
-        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5168
-    put:
-      tags:
-      - 근무 캘린더
-      operationId: updateStoreCalendarEvent
-      summary: 점주 등록 일정 수정
-      description: |-
-        ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
-
-        점주의 일정 등록 버튼에 대한 입력 상세 화면은 없으므로 입력 필드는 보완 설계입니다. STORE_EVENT는 점주 전용 일반 일정(workerId=null), REGULAR_WORK는 현재 유효 정기 접근이 있는 본인 매장 근무자를 선택합니다. 양의 구간만 허용하며 startAt<endAt, allDay=true이면 서울 자정 경계를 요구합니다. 정기 근무는 하루 미만이며 0분/24시간 이상/종일 근무는 422; 일반 일정은 최대 31일입니다. 신규 정기 일정 시작은 과거가 아니고 선택 근무자의 현재 정기 접근 시작 이상·유한 종료 이하입니다. 같은 근무자의 기존 정기·대타와 겹치면 409 SCHEDULE_OVERLAP, 인접 구간은 허용합니다. 일반 일정은 근무자에게 공개하지 않습니다. expectedRevision을 확인하고 전체 입력을 교체합니다. 시작 전 일반/정기만 수정 가능하며 kind/workerId는 변경하지 않습니다. 자동 TEMPORARY_WORK/이미 시작한 근무 수정은 409 EVENT_NOT_EDITABLE입니다. 근무자 캘린더에는 변경된 일정만 보입니다.
-
-        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
-
-        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
-      security:
-      - SessionCookie: []
-        CsrfToken: []
-      parameters:
-      - name: storeId
-        in: path
-        required: true
-        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
-        schema:
-          type: string
-          format: uuid
-      - name: eventId
-        in: path
-        required: true
-        description: 'eventId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
-        schema:
-          type: string
-          format: uuid
-      - name: Idempotency-Key
-        in: header
-        required: true
-        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
-        schema:
-          type: string
-          format: uuid
-      responses:
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: FORBIDDEN
-                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '404':
-          description: 리소스를 찾을 수 없습니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: RESOURCE_NOT_FOUND
-                message: 리소스를 찾을 수 없습니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '422':
-          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: VALIDATION_ERROR
-                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: INTERNAL_ERROR
-                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '409':
-          description: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: STATE_CONFLICT
-                message: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '200':
-          description: 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CalendarEvent'
-              example:
-                kind: REGULAR_WORK
-                title: 정기 오픈 근무
-                startAt: '2026-10-10T00:00:00Z'
-                endAt: '2026-10-10T05:00:00Z'
-                allDay: false
-                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
-                store:
-                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
-                  name: 컴포즈커피 광운대점
-                  industry: CAFE
-                  address: 서울특별시 노원구 광운로 20
-                  neighborhood: 월계1동
-                workerName: 박지원
-                jobId: null
-                revision: 2
-                editable: true
-      externalDocs:
-        description: 기준 Figma 화면
-        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5168
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CalendarEventEdit'
-            example:
-              kind: REGULAR_WORK
-              title: 정기 오픈 근무
-              startAt: '2026-10-10T00:00:00Z'
-              endAt: '2026-10-10T05:00:00Z'
-              allDay: false
-              workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-              expectedRevision: 1
-    delete:
-      tags:
-      - 근무 캘린더
-      operationId: deleteStoreCalendarEvent
-      summary: 점주 등록 일정 삭제
-      description: |-
-        ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
-
-        expectedRevision query를 확인해 점주 등록 일반/시작 전 정기 일정만 삭제합니다. 자동 대타·이미 시작한 근무는 409 EVENT_NOT_EDITABLE입니다. 정기 일정 삭제는 자료 접근을 종료하지 않습니다. 자동 대타 삭제를 통해 확정 근무를 취소하지 못합니다. 동일 key 재시도는 204이며 다른 key로 없는 일정은 404입니다.
-
-        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
-
-        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
-      security:
-      - SessionCookie: []
-        CsrfToken: []
-      parameters:
-      - name: storeId
-        in: path
-        required: true
-        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
-        schema:
-          type: string
-          format: uuid
-      - name: eventId
-        in: path
-        required: true
-        description: 'eventId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
-        schema:
-          type: string
-          format: uuid
-      - name: expectedRevision
-        in: query
-        required: true
-        description: 조회한 일정 revision
-        schema:
-          type: integer
-          minimum: 1
-      - name: Idempotency-Key
-        in: header
-        required: true
-        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
-        schema:
-          type: string
-          format: uuid
-      responses:
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: FORBIDDEN
-                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '404':
-          description: 리소스를 찾을 수 없습니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: RESOURCE_NOT_FOUND
-                message: 리소스를 찾을 수 없습니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '422':
-          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: VALIDATION_ERROR
-                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: INTERNAL_ERROR
-                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '409':
-          description: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: STATE_CONFLICT
-                message: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '204':
-          description: 처리 완료. 본문 없음.
-      externalDocs:
-        description: 기준 Figma 화면
-        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5168
-  /api/users/me/calendar/events/{eventId}:
-    get:
-      tags:
-      - 근무 캘린더
-      operationId: getMyCalendarEvent
-      summary: 본인 근무 일정 상세와 알림 연결
-      description: |-
-        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
-
-        본인의 정기/확정 대타만 조회합니다. 매장 일반 일정/타인 일정은 404이며 종료된 자신의 일정 조회는 자료 접근 권한을 부여하지 않습니다.
-
-        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
-      security:
-      - SessionCookie: []
-      parameters:
-      - name: eventId
-        in: path
-        required: true
-        description: 'eventId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
-        schema:
-          type: string
-          format: uuid
-      responses:
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: FORBIDDEN
-                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '404':
-          description: 리소스를 찾을 수 없습니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: RESOURCE_NOT_FOUND
-                message: 리소스를 찾을 수 없습니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '422':
-          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: VALIDATION_ERROR
-                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: INTERNAL_ERROR
-                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
-                requestId: req_chapter_100
-                fieldErrors: []
-        '200':
-          description: 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkerCalendarEvent'
-              example:
-                kind: TEMPORARY_WORK
-                title: 주말 오픈 대타
-                startAt: '2026-10-10T00:00:00Z'
-                endAt: '2026-10-10T05:00:00Z'
-                allDay: false
-                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                store:
-                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
-                  name: 컴포즈커피 광운대점
-                  industry: CAFE
-                  address: 서울특별시 노원구 광운로 20
-                  neighborhood: 월계1동
-                workerName: 박지원
-                jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                revision: 1
-                editable: false
+              examples:
+                monthBoundary:
+                  value:
+                    month: 2026-10
+                    timezone: Asia/Seoul
+                    events:
+                    - kind: TEMPORARY_WORK
+                      title: 월말 심야 대타
+                      startAt: '2026-09-30T14:00:00Z'
+                      endAt: '2026-09-30T17:00:00Z'
+                      allDay: false
+                      workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                      id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      workerName: 박지원
+                      jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      revision: 1
+                      editable: false
+                    asOf: '2026-10-01T01:00:00Z'
+                afterConfirmationWithdrawal:
+                  value:
+                    month: 2026-10
+                    timezone: Asia/Seoul
+                    events: []
+                    asOf: '2026-10-05T01:30:00Z'
+                completedHistory:
+                  value:
+                    month: 2026-10
+                    timezone: Asia/Seoul
+                    events:
+                    - kind: TEMPORARY_WORK
+                      title: 주말 오픈 대타
+                      startAt: '2026-10-10T00:00:00Z'
+                      endAt: '2026-10-10T05:00:00Z'
+                      allDay: false
+                      workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                      id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      workerName: 박지원
+                      jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      revision: 1
+                      editable: false
+                    asOf: '2026-10-10T06:00:00Z'
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=223-5461
@@ -14900,6 +14245,152 @@ paths:
               $ref: '#/components/schemas/WorkRequestWithdrawal'
             example:
               expectedRevision: 2
+  /api/owners/me/calendar/events:
+    get:
+      tags:
+      - 근무 캘린더
+      operationId: getOwnerWorkCalendarMonth
+      summary: 점주의 전체 소유 매장 대타 월별 캘린더
+      description: |-
+        ACTIVE OWNER 세션이 필요합니다. 현재 소유한 APPROVED 매장 전체만 조회합니다. 승인 대기 매장은 제외하고 대상이 없으면 200 events=[]입니다. storeId 필터가 타인/없는 매장이면 404 RESOURCE_NOT_FOUND, 본인 승인 대기 매장이면 403 STORE_APPROVAL_REQUIRED입니다.
+
+        사용자 확정 MVP 범위: 전체 매장 월별 캘린더 조회만 제공합니다. 확정 대타 TEMPORARY_WORK만 반환하고 정기 근무·매장 일반 일정 및 일정 등록/수정/삭제/개별 상세 API는 제외합니다. 정기 접근 기간·가입 가능 시간·매뉴얼 근무조는 실제 일정으로 생성하지 않습니다.
+
+        조회 월의 서울 00:00부터 다음 월 00:00까지와 겹치는 [startAt,endAt) 일정을 startAt ASC,id ASC로 반환합니다. 월말 심야 일정은 원래 시작/종료를 유지하며 경계만 닿으면 제외합니다. 최대 1000개를 넘으면 잘린 결과 대신 422 CALENDAR_RANGE_TOO_LARGE입니다. 빈 월은 200 events=[]입니다.
+
+        근무 요청 수락의 현재 확정 및 완료된 과거 대타 이력만 반환합니다. CONFIRMATION_WITHDRAWN 일정 연결은 제외하고 감사 이력은 저장합니다. 이미 CANCELLED/DECLINED/EXPIRED인 요청은 일정이 생성되지 않습니다. 조회 asOf로 시작·종료/철회 상태를 판정하며 배치 지연으로 취소 일정이 노출되지 않습니다.
+
+        storeId 생략 시 모든 소유 승인 매장을 합쳐 반환합니다. 점주 홈에서 선택한 매장만 볼 때는 선택적 storeId 필터를 사용합니다. 타인의 매장/근무자 정보는 포함하지 않습니다. 현재 소유권·매장 승인 상태를 매 조회 재검증합니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: month
+        in: query
+        required: true
+        description: 서울 기준 조회 연월, 필수
+        schema:
+          type: string
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+      - name: storeId
+        in: query
+        required: false
+        description: 선택적 소유 매장 필터; 생략=전체 소유 승인 매장
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 연월 오류는 VALIDATION_ERROR, 해당 월 1000개 초과는 CALENDAR_RANGE_TOO_LARGE입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: CALENDAR_RANGE_TOO_LARGE
+                message: 연월 오류는 VALIDATION_ERROR, 해당 월 1000개 초과는 CALENDAR_RANGE_TOO_LARGE입니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarMonth'
+              examples:
+                monthBoundary:
+                  value:
+                    month: 2026-10
+                    timezone: Asia/Seoul
+                    events:
+                    - kind: TEMPORARY_WORK
+                      title: 월말 심야 대타
+                      startAt: '2026-09-30T14:00:00Z'
+                      endAt: '2026-09-30T17:00:00Z'
+                      allDay: false
+                      workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                      id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      workerName: 박지원
+                      jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      revision: 1
+                      editable: false
+                    asOf: '2026-10-01T01:00:00Z'
+                afterConfirmationWithdrawal:
+                  value:
+                    month: 2026-10
+                    timezone: Asia/Seoul
+                    events: []
+                    asOf: '2026-10-05T01:30:00Z'
+                completedHistory:
+                  value:
+                    month: 2026-10
+                    timezone: Asia/Seoul
+                    events:
+                    - kind: TEMPORARY_WORK
+                      title: 주말 오픈 대타
+                      startAt: '2026-10-10T00:00:00Z'
+                      endAt: '2026-10-10T05:00:00Z'
+                      allDay: false
+                      workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                      id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      workerName: 박지원
+                      jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      revision: 1
+                      editable: false
+                    asOf: '2026-10-10T06:00:00Z'
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=192-5168
 components:
   securitySchemes:
     SessionCookie:
@@ -20285,10 +19776,7 @@ components:
           $ref: '#/components/schemas/JobStoreCard'
         kind:
           type: string
-          enum:
-          - STORE_EVENT
-          - REGULAR_WORK
-          - TEMPORARY_WORK
+          const: TEMPORARY_WORK
         title:
           type: string
           minLength: 1
@@ -20302,26 +19790,21 @@ components:
           format: date-time
         allDay:
           type: boolean
+          const: false
         workerId:
-          type:
-          - string
-          - 'null'
+          type: string
           format: uuid
         workerName:
-          oneOf:
-          - $ref: '#/components/schemas/Name'
-          - type: 'null'
+          $ref: '#/components/schemas/Name'
         jobId:
-          type:
-          - string
-          - 'null'
+          type: string
           format: uuid
         revision:
           type: integer
           minimum: 1
         editable:
           type: boolean
-          description: 이벤트 원천에 따른 점주의 수정 가능 여부입니다. WORKER에게는 변경 API 권한이 없습니다.
+          const: false
       required:
       - id
       - store
@@ -20335,181 +19818,7 @@ components:
       - jobId
       - revision
       - editable
-      oneOf:
-      - properties:
-          kind:
-            const: STORE_EVENT
-          workerId:
-            type: 'null'
-          workerName:
-            type: 'null'
-          jobId:
-            type: 'null'
-          editable:
-            const: true
-        required:
-        - kind
-        - workerId
-        - workerName
-        - jobId
-        - editable
-      - properties:
-          kind:
-            const: REGULAR_WORK
-          workerId:
-            type: string
-            format: uuid
-          workerName:
-            $ref: '#/components/schemas/Name'
-          jobId:
-            type: 'null'
-          editable:
-            const: true
-          allDay:
-            const: false
-        required:
-        - kind
-        - workerId
-        - workerName
-        - jobId
-        - editable
-        - allDay
-      - properties:
-          kind:
-            const: TEMPORARY_WORK
-          workerId:
-            type: string
-            format: uuid
-          workerName:
-            $ref: '#/components/schemas/Name'
-          jobId:
-            type: string
-            format: uuid
-          editable:
-            const: false
-          allDay:
-            const: false
-        required:
-        - kind
-        - workerId
-        - workerName
-        - jobId
-        - editable
-        - allDay
-    CalendarEventInput:
-      type: object
-      additionalProperties: false
-      properties:
-        kind:
-          type: string
-          enum:
-          - STORE_EVENT
-          - REGULAR_WORK
-        title:
-          type: string
-          minLength: 1
-          maxLength: 100
-          pattern: \S
-        startAt:
-          type: string
-          format: date-time
-        endAt:
-          type: string
-          format: date-time
-        allDay:
-          type: boolean
-        workerId:
-          type:
-          - string
-          - 'null'
-          format: uuid
-      required:
-      - kind
-      - title
-      - startAt
-      - endAt
-      - allDay
-      - workerId
-      oneOf:
-      - properties:
-          kind:
-            const: STORE_EVENT
-          workerId:
-            type: 'null'
-        required:
-        - kind
-        - workerId
-      - properties:
-          kind:
-            const: REGULAR_WORK
-          workerId:
-            type: string
-            format: uuid
-          allDay:
-            const: false
-        required:
-        - kind
-        - workerId
-        - allDay
-    CalendarEventEdit:
-      type: object
-      additionalProperties: false
-      properties:
-        kind:
-          type: string
-          enum:
-          - STORE_EVENT
-          - REGULAR_WORK
-        title:
-          type: string
-          minLength: 1
-          maxLength: 100
-          pattern: \S
-        startAt:
-          type: string
-          format: date-time
-        endAt:
-          type: string
-          format: date-time
-        allDay:
-          type: boolean
-        workerId:
-          type:
-          - string
-          - 'null'
-          format: uuid
-        expectedRevision:
-          type: integer
-          minimum: 1
-      required:
-      - kind
-      - title
-      - startAt
-      - endAt
-      - allDay
-      - workerId
-      - expectedRevision
-      oneOf:
-      - properties:
-          kind:
-            const: STORE_EVENT
-          workerId:
-            type: 'null'
-        required:
-        - kind
-        - workerId
-      - properties:
-          kind:
-            const: REGULAR_WORK
-          workerId:
-            type: string
-            format: uuid
-          allDay:
-            const: false
-        required:
-        - kind
-        - workerId
-        - allDay
+      description: MVP는 확정된 대타 근무만 반환합니다. 정기/매장 일반 일정과 직접 생성·수정·삭제는 제외합니다. 확정 철회된 연결은 제외하고 완료된 과거 대타 이력은 유지합니다.
     FavoriteStorePage:
       type: object
       additionalProperties: false
@@ -21045,40 +20354,6 @@ components:
       - conversation
       - turns
       - nextBeforeSequence
-    WorkerCalendarEvent:
-      $ref: '#/components/schemas/CalendarEvent'
-      properties:
-        kind:
-          type: string
-          enum:
-          - REGULAR_WORK
-          - TEMPORARY_WORK
-      required:
-      - kind
-    WorkerCalendarMonth:
-      type: object
-      additionalProperties: false
-      properties:
-        month:
-          type: string
-          pattern: ^\d{4}-(0[1-9]|1[0-2])$
-        timezone:
-          type: string
-          const: Asia/Seoul
-        events:
-          type: array
-          items:
-            $ref: '#/components/schemas/WorkerCalendarEvent'
-          minItems: 0
-          maxItems: 1000
-        asOf:
-          type: string
-          format: date-time
-      required:
-      - month
-      - timezone
-      - events
-      - asOf
     WorkRequestWithdrawal:
       type: object
       additionalProperties: false
