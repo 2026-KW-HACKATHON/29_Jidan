@@ -25,9 +25,15 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
   const [revision, setRevision] = useState(0)
   const [registered, setRegistered] = useState(false)
   const request = useRef<AbortController | null>(null)
+  const commandRequest = useRef<AbortController | null>(null)
+  const live = useRef(false)
   const locked = useRef(false)
   const hint = new URLSearchParams(search).get('error')
   const callbackError = hint ? errorMessage(hint === 'signup_expired' ? 'SESSION_EXPIRED' : hint) : ''
+  useEffect(() => {
+    live.current = true
+    return () => { live.current = false; commandRequest.current?.abort() }
+  }, [])
   useEffect(() => {
     const controller = new AbortController()
     request.current = controller
@@ -40,7 +46,7 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
     }).catch(error => {
       if (!controller.signal.aborted || error instanceof DeadlineExceeded) { setState({ kind: 'unavailable' }); setReadError(failureMessage(error)) }
     }).finally(() => { if (request.current === controller && (!controller.signal.aborted || controller.signal.reason instanceof DeadlineExceeded)) setChecking(false) })
-    return () => { controller.abort(); request.current?.abort() }
+    return () => controller.abort()
   }, [service, path, navigate, revision])
   const expiresAt = state.kind === 'registration' ? state.context?.expiresAt : state.kind === 'authenticated' ? state.session.expiresAt : undefined
   useEffect(() => {
@@ -55,12 +61,12 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
     if (locked.current) return
     if (kind === 'start' && state.kind === 'unavailable') { setMessage(readError || errorMessage('UNKNOWN_ERROR')); return }
     locked.current = true; setBusy(true)
-    const controller = new AbortController(); request.current = controller
+    const controller = new AbortController(); commandRequest.current = controller
     try {
       await withDeadline(signal => kind === 'start' ? service.startGoogle(signal) : service.logout!(signal), controller)
       if (!controller.signal.aborted && kind === 'logout') { setState({ kind: 'guest' }); navigate('/login', true) }
     } catch (error) { if (!controller.signal.aborted || error instanceof DeadlineExceeded) setMessage(failureMessage(error)) }
-    finally { if (request.current === controller && (!controller.signal.aborted || controller.signal.reason instanceof DeadlineExceeded)) { locked.current = false; setBusy(false) } }
+    finally { locked.current = false; if (live.current) setBusy(false) }
   }
   const modal = <Modal open={!!message} state="information" title="요청을 완료하지 못했어요" description={message} onClose={() => setMessage('')} />
   if (!checking && state.kind === 'authenticated' && path === '/home') return <>{renderHome(state.session)}{service.logout && <Button intent="secondary" busy={busy} onClick={() => void command('logout')}>로그아웃</Button>}{modal}</>

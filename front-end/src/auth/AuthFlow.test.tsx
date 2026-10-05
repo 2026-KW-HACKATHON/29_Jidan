@@ -90,3 +90,19 @@ it('가입 유형 화면의 로그아웃 실패는 안내 후 재시도가 가�
  render(<AuthFlow path="/signup" service={{read:async()=>({kind:'registration'}),startGoogle:vi.fn(),logout}} navigate={navigate} renderHome={()=>null} renderRegistration={()=>null}/> )
  const back=await screen.findByRole('button',{name:'뒤로 가기'});fireEvent.click(back);expect(await screen.findByRole('dialog')).toBeVisible();expect(navigate).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'확인'}));await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());fireEvent.click(back);await waitFor(()=>expect(navigate).toHaveBeenCalledWith('/login',true))
 })
+
+it('로그아웃 중 세션 재조회는 logout 요청을 취소하지 않고 실패 후 잠금을 복구한다',async()=>{
+ vi.useFakeTimers();const navigate=vi.fn();let reject!:(reason:unknown)=>void;let logoutSignal!:AbortSignal
+ const read=vi.fn().mockResolvedValueOnce({kind:'authenticated',session:{displayName:'김',accountType:'WORKER',expiresAt:new Date(Date.now()+400).toISOString()}}).mockResolvedValue({kind:'authenticated',session:{displayName:'김',accountType:'WORKER',expiresAt:new Date(Date.now()+86400000).toISOString()}})
+ const logout=vi.fn().mockImplementationOnce((signal:AbortSignal)=>{logoutSignal=signal;return new Promise<void>((_,r)=>{reject=r})}).mockResolvedValueOnce(undefined)
+ render(<AuthFlow path="/home" navigate={navigate} service={{read,startGoogle:vi.fn(),logout}} renderHome={()=><p>홈</p>} renderRegistration={()=>null}/> )
+ await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'로그아웃'}));await act(async()=>vi.advanceTimersByTimeAsync(500))
+ expect(read).toHaveBeenCalledTimes(2);expect(logoutSignal.aborted).toBe(false);expect(screen.getByRole('button',{name:'로그아웃'})).toBeDisabled()
+ await act(async()=>reject(new Error('offline')));expect(screen.getByRole('button',{name:'로그아웃'})).toBeEnabled();expect(screen.getByRole('dialog')).toBeVisible()
+ fireEvent.click(screen.getByRole('button',{name:'확인'}));await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'로그아웃'}));await act(async()=>{});expect(logout).toHaveBeenCalledTimes(2);expect(navigate).toHaveBeenCalledWith('/login',true)
+})
+it('해제 시 로그아웃 요청도 취소하고 늦은 성공으로 이동하지 않는다',async()=>{
+ let finish!:()=>void;let signal!:AbortSignal;const navigate=vi.fn()
+ const view=render(<AuthFlow path="/home" navigate={navigate} service={{read:async()=>({kind:'authenticated',session:{displayName:'김',accountType:'WORKER'}}),startGoogle:vi.fn(),logout:s=>{signal=s;return new Promise<void>(r=>{finish=r})}}} renderHome={()=><p>홈</p>} renderRegistration={()=>null}/> )
+ fireEvent.click(await screen.findByRole('button',{name:'로그아웃'}));view.unmount();expect(signal.aborted).toBe(true);await act(async()=>finish());expect(navigate).not.toHaveBeenCalled()
+})
