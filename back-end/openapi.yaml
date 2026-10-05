@@ -10259,7 +10259,7 @@ paths:
       description: |-
         ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
 
-        본인 요청만 조회합니다. 만료·취소·수락·거절 후에도 상태 확인이 가능하며 상세 근무 조건은 jobId로 공고 상세에서 조회합니다. deadline과 현재 revision을 내려줍니다.
+        본인 요청만 조회합니다. 만료·취소·수락·거절 후에도 상태 확인이 가능하며 상세 근무 조건은 jobId로 공고 상세에서 조회합니다. expiresAt과 현재 revision을 내려줍니다.
 
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
 
@@ -10838,7 +10838,7 @@ paths:
 
         미래 시작·RECRUITING·미확정 공고의 APPLIED 지원자에게 요청합니다. 단일 공고에 유효 PENDING 요청은 최대 1개입니다. pending 중 다른 요청은 409 WORK_REQUEST_PENDING입니다. 요청 기한은 min(요청+1시간, 근무 시작)이며 expiresAt과 같은 시각부터 수락 불가입니다. 1시간 미응답은 EXPIRED로 처리하고 지원을 APPLIED로 되돌려 다른 지원자를 요청할 수 있습니다.
 
-        1시간 이후 요청 만료는 Figma 미응답 알림에 기반한 설계 제안입니다. 만료 작업과 조회/응답 시각 검증을 병행하며 배치 실행 지연으로 기한이 늘어나지 않습니다. 요청을 같은 지원자에게 다시 보낼 수 있으나 이전 요청 ID는 계속 만료 상태입니다. 공고/지원/요청 상태·revision·알림 outbox를 같은 트랜잭션으로 저장합니다.
+        요청 후 1시간 또는 근무 시작 중 먼저 오는 시각의 만료는 사용자 확정 정책입니다. 만료 작업과 조회/응답 시각 검증을 병행하며 배치 실행 지연으로 기한이 늘어나지 않습니다. 요청을 같은 지원자에게 다시 보낼 수 있으나 이전 요청 ID는 계속 만료 상태입니다. 공고/지원/요청 상태·revision·알림 outbox를 같은 트랜잭션으로 저장합니다.
 
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
 
@@ -10943,19 +10943,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkRequest'
-              example:
-                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
-                jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                workerName: 박지원
-                status: PENDING
-                requestedAt: '2026-10-05T01:00:00Z'
-                expiresAt: '2026-10-05T02:00:00Z'
-                respondedAt: null
-                endedAt: null
-                revision: 1
-                accessGrant: null
+              examples:
+                oneHourDeadline:
+                  value:
+                    id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                    jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                    applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    workerName: 박지원
+                    status: PENDING
+                    requestedAt: '2026-10-05T01:00:00Z'
+                    expiresAt: '2026-10-05T02:00:00Z'
+                    respondedAt: null
+                    endedAt: null
+                    revision: 1
+                    accessGrant: null
+                nearWorkStart:
+                  value:
+                    id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                    jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                    applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    workerName: 박지원
+                    status: PENDING
+                    requestedAt: '2026-10-09T23:30:00Z'
+                    expiresAt: '2026-10-10T00:00:00Z'
+                    respondedAt: null
+                    endedAt: null
+                    revision: 1
+                    accessGrant: null
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=1169-3043

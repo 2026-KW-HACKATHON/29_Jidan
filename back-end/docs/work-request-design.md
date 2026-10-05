@@ -23,3 +23,5 @@ flowchart TD
 수락으로 NOT_SELECTED가 된 지원은 원인 requestId·직전 상태·ID를 기록하여 확정 철회 때 그 변경만 되돌립니다. WITHDRAWN이나 개별 종료된 지원을 복구하지 않습니다. 기존 요청을 재활성화하지 않고 새 요청 ID/key를 발급합니다.
 
 확정 철회와 모집 마감은 별도 트랜잭션입니다. 시작 전 확정이 남아 있으면 마감은 CONFIRMATION_WITHDRAWAL_REQUIRED, 유효 대기 요청은 WORK_REQUEST_WITHDRAWAL_REQUIRED입니다. 근무 진행 중에는 JOB_IN_PROGRESS입니다. 완료 후 마감은 과거 확정/일정 이력을 보존합니다. 각 변경은 공고 잠금과 revision으로 경합을 직렬화하고 접근·일정·알림 outbox까지 원자 처리하는 구현 계약입니다.
+
+요청 생성 201 예시는 정상 1시간 기한과 시작 30분 전 요청(근무 시작 시 만료)을 구분합니다. 요청 상세의 실제 필드명은 expiresAt입니다.
