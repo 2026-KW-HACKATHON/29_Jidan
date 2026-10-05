@@ -54,3 +54,25 @@ test('명세 누락/잘못된 YAML은 경로와 오류 상세를 노출하지 �
     assert.doesNotMatch(await response.text(), /jidan-docs-|ENOENT|YAMLParseError/);
   }
 });
+
+test('Swagger 자산과 명세는 루트·하위 문서 경로에서 상대 주소로 연결', async t => {
+  const base = await fixture(t);
+  const html = await (await fetch(base + '/')).text();
+  const init = await (await fetch(base + '/init.js')).text();
+  const links = [...html.matchAll(/(?:href|src)="([^"]+)"/g)].map(x => x[1]);
+  assert.equal(links.length, 4);
+  const spec = init.match(/url:'([^']+)'/)[1];
+  for (const directory of ['/', '/api/swagger/']) {
+    const page = new URL(directory, base);
+    for (const link of [...links, spec]) {
+      assert.ok(link.startsWith('./'));
+      const resolved = new URL(link, page);
+      assert.equal(resolved.origin, page.origin);
+      assert.ok(resolved.pathname.startsWith(directory));
+    }
+  }
+  for (const link of links) assert.equal((await fetch(new URL(link, base))).status, 200);
+  assert.equal((await fetch(new URL(spec, base))).status, 200);
+  assert.match(init, /validatorUrl:null/);
+  assert.match(init, /persistAuthorization:false/);
+});
