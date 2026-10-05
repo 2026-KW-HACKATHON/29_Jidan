@@ -63,8 +63,12 @@ jobs:
         run: |
           set -euo pipefail
           image="ghcr.io/2026-kw-hackathon/29_jidan-${COMPONENT}:${GITHUB_SHA}"
-          docker buildx build --builder jidan-ci --output=type=cacheonly --pull --target test -f "deploy/$COMPONENT/Dockerfile" "$SOURCE"
-          docker buildx build --builder jidan-ci --load --target runtime -f "deploy/$COMPONENT/Dockerfile" -t "$image" "$SOURCE"
+          build_args=()
+          if [[ "$COMPONENT" == backend ]]; then
+            build_args=(--build-arg "DOCS_REVISION=$GITHUB_SHA")
+          fi
+          docker buildx build --builder jidan-ci --output=type=cacheonly --pull --target test "${build_args[@]}" -f "deploy/$COMPONENT/Dockerfile" "$SOURCE"
+          docker buildx build --builder jidan-ci --load --target runtime "${build_args[@]}" -f "deploy/$COMPONENT/Dockerfile" -t "$image" "$SOURCE"
       - name: Publish image
         id: image
         if: inputs.deploy && steps.source.outputs.ready == 'true'

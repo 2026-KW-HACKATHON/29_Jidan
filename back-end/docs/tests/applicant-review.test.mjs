@@ -1,0 +1,5 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {spec,validator} from './helpers/owner-contract.mjs';
+const base='/api/stores/{storeId}/job-postings/{jobId}/applications';const x=spec.paths[base+'/{applicationId}'].get.responses['200'].content['application/json'].example;
+test('지원자: 신규 경력 조건과 개인정보 차단',()=>{const v=validator('ApplicantSnapshot');assert.ok(v(x.applicant));for(const patch of [{experienceLevel:'EXPERIENCED'}, {email:'worker@example.com'}, {phoneNumber:'01012345678'}, {birthDate:'2007-01-01'}])assert.equal(v({...x.applicant,...patch}),false);});
+test('지원자: 본인 기재 경력과 지원 시점 고정·귀속 확인',()=>{const op=spec.paths[base+'/{applicationId}'].get;assert.match(op.description,/근무자가 직접 등록/);assert.match(op.description,/지원 당시/);assert.match(op.description,/매장→공고→지원/);});
+test('지원자 없음: 빈 배열 반환 및 원시 개인정보 주입 거절',()=>{const p=spec.paths[base].get.responses['200'].content['application/json'].example;assert.ok(validator('OwnerJobApplicationPage')({...p,items:[],totalItems:0}));assert.equal(validator('OwnerJobApplication')({...x,workerProfile:{}}),false);});

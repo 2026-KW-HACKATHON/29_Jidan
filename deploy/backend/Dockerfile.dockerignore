@@ -10,3 +10,7 @@ htmlcov
 .env
 .env.*
 *.log
+
+# Dependencies and artifacts are built inside CI stages.
+docs/node_modules
+swagger-static

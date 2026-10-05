@@ -1,0 +1,8 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spec, validator, parameterValidator } from './helpers/owner-contract.mjs';
+
+const root='/api/stores/{storeId}/manual/interviews/{sessionId}';
+test('생성 요청: 진행·검토 revision을 받으며 미진행 필수 인텐트는 차단',()=>{const op=spec.paths[root+'/completion'].post;const v=validator('ManualDraftGenerationInput');assert.ok(v(op.requestBody.content['application/json'].examples.default.value));assert.equal(v({expectedRevision:4,publish:true}),false);assert.match(op.description,/INTERVIEW_INCOMPLETE/);assert.match(op.description,/자동 발행되지/);const s=op.responses['202'].content['application/json'].examples.allCovered.value;assert.equal(s.phase,'GENERATING');assert.equal(s.processing.kind,'DRAFT_GENERATION');assert.ok(s.intents.every(i=>i.finishedAt));assert.ok(s.intents.every(i=>i.confirmedAt===undefined));});
+test('장애 재개: depth와 기존 답변 보존 및 새 attempt',()=>{const op=spec.paths[root+'/retries'].post;assert.match(op.description,/ERROR에서만/);assert.match(op.description,/depth.*유지/);assert.ok(op.responses['429']);assert.equal(op.responses['202'].content['application/json'].example.processing.attempt,4);});
+test('완료 세션: 완료 시각 필수 및 작업/질문 잔존 금지',()=>{const op=spec.paths[root+'/completion'].post;const s=op.responses['202'].content['application/json'].examples.allCovered.value;const end={...s,status:'COMPLETED',phase:'COMPLETED',processing:null,completedAt:'2026-10-05T01:30:00Z'};const v=validator('ManualInterviewSession');assert.ok(v(end));for(const x of [{...end,completedAt:null},{...end,processing:s.processing},{...end,error:{code:'AI_PROCESSING_FAILED',message:'실패',retryable:true}}])assert.equal(v(x),false);});

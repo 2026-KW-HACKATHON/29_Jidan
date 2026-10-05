@@ -89,6 +89,13 @@ actual=$(docker inspect "$container" --format '{{.Image}}')
 if [[ "$component" == backend ]]; then health=/api/health; else health=/healthz; fi
 run curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$port$health" >/dev/null
 run curl --fail --silent --show-error --max-time 20 --retry 3 "$url" >/dev/null
+# Development Swagger is part of the exact backend image, not a separate manual deployment.
+if [[ "$environment/$component" == dev/backend ]]; then
+  for doc_path in /api/swagger/ /api/swagger/openapi.json; do
+    run curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$port$doc_path" >/dev/null
+    run curl --fail --silent --show-error --max-time 20 --retry 3 "https://dev-jidan.leehyowon14.dev$doc_path" >/dev/null
+  done
+fi
 touch "$release/verified"
 ln -s "$release" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"

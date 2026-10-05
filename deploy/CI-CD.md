@@ -87,6 +87,19 @@ RPi4는 `jidan-ci` 전용 Buildx builder를 사용한다. 테스트 단계는 Do
 
 수동 재배포는 GitHub Actions에서 해당 frontend/backend 워크플로우의 Run workflow를 실행하고 `main` 또는 해당 `dev` 브랜치를 선택한다. 다른 브랜치는 배포하지 않는다.
 
+## 개발 Swagger 자동 배포
+
+Swagger는 별도 수동 배포 대상이 아니라 개발 백엔드 이미지에 포함된 문서입니다.
+
+1. PR: backend CI에서 Node 명세 lint/계약 테스트/정적 빌드, Python 검사/테스트, ARM64 이미지 빌드를 수행합니다. PR에서는 CD가 실행되지 않습니다.
+2. `back-end/dev` 반영: 같은 CI를 통과한 이미지를 GHCR에 게시하고 기존 RPi5 CD가 개발 backend Compose를 교체합니다.
+3. 개발 앱은 `APP_ENV=dev`에서만 `/api/swagger/`를 제공합니다. 동일 이미지가 production에서 실행되어도 설계 Swagger 경로는 등록하지 않습니다.
+4. CD는 기존 health 및 이미지 digest 확인에 더해 로컬/공개 Swagger UI와 JSON을 검증합니다. 실패하면 기존 복구 절차로 이전 backend 이미지에 돌아갑니다.
+
+문서 주소는 `https://dev-jidan.leehyowon14.dev/api/swagger/`입니다. 같은 경로 아래 `openapi.json`, `openapi.yaml`, `build-info.json`을 제공합니다. API server base URL은 `https://dev-jidan.leehyowon14.dev`이며 각 명세 path에 `/api`가 이미 포함됩니다. `/api` 접두사는 두 번 붙이지 않습니다.
+
+Nginx 변경·신규 포트·별도 문서 컨테이너는 필요하지 않습니다. 정적 문서는 Docker Node 단계에서 생성하며 런타임 이미지에는 Node 의존성을 설치하지 않습니다. `build-info.json`은 문서 버전, GitHub 커밋 revision, operation 수, 명세 해시를 제공하고 산출물은 Git에 추가하지 않습니다. 기존 로컬 5500 검수 서버는 계속 사용합니다.
+
 ## 초기 구성 검증 (2026-09-21)
 
 - 두 runner의 GitHub online 상태 확인.
