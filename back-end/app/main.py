@@ -7,9 +7,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.database import database_status
 from app.design_docs import install_design_docs
 from app.errors import UnstructuredHTTPException, install_error_handlers
+from app.middleware import install_middleware
 
 app = FastAPI(title="Jidan API", version="0.1.0")
 install_error_handlers(app)
+install_middleware(app)
 
 
 @app.get("/api/health")
