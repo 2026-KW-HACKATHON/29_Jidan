@@ -199,7 +199,7 @@ def create_store(body: StoreIn, owner: CsrfOwner, db: DbSession, key: Idempotenc
 ## API 설계
 
 [Figma 기반 OpenAPI 명세](openapi.yaml)를 제공합니다.
-구현 전 계약이며 실제 인증·프로필·매장·초대·근무자 관리 endpoint는 아직 제공하지 않습니다.
+인증 API 8개(Google 시작/callback, 가입 컨텍스트, 일반회원/점주 가입, 세션/CSRF 조회, 로그아웃)를 구현했습니다. 외부 인증 설정과 프론트 `__auth` 진입점 연결은 [인증 설계](docs/auth-design.md#105-구현과-운영-설정)를 참고합니다. 프로필 수정·매장 관리·초대·근무자 관리 endpoint는 아직 제공하지 않습니다.
 
 - [인증 화면 근거·인가 정책](docs/auth-design.md)
 - [관리자 매장 승인 계약](docs/store-approval-design.md)
@@ -219,3 +219,17 @@ npm run dev
 [로컬 Swagger 문서](http://127.0.0.1:5500)를 확인합니다. 자세한 실행 방법은 [문서 서버 안내](docs/README.md)를 참고합니다.
 
 설계 Swagger는 `back-end/dev`의 CI/CD를 통해 개발 환경에서만 `/api/swagger/`로 제공됩니다. [주소·자동 배포 흐름](docs/README.md#개발-서버-cicd와-endpoint)을 참고합니다. PR 단계에서는 배포하지 않으며 업무 API 구현과 설계 문서 제공은 별개입니다.
+
+### OAuth 로그아웃 경합과 만료 기록 정리
+
+`0006`은 OAuth 소비와 취소를 분리하고 발급된 회원/가입 세션 ID를 기록한다.
+로그아웃과 callback은 같은 OAuth 행을 잠가 발급·폐기를 직렬화한다. 쿠키 응답이
+늦게 도착하더라도 폐기된 세션으로 인증할 수 없다. 링크는 세션 정리 이후에도
+OAuth 기록이 독립적으로 남을 수 있도록 외래키 없이 ID로 보관한다.
+
+FastAPI lifespan에서 시작한 작업이 시작 시 한 번, 이후 5분마다 만료 OAuth 기록을
+정리한다. 만료 후 10분의 유예를 두어 callback/로그아웃 처리 중 즉시 삭제하지 않는다.
+한 번에 500행씩 최대 10회 삭제하고 각 배치를 commit한다. 남은 기록은 다음 주기에
+처리한다. 여러 프로세스에서는 MySQL `SKIP LOCKED`로 중복 잠금 대기를 피한다.
+회원/가입 세션은 이 작업에서 삭제하거나 폐기하지 않는다. 정리 실패는 비밀값 없는
+로그를 남기고 다음 주기에 재시도한다. 별도 cron이나 서버 설정은 필요하지 않다.

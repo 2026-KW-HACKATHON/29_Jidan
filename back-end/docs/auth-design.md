@@ -1,6 +1,6 @@
 # 인증·인가 API 설계
 
-이 문서는 구현 전 계약이다. 원본은 [`../openapi.yaml`](../openapi.yaml), 로컬 확인 방법은 [문서 서버 안내](README.md)이다. 실제 Google 로그인, API 저장, 세션/CSRF 검증, DB 권한 검증은 아직 구현되지 않았다.
+원본 계약은 [`../openapi.yaml`](../openapi.yaml), 로컬 확인 방법은 [문서 서버 안내](README.md)이다. #105에서 아래 인증 API 8개를 구현했다. 실제 Google·Kakao 연동은 환경별 자격 증명 설정 후 확인해야 하며, 프론트 인증 서비스 연결은 별도 작업이다.
 
 ## Figma 근거
 
@@ -57,7 +57,7 @@ flowchart TD
 - 입력 단계는 프론트에서 유지하고 마지막 확인에서만 한 번에 저장한다. 가입 초안의 서버 저장/중간 PATCH는 이번 계약에 없다.
 - 최종 제출은 UUID Idempotency-Key를 요구한다. Google 주체·경로·정규화 본문과 묶어 24시간 기록하고 중복 제출을 방지한다. 성공 후 응답을 잃었으면 회원 세션으로 같은 요청을 재시도한다. 쿠키까지 없으면 Google 재로그인으로 같은 주체를 확인해야 한다.
 - 업종 코드 4종, 입력 길이와 배열 최대 개수는 제안이다. 실제 프론트 선택지와 맞추며, 최대 경력 20개·가능 시간 그룹 100개를 둔다.
-- callback의 `__auth/session`, `__auth/signup`, 오류 복귀 경로는 프론트 연동 시 확정한다. 운영 origin은 서버 설정을 쓰고 사용자가 지정한 외부 returnUrl은 받지 않는다.
+- callback은 기존 회원을 `/__auth/session`, 신규 주체를 `/__auth/signup`, 동의 취소를 `/login?error=GOOGLE_ACCESS_DENIED`로 보낸다. `__auth`는 세션/가입 컨텍스트 조회 후 화면을 결정하는 인증 결과 처리 경로다. 실제 `/home` 화면과 구분하며 프론트에서 별도로 연결해야 한다. 운영 origin은 서버 설정을 쓰고 사용자가 지정한 외부 returnUrl은 받지 않는다.
 - 승인 거절/재신청, 최소 연령, 약관 동의/버전 관리, 회원 탈퇴, 계정 연결, 여러 역할 겸임은 후속 제품 결정이 필요하다. 화면에 없으므로 해당 API를 추가하지 않았다.
 
 인증 흐름은 [Google Web Server OAuth 가이드](https://developers.google.com/identity/protocols/oauth2/web-server), ID token 확인은 [Google OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect), CSRF 계약은 [OWASP CSRF 가이드](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)를 참고했다.
@@ -102,4 +102,15 @@ Schema로 검사하는 항목: 필수 필드, 읽기 전용 Google 이메일/rol
 
 `npm run check`는 OpenAPI 구조·참조 lint, 요청/응답 예시와 정상/경계 입력 Schema, 승인 대기 응답, 문서 서버의 조회/오류/파일 접근 경계를 검증한다. Google redirect의 정상 성공 응답은 302여서 **해당 두 operation만** 2XX lint 요구에서 제외했다. 예시 및 나머지 규칙은 유지한다.
 
-실제 Google 인증, 세션 만료/폐기, DB 중복/rollback, 주소 판정, 연월 순서/시간 중첩은 구현 후 통합 테스트가 필요하다. 현재 테스트 통과를 이러한 기능의 구현 완료로 해석하면 안 된다.
+Python 테스트는 실제 API 응답을 OpenAPI Schema와 대조하고 세션 폐기·롤백·경력/가능 시간 경계를 검증한다. Google 서명 검증은 로컬 RSA 서명 토큰과 테스트 공개 키를 사용하며, Kakao HTTP 응답은 대체한다. MySQL 전용 테스트는 동시 가입과 실제 DB 제약을 검증한다. 테스트 통과는 외부 자격 증명 또는 프론트 연동 완료를 의미하지 않는다.
+
+## #105 구현과 운영 설정
+
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `FRONTEND_ORIGIN`, `KAKAO_REST_API_KEY`를 비공개 환경 파일로 설정한다. 값이 없으면 해당 기능은 안전한 500 응답으로 실패한다. 로컬만 HTTP를 허용하고 그 외 OAuth 설정 URI는 HTTPS를 사용한다.
+- Google Console의 redirect URI는 `GOOGLE_REDIRECT_URI`와 정확히 같게 등록하며 `/api/auth/google/callback`을 사용한다. 범위는 `openid email profile`이다. Google refresh/access/ID token은 보관하지 않는다.
+- Google callback은 state·브라우저 쿠키·5분 만료·일회성을 DB에서 확인한 후 code를 교환한다. ID token의 서명·iss·aud·exp·nonce·email_verified를 검증한다. 공개 키 조회와 code 교환은 각각 5초 timeout을 사용한다.
+- 점주 주소는 Kakao 주소 검색의 도로명/지번 주소를 입력과 대조하고 도로명 주소의 5자리 우편번호를 확인한 뒤 좌표의 `region_type=H`가 서울특별시 노원구 월계1동인지 확인한다. 법정동 `B`만으로 승인하지 않는다. 검색 불일치/우편번호 불일치는 422 VALIDATION_ERROR, 지역 밖은 422 STORE_OUTSIDE_SERVICE_AREA, 설정/외부 장애는 기존 명세의 500 INTERNAL_ERROR이다. 사업자 번호는 명세의 ASCII 10자리 형식과 DB 중복을 검사하며 추가 사업자 실명/진위 확인은 넣지 않는다.
+- `jidan_oauth`의 Path는 명세대로 `/api/auth/google`이다. 이 쿠키는 `/api/auth/logout`에 전송되지 않으므로 같은 바인딩의 `jidan_oauth_logout` 보조 쿠키(Path=/api/auth, 5분)를 함께 설정한다. 이 쿠키는 로그아웃 폐기용이며 회원 인증에는 쓰지 않는다. callback/로그아웃에서 둘 다 삭제한다.
+- 가입은 회원·프로필/매장·승인 신청·가입 세션 소비·회원 세션·멱등성 결과를 같은 트랜잭션으로 저장한다. 응답 재현에는 세션 발급이나 Set-Cookie를 반복하지 않는다.
+- Alembic `0005`가 `oauth_transactions`를 추가한다. CI/CD의 기존 마이그레이션 절차로 `python -m alembic upgrade head`를 적용한다. 자동 마이그레이션은 추가하지 않았다. 이미지 롤백은 추가 테이블을 남겨도 기존 코드와 호환된다. DB downgrade는 OAuth 진행 데이터를 삭제하므로 필요할 때만 별도로 수행한다.
+- 앱 로그는 access query와 예외 payload를 제외한다. Nginx callback의 로그 보호는 `deploy/nginx/` 설정을 환경에 반영해야 한다. 앱 배포와 프록시 적용은 [기존 운영 절차](../../deploy/CI-CD.md)를 따른다.

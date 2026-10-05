@@ -13,6 +13,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.log_privacy import install_log_privacy
+
 logger = logging.getLogger("jidan.errors")
 
 MAX_FIELD_ERRORS = 100
@@ -199,7 +201,14 @@ def _field_error(error: dict) -> dict[str, str]:
     if location and location[0] in {"body", "query", "path", "header", "cookie"}:
         location = location[1:]
     kind = error["type"]
-    if kind == "missing":
+    registration_messages = {
+        "future_birthday": "생년월일은 오늘 이후일 수 없습니다.",
+        "career_count": "경력 여부에 맞게 경력 항목을 입력해 주세요.",
+        "availability_overlap": "근무 가능 시간이 겹치지 않도록 입력해 주세요.",
+    }
+    if kind in registration_messages:
+        code, message = "INVALID_FORMAT", registration_messages[kind]
+    elif kind == "missing":
         code, message = "REQUIRED", "필수 항목입니다."
     elif kind.startswith(("greater", "less", "too_short", "too_long", "string_too")):
         code, message = "OUT_OF_RANGE", "허용 범위를 벗어났습니다."
@@ -247,12 +256,13 @@ async def handle_unstructured_http_exception(
 
 
 async def handle_unexpected_error(_request: Request, exc: Exception) -> JSONResponse:
-    # The traceback goes to the server log only; the client sees a generic message.
+    # The logging filter removes exception payloads; log only the exception class.
     logger.error("Unhandled error", exc_info=(type(exc), exc, exc.__traceback__))
     return error_response(500, ErrorCode.INTERNAL_ERROR, DEFAULT_MESSAGES[ErrorCode.INTERNAL_ERROR])
 
 
 def install_error_handlers(app: FastAPI) -> None:
+    install_log_privacy()
     app.add_exception_handler(ApiError, handle_api_error)
     app.add_exception_handler(RequestValidationError, handle_validation_error)
     app.add_exception_handler(UnstructuredHTTPException, handle_unstructured_http_exception)

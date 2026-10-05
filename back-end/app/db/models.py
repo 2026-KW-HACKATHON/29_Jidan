@@ -521,3 +521,21 @@ class IdempotencyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class OAuthTransaction(Base):
+    """Five minute browser-bound, single-use Google login; no provider tokens stored."""
+
+    __tablename__ = "oauth_transactions"
+    __table_args__ = (Index("ix_oauth_transactions_expires_at", "expires_at"),)
+
+    id: Mapped[str] = _id()
+    token_hash: Mapped[str] = mapped_column(cs_string(64), unique=True)
+    state_hash: Mapped[str] = mapped_column(cs_string(64), unique=True)
+    nonce_hash: Mapped[str] = mapped_column(cs_string(64))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    cancelled_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    issued_session_id: Mapped[str | None] = mapped_column(CHAR(36))
+    issued_registration_id: Mapped[str | None] = mapped_column(CHAR(36))

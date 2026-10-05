@@ -116,6 +116,7 @@ paths:
 
         - 서버는 5분 일회용 `state`·`nonce`와 브라우저 바인딩 트랜잭션을 생성합니다.
         - `jidan_oauth` 쿠키를 설정하고 callback에서 폐기합니다.
+        - 로그아웃 서버 폐기용 `jidan_oauth_logout` 보조 쿠키도 설정합니다(동일 opaque 바인딩, HttpOnly·SameSite=Lax·Path=/api/auth·Max-Age=300). callback과 logout에서 함께 삭제하며 회원 인증에는 사용하지 않습니다.
         - 쿠키 속성: `HttpOnly; Secure; SameSite=Lax; Path=/api/auth/google`
 
         **인증 설정**
@@ -136,7 +137,7 @@ paths:
                 format: uri
               example: http://127.0.0.1:5184/__auth/signup
             Set-Cookie:
-              description: 일회용 OAuth 브라우저 바인딩 쿠키
+              description: 일회용 OAuth 브라우저 바인딩 쿠키와 로그아웃용 보조 바인딩 쿠키를 각각 별도 Set-Cookie로 설정
               schema:
                 type: string
               example: jidan_oauth=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/api/auth/google; Max-Age=300
@@ -657,7 +658,7 @@ paths:
         **종료 처리**
 
         - OAuth 트랜잭션도 폐기합니다.
-        - 회원·가입·OAuth 쿠키를 각각 원래 Path/Domain에 `Max-Age=0`으로 삭제합니다.
+        - 회원·가입·OAuth 쿠키와 `jidan_oauth_logout` 보조 바인딩 쿠키를 각각 원래 Path/Domain에 `Max-Age=0`으로 삭제합니다.
         - 다른 브라우저의 세션과 Google 계정 자체는 로그아웃하지 않습니다.
         - 연속 호출도 **204**를 반환합니다.
       responses:
@@ -666,7 +667,7 @@ paths:
           headers:
             Set-Cookie:
               description: |-
-                jidan_session Path=/, jidan_registration Path=/api/auth, jidan_oauth Path=/api/auth/google을 별도 헤더로 삭제.
+                jidan_session Path=/, jidan_registration Path=/api/auth, jidan_oauth Path=/api/auth/google, jidan_oauth_logout Path=/api/auth를 별도 헤더로 삭제.
 
                 각 쿠키는 HttpOnly; Secure; SameSite=Lax; Max-Age=0 (로컬 HTTP는 Secure 생략).
               schema:

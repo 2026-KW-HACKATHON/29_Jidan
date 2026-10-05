@@ -38,6 +38,9 @@ jobs:
         run: |
           bash -n deploy/scripts/deploy.sh
           python3 -m unittest discover -s deploy/tests -v
+      - name: Verify Nginx callback log privacy
+        if: inputs.component == 'backend'
+        run: python3 deploy/scripts/verify_nginx.py
       - name: Check application initialization
         id: source
         env:

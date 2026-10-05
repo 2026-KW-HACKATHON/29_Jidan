@@ -16,7 +16,7 @@ BASELINE_TABLES = {
 }
 SESSION_TABLES = {"auth_sessions", "registration_sessions"}
 IDEMPOTENCY_TABLES = {"idempotency_records"}
-EXPECTED_TABLES = BASELINE_TABLES | SESSION_TABLES | IDEMPOTENCY_TABLES
+EXPECTED_TABLES = BASELINE_TABLES | SESSION_TABLES | IDEMPOTENCY_TABLES | {"oauth_transactions"}
 
 
 def test_history_is_linear_with_a_single_head():
@@ -34,6 +34,8 @@ def test_revisions_form_a_chain_on_top_of_the_untouched_baseline():
     assert script.get_revision("0002").down_revision == "0001"
     assert script.get_revision("0003").down_revision == "0002"
     assert script.get_revision("0004").down_revision == "0003"
+    assert script.get_revision("0005").down_revision == "0004"
+    assert script.get_revision("0006").down_revision == "0005"
 
 
 def test_upgrade_creates_every_baseline_table(engine):
@@ -52,7 +54,8 @@ def test_downgrade_one_step_then_upgrade_again(engine):
         command.downgrade(config, "-1")
         connection.commit()
         columns = {c["name"] for c in inspect(connection).get_columns("idempotency_records")}
-        assert "response_headers" not in columns and "response_body" in columns
+        assert "response_headers" in columns and "response_body" in columns
+        assert "cancelled_at" not in {c["name"] for c in inspect(connection).get_columns("oauth_transactions")}
         command.upgrade(config, "head")
         connection.commit()
         assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())

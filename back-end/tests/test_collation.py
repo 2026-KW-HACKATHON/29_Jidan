@@ -33,6 +33,8 @@ from tests.schema_checks import (
 
 ENUM_COLUMNS = enum_columns(Base.metadata)
 IDENTIFIER_COLUMNS = [
+    ("oauth_transactions", "token_hash"), ("oauth_transactions", "state_hash"),
+    ("oauth_transactions", "nonce_hash"),
     ("users", "google_sub"), ("store_invitations", "token_hash"),
     ("auth_sessions", "token_hash"), ("registration_sessions", "token_hash"),
     ("registration_sessions", "google_sub"),
