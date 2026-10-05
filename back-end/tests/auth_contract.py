@@ -32,7 +32,7 @@ class ContractClient(TestClient):
         response = super().request(method, url, *args, **kwargs)
         path = response.request.url.path
         operation = SPEC.get("paths", {}).get(path, {}).get(response.request.method.lower())
-        if operation and path.startswith("/api/auth/"):
+        if operation and path.startswith(("/api/auth/", "/api/users/me/profile")):
             assert str(response.status_code) in operation["responses"], (path, response.status_code, response.text)
             contract = resolve(operation["responses"][str(response.status_code)])
             if "content" in contract:
