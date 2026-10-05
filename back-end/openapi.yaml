@@ -72,6 +72,8 @@ tags:
   description: 일반회원 자기소개 지원·철회·탭별 이력
 - name: 점주 지원자 확인
   description: 내 매장 공고 지원서와 제출 당시 근무자 프로필
+- name: 대타 근무 요청
+  description: 요청·기한·응답·근무 확정과 매뉴얼 접근 연결
 security:
 - SessionCookie: []
 externalDocs:
@@ -10108,6 +10110,709 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=468-3000
+  /api/users/me/work-requests/{requestId}:
+    get:
+      tags:
+      - 대타 근무 요청
+      operationId: getMyWorkRequest
+      summary: 알림에서 본인 근무 요청 조회
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        본인 요청만 조회합니다. 만료·취소·수락·거절 후에도 상태 확인이 가능하며 상세 근무 조건은 jobId로 공고 상세에서 조회합니다. deadline과 현재 revision을 내려줍니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: requestId
+        in: path
+        required: true
+        description: 'requestId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkRequest'
+              example:
+                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                workerName: 박지원
+                status: PENDING
+                requestedAt: '2026-10-05T01:00:00Z'
+                expiresAt: '2026-10-05T02:00:00Z'
+                respondedAt: null
+                endedAt: null
+                revision: 1
+                accessGrant: null
+      externalDocs:
+        description: 기준 Figma 화면 (보완 설계)
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1
+  /api/users/me/work-requests:
+    get:
+      tags:
+      - 대타 근무 요청
+      operationId: listMyWorkRequests
+      summary: 본인 대타 근무 요청 목록
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        알림의 근무 요청에서 진입할 수 있도록 본인 요청만 반환합니다. 최신 요청순, filter=PENDING은 기한 미만 요청만 포함하고 ALL은 종료 이력을 포함합니다. 응답 화면은 Figma에 없지만 확정 흐름에 필요한 보완 계약입니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: 0부터 시작
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        description: 페이지 크기; 기본 20, 최대 100
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: filter
+        in: query
+        required: false
+        description: 대기 중 또는 전체 이력
+        schema:
+          type: string
+          enum:
+          - PENDING
+          - ALL
+          default: PENDING
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkRequestPage'
+              example:
+                items:
+                - id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                  jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                  applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                  workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                  workerName: 박지원
+                  status: PENDING
+                  requestedAt: '2026-10-05T01:00:00Z'
+                  expiresAt: '2026-10-05T02:00:00Z'
+                  respondedAt: null
+                  endedAt: null
+                  revision: 1
+                  accessGrant: null
+                page: 0
+                size: 20
+                totalItems: 1
+                asOf: '2026-10-05T01:00:00Z'
+      externalDocs:
+        description: 기준 Figma 화면 (보완 설계)
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1
+  /api/stores/{storeId}/job-postings/{jobId}/work-requests:
+    get:
+      tags:
+      - 대타 근무 요청
+      operationId: listOwnerWorkRequests
+      summary: 수락 대기·미응답·확정 근무 요청 현황
+      description: |-
+        ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        현재 및 과거 요청을 requestedAt DESC,id DESC 순서로 반환합니다. PENDING의 elapsed 시간은 requestedAt/asOf로 계산합니다. 기한을 넘긴 요청은 저장 작업 지연과 관계없이 EXPIRED로 반환하고 1시간 미응답 화면에서 다른 지원자를 선택할 수 있습니다. ACCEPTED 요청은 확정된 근무자와 온보딩 링크의 기준입니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: jobId
+        in: path
+        required: true
+        description: 'jobId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        required: false
+        description: 0부터 시작
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        description: 페이지 크기; 기본 20, 최대 100
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkRequestPage'
+              example:
+                items:
+                - id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                  jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                  applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                  workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                  workerName: 박지원
+                  status: PENDING
+                  requestedAt: '2026-10-05T01:00:00Z'
+                  expiresAt: '2026-10-05T02:00:00Z'
+                  respondedAt: null
+                  endedAt: null
+                  revision: 1
+                  accessGrant: null
+                page: 0
+                size: 20
+                totalItems: 1
+                asOf: '2026-10-05T01:00:00Z'
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=698-2765
+  /api/stores/{storeId}/job-postings/{jobId}/onboarding:
+    get:
+      tags:
+      - 대타 근무 요청
+      operationId: getConfirmedWorkerOnboarding
+      summary: 확정된 근무자 온보딩 연결 조회
+      description: |-
+        ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        확정 근무자가 없으면 404 ONBOARDING_NOT_FOUND입니다. 근무자와 현재 자료 접근·게시본 존재를 반환합니다. PUBLISHED이면 기존 게시 매뉴얼 API로 진입합니다. 미게시에는 준비 중 안내, 접근 종료에는 종료 안내를 표시합니다. 화면에 없는 매뉴얼 읽음률이나 교육 완료 상태를 만들지 않습니다. 점주는 자신의 게시본을 열람할 수 있으나 근무자의 종료 접근을 복구하지 않습니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: jobId
+        in: path
+        required: true
+        description: 'jobId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobOnboarding'
+              example:
+                jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                workerName: 박지원
+                accessStatus: ACTIVE
+                manualStatus: PUBLISHED
+                manualVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=698-2821
+  /api/users/me/work-requests/{requestId}/response:
+    post:
+      tags:
+      - 대타 근무 요청
+      operationId: respondToWorkRequest
+      summary: 근무 요청 수락·거절과 근무 확정
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        본인 PENDING 요청에 ACCEPT 또는 DECLINE합니다. now < expiresAt, 근무 시작 전, RECRUITING·미확정, 지원 미철회 상태를 공고 잠금 안에서 재검증합니다. 수락 시 요청 ACCEPTED, 지원 CONFIRMED, 다른 지원 NOT_SELECTED, 미결 요청 CANCELLED, 근무 캘린더·TEMPORARY 자료 접근·알림 outbox를 원자적으로 생성합니다. 모집은 별도 점주 마감 전까지 RECRUITING이지만 확정 후 신규 지원/요청은 JOB_FILLED로 막습니다.
+
+        TEMPORARY 접근은 수락 시각부터 근무 종료 시각까지 [startedAt, validUntil)로 부여하여 출근 전 온보딩을 허용합니다. 현재 게시본이 없어도 확정은 성공하고 온보딩은 MANUAL_NOT_PUBLISHED 상태입니다. 정기 접근과 독립적으로 공존하며 기존 수동 종료 이력은 되살리지 않습니다. 거절은 지원을 APPLIED로 돌리고 점주가 다른 지원자를 선택할 수 있습니다. 본인의 이미 확정된 대타와 근무 시간이 겹치면 409 WORK_INTERVAL_CONFLICT(제안 정책); 인접 구간은 허용합니다. 새 key로 같은 응답은 409, 동일 key 재시도는 최초 결과입니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: requestId
+        in: path
+        required: true
+        description: 'requestId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: WORK_REQUEST_EXPIRED, WORK_REQUEST_NOT_PENDING, WORK_REQUEST_REVISION_CONFLICT, JOB_FILLED,
+            JOB_CLOSED, APPLICATION_WITHDRAWN, WORK_INTERVAL_CONFLICT. 동시에 수락/철회/마감한 경우 첫 성공만 적용합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: WORK_REQUEST_EXPIRED, WORK_REQUEST_NOT_PENDING, WORK_REQUEST_REVISION_CONFLICT, JOB_FILLED,
+                  JOB_CLOS
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkRequest'
+              example:
+                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                workerName: 박지원
+                status: ACCEPTED
+                requestedAt: '2026-10-05T01:00:00Z'
+                expiresAt: '2026-10-05T02:00:00Z'
+                respondedAt: '2026-10-05T01:20:00Z'
+                endedAt: '2026-10-05T01:20:00Z'
+                revision: 2
+                accessGrant:
+                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                  type: TEMPORARY
+                  dutyLabel: 주말 오픈 대타
+                  startedAt: '2026-10-05T01:20:00Z'
+                  validUntil: '2026-10-10T05:00:00Z'
+                  revokedAt: null
+                  status: ACTIVE
+                  permissions:
+                  - READ_MANUALS
+                  - READ_CHECKLISTS
+                  - USE_AI_QA
+      externalDocs:
+        description: 기준 Figma 화면 (보완 설계)
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkRequestResponse'
+            example:
+              expectedRevision: 1
+              decision: ACCEPT
+  /api/stores/{storeId}/job-postings/{jobId}/applications/{applicationId}/work-requests:
+    post:
+      tags:
+      - 대타 근무 요청
+      operationId: requestApplicantWork
+      summary: 선택 지원자에게 근무 요청
+      description: |-
+        ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        미래 시작·RECRUITING·미확정 공고의 APPLIED 지원자에게 요청합니다. 단일 공고에 유효 PENDING 요청은 최대 1개입니다. pending 중 다른 요청은 409 WORK_REQUEST_PENDING입니다. 요청 기한은 min(요청+1시간, 근무 시작)이며 expiresAt과 같은 시각부터 수락 불가입니다. 1시간 미응답은 EXPIRED로 처리하고 지원을 APPLIED로 되돌려 다른 지원자를 요청할 수 있습니다.
+
+        1시간 이후 요청 만료는 Figma 미응답 알림에 기반한 설계 제안입니다. 만료 작업과 조회/응답 시각 검증을 병행하며 배치 실행 지연으로 기한이 늘어나지 않습니다. 요청을 같은 지원자에게 다시 보낼 수 있으나 이전 요청 ID는 계속 만료 상태입니다. 공고/지원/요청 상태·revision·알림 outbox를 같은 트랜잭션으로 저장합니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: jobId
+        in: path
+        required: true
+        description: 'jobId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: path
+        required: true
+        description: 'applicationId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: WORK_REQUEST_PENDING, JOB_NOT_RECRUITING, JOB_FILLED, APPLICATION_NOT_ACTIVE, JOB_REVISION_CONFLICT.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: WORK_REQUEST_PENDING, JOB_NOT_RECRUITING, JOB_FILLED, APPLICATION_NOT_ACTIVE, JOB_REVISION_CONFLICT.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkRequest'
+              example:
+                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                workerName: 박지원
+                status: PENDING
+                requestedAt: '2026-10-05T01:00:00Z'
+                expiresAt: '2026-10-05T02:00:00Z'
+                respondedAt: null
+                endedAt: null
+                revision: 1
+                accessGrant: null
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=1169-3043
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkRequestCreate'
+            example:
+              expectedJobRevision: 1
 components:
   securitySchemes:
     SessionCookie:
@@ -14796,6 +15501,212 @@ components:
       - size
       - totalItems
       - asOf
+    WorkRequestCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedJobRevision:
+          type: integer
+          minimum: 1
+      required:
+      - expectedJobRevision
+    WorkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        workerId:
+          type: string
+          format: uuid
+        workerName:
+          $ref: '#/components/schemas/Name'
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACCEPTED
+          - DECLINED
+          - EXPIRED
+          - CANCELLED
+        requestedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        respondedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        endedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revision:
+          type: integer
+          minimum: 1
+        accessGrant:
+          oneOf:
+          - $ref: '#/components/schemas/StoreAccessGrant'
+          - type: 'null'
+      required:
+      - id
+      - jobId
+      - applicationId
+      - workerId
+      - workerName
+      - status
+      - requestedAt
+      - expiresAt
+      - respondedAt
+      - endedAt
+      - revision
+      - accessGrant
+      oneOf:
+      - properties:
+          status:
+            const: PENDING
+          respondedAt:
+            type: 'null'
+          endedAt:
+            type: 'null'
+          accessGrant:
+            type: 'null'
+      - properties:
+          status:
+            const: ACCEPTED
+          respondedAt:
+            type: string
+            format: date-time
+          endedAt:
+            type: string
+            format: date-time
+          accessGrant:
+            $ref: '#/components/schemas/StoreAccessGrant'
+      - properties:
+          status:
+            const: DECLINED
+          respondedAt:
+            type: string
+            format: date-time
+          endedAt:
+            type: string
+            format: date-time
+          accessGrant:
+            type: 'null'
+      - properties:
+          status:
+            type: string
+            enum:
+            - EXPIRED
+            - CANCELLED
+          respondedAt:
+            type: 'null'
+          endedAt:
+            type: string
+            format: date-time
+          accessGrant:
+            type: 'null'
+    WorkRequestPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkRequest'
+          minItems: 0
+          maxItems: 100
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalItems:
+          type: integer
+          minimum: 0
+        asOf:
+          type: string
+          format: date-time
+      required:
+      - items
+      - page
+      - size
+      - totalItems
+      - asOf
+    WorkRequestResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+        decision:
+          type: string
+          enum:
+          - ACCEPT
+          - DECLINE
+      required:
+      - expectedRevision
+      - decision
+    JobOnboarding:
+      type: object
+      additionalProperties: false
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        workerId:
+          type: string
+          format: uuid
+        workerName:
+          $ref: '#/components/schemas/Name'
+        accessStatus:
+          type: string
+          enum:
+          - ACTIVE
+          - ENDED
+        manualStatus:
+          type: string
+          enum:
+          - PUBLISHED
+          - NOT_PUBLISHED
+        manualVersionId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - jobId
+      - workerId
+      - workerName
+      - accessStatus
+      - manualStatus
+      - manualVersionId
+      oneOf:
+      - properties:
+          manualStatus:
+            const: PUBLISHED
+          manualVersionId:
+            type: string
+            format: uuid
+      - properties:
+          manualStatus:
+            const: NOT_PUBLISHED
+          manualVersionId:
+            type: 'null'
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
