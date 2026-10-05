@@ -5,7 +5,7 @@ info:
   description: |-
     Figma 인증·회원·매장·근무자 관리, 공고·지원·근무 확정, 홈·캘린더·알림, 매뉴얼·AI 인터뷰·업무 질문을 위한 구현 전 계약입니다.
 
-    실제 API/OAuth/DB는 구현되지 않았으며 로컬 문서 서버에서는 요청 실행을 지원하지 않습니다.
+    이 명세의 인증·업무 API/OAuth/DB 처리는 구현 전이며 Swagger는 문서 검수용입니다. 요청 실행은 비활성화되어 있습니다.
 
     Google 이메일은 검증된 Google ID token에서 서버가 가져오고 요청 본문으로 받지 않습니다.
 
@@ -41,6 +41,8 @@ info:
     name: 프로젝트 내부 설계 문서
     url: https://github.com/2026-KW-HACKATHON/29_Jidan
 servers:
+- url: https://dev-jidan.leehyowon14.dev
+  description: 개발 API 서버 (업무 API 구현 전; 각 endpoint 경로에 /api 포함)
 - url: http://127.0.0.1:8000
   description: 향후 로컬 API 구현 서버 (5500은 문서 전용)
 tags:
