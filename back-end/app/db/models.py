@@ -484,7 +484,7 @@ IDEMPOTENCY_STATES = ("PROCESSING", "COMPLETED")
 
 
 class IdempotencyRecord(Base):
-    """One `Idempotency-Key` per principal, kept 24 hours (app.idempotency).
+    """One `Idempotency-Key` per subject, kept 24 hours (app.idempotency).
 
     The request body is stored only as a hash. A PROCESSING row is a short lease held by the
     request that is doing the work; COMPLETED rows carry the response to replay.
@@ -492,7 +492,7 @@ class IdempotencyRecord(Base):
 
     __tablename__ = "idempotency_records"
     __table_args__ = (
-        UniqueConstraint("principal_id", "idempotency_key"),
+        UniqueConstraint("subject_id", "idempotency_key"),
         CheckConstraint(_in("state", IDEMPOTENCY_STATES), name="state"),
         CheckConstraint(
             "(state = 'PROCESSING' AND response_status IS NULL)"
@@ -503,7 +503,9 @@ class IdempotencyRecord(Base):
     )
 
     id: Mapped[str] = _id()
-    principal_id: Mapped[str] = mapped_column(String(64))  # member id (or Google sub)
+    # SHA-256 hex of the Google `sub` (app.idempotency.subject_id_for): the same value before
+    # and after registration, so records follow the person from registration session to member.
+    subject_id: Mapped[str] = mapped_column(String(64))
     idempotency_key: Mapped[str] = mapped_column(String(36))
     endpoint: Mapped[str] = mapped_column(String(255))  # "METHOD /path"
     request_hash: Mapped[str] = mapped_column(String(64))

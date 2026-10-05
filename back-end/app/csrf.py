@@ -23,6 +23,7 @@ from app.auth import (
     MemberPrincipal,
     RegistrationPrincipal,
     require_member,
+    require_member_or_registration,
     require_owner,
     require_registration_session,
     require_worker,
@@ -131,9 +132,13 @@ require_member_csrf = csrf_protected(require_member)
 require_owner_csrf = csrf_protected(require_owner)
 require_worker_csrf = csrf_protected(require_worker)
 require_registration_csrf = csrf_protected(require_registration_session)
+require_member_or_registration_csrf = csrf_protected(require_member_or_registration)
 
 # Annotated aliases for write endpoints: `def handler(member: CsrfMember)`.
 CsrfMember = Annotated[MemberPrincipal, Depends(require_member_csrf)]
 CsrfOwner = Annotated[MemberPrincipal, Depends(require_owner_csrf)]
 CsrfWorker = Annotated[MemberPrincipal, Depends(require_worker_csrf)]
 CsrfRegistration = Annotated[RegistrationPrincipal, Depends(require_registration_csrf)]
+CsrfMemberOrRegistration = Annotated[
+    MemberPrincipal | RegistrationPrincipal, Depends(require_member_or_registration_csrf),
+]

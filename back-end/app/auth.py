@@ -69,6 +69,7 @@ class IssuedSession:
 @dataclass(frozen=True)
 class MemberPrincipal:
     user_id: str
+    google_sub: str  # users.google_sub: the stable identity shared with the registration session
     role: str
     session_id: str
     csrf_token: str = field(repr=False)  # the synchronizer token bound to this session
@@ -299,7 +300,7 @@ def _resolve_member(request: Request, db: Session) -> MemberPrincipal | None:
     if now - auth_session.last_seen_at >= LAST_SEEN_REFRESH_INTERVAL:
         auth_session.last_seen_at = now
     return MemberPrincipal(
-        user.id, user.role, auth_session.id, csrf_token_for(token), auth_session.expires_at,
+        user.id, user.google_sub, user.role, auth_session.id, csrf_token_for(token), auth_session.expires_at,
     )
 
 
@@ -355,9 +356,31 @@ def require_registration_session(
     return registration
 
 
+def require_member_or_registration(
+    request: Request, db: Annotated[Session, Depends(get_session)],
+) -> MemberPrincipal | RegistrationPrincipal:
+    """A member session, else a live registration session; otherwise 401 SESSION_EXPIRED.
+
+    For the registration-completing endpoints, which accept both: the registration session
+    creates the account and the member session may only retry that request with the same
+    Idempotency-Key (the endpoint rejects anything else with 409 ALREADY_REGISTERED).
+    Suspended accounts still get 403 ACCOUNT_SUSPENDED.
+    """
+    member = _resolve_member(request, db)
+    if member is not None:
+        return member
+    registration = _find_registration(db, _cookie_token(request, REGISTRATION_COOKIE_NAME))
+    if registration is None:
+        raise ApiError(401, ErrorCode.SESSION_EXPIRED)
+    return registration
+
+
 # Annotated aliases for endpoint signatures: `def handler(member: CurrentMember, db: DbSession)`.
 DbSession = Annotated[Session, Depends(get_session)]
 CurrentMember = Annotated[MemberPrincipal, Depends(require_member)]
 CurrentOwner = Annotated[MemberPrincipal, Depends(require_owner)]
 CurrentWorker = Annotated[MemberPrincipal, Depends(require_worker)]
+CurrentMemberOrRegistration = Annotated[
+    MemberPrincipal | RegistrationPrincipal, Depends(require_member_or_registration),
+]
 CurrentRegistration = Annotated[RegistrationPrincipal, Depends(require_registration_session)]

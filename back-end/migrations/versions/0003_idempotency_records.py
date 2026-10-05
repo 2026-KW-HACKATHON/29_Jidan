@@ -21,7 +21,7 @@ depends_on = None
 def upgrade() -> None:
     op.create_table('idempotency_records',
     sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('principal_id', sa.String(length=64), nullable=False),
+    sa.Column('subject_id', sa.String(length=64), nullable=False),
     sa.Column('idempotency_key', sa.String(length=36), nullable=False),
     sa.Column('endpoint', sa.String(length=255), nullable=False),
     sa.Column('request_hash', sa.String(length=64), nullable=False),
@@ -36,7 +36,7 @@ def upgrade() -> None:
     sa.CheckConstraint("(state = 'PROCESSING' AND response_status IS NULL) OR (state = 'COMPLETED' AND response_status IS NOT NULL)", name=op.f('ck_idempotency_records_state_consistency')),
     sa.CheckConstraint("state IN ('PROCESSING', 'COMPLETED')", name=op.f('ck_idempotency_records_state')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_idempotency_records')),
-    sa.UniqueConstraint('principal_id', 'idempotency_key', name=op.f('uq_idempotency_records_principal_id_idempotency_key'))
+    sa.UniqueConstraint('subject_id', 'idempotency_key', name=op.f('uq_idempotency_records_subject_id_idempotency_key'))
     )
     op.create_index('ix_idempotency_records_expires_at', 'idempotency_records', ['expires_at'], unique=False)
 

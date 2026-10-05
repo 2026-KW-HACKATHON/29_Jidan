@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import idempotency
-from app.auth import SESSION_COOKIE_NAME, DbSession, create_session
+from app.auth import SESSION_COOKIE_NAME, DbSession, MemberPrincipal, create_session
 from app.csrf import CsrfOwner
 from app.db import session_scope, utcnow
 from app.db.models import IdempotencyRecord, User
@@ -23,6 +23,7 @@ from app.idempotency import (
     canonical_body,
     purge_expired,
     run_idempotent,
+    subject_id_for,
 )
 from tests.factories import make_user
 
@@ -69,21 +70,21 @@ def build_app() -> FastAPI:
                 raise ApiError(403, ErrorCode.FORBIDDEN)
 
         return run_idempotent(
-            db=db, principal_id=owner.user_id, key=key, method="POST",
+            db=db, principal=owner, key=key, method="POST",
             path="/api/t/things", body=body, handler=work, revalidate=revalidate,
         )
 
     @app.post("/api/t/other")
     def other(body: ThingIn, owner: CsrfOwner, db: DbSession, key: IdempotencyKey):
         return run_idempotent(
-            db=db, principal_id=owner.user_id, key=key, method="POST", path="/api/t/other",
+            db=db, principal=owner, key=key, method="POST", path="/api/t/other",
             body=body, handler=lambda: IdempotentResult(201, {"other": True}),
         )
 
     @app.post("/api/t/empty")
     def empty(body: ThingIn, owner: CsrfOwner, db: DbSession, key: IdempotencyKey):
         return run_idempotent(
-            db=db, principal_id=owner.user_id, key=key, method="POST", path="/api/t/empty",
+            db=db, principal=owner, key=key, method="POST", path="/api/t/empty",
             body=body, handler=lambda: IdempotentResult(204),
         )
 
@@ -104,17 +105,28 @@ def api(db_engine):
     return TestClient(build_app())
 
 
-def add_owner(engine) -> str:
+def add_owner(engine) -> tuple[str, str]:
     with Session(engine) as session:
-        user_id = make_user(session, "OWNER").id
+        user = make_user(session, "OWNER")
         session.commit()
-    return user_id
+        return user.id, user.google_sub
 
 
 class Caller:
     def __init__(self, engine):
-        self.user_id = add_owner(engine)
+        self.user_id, self.google_sub = add_owner(engine)
         self.issued = create_session(self.user_id)
+
+    @property
+    def principal(self) -> MemberPrincipal:
+        return MemberPrincipal(
+            self.user_id, self.google_sub, "OWNER", "session", self.issued.csrf_token,
+            self.issued.expires_at,
+        )
+
+    @property
+    def subject_id(self) -> str:
+        return subject_id_for(self.principal)
 
     def headers(self, key=None) -> dict:
         headers = {
@@ -418,7 +430,7 @@ def test_purge_removes_only_expired_records(api, caller, db_engine):
 def processing_record(engine, caller, key, body, *, lease: timedelta, path="/api/t/things"):
     with Session(engine) as session:
         session.add(IdempotencyRecord(
-            principal_id=caller.user_id, idempotency_key=key, endpoint=f"POST {path}",
+            subject_id=caller.subject_id, idempotency_key=key, endpoint=f"POST {path}",
             request_hash=body_hash(body), state="PROCESSING", lock_token=str(uuid.uuid4()),
             locked_until=utcnow() + lease, created_at=utcnow(),
             expires_at=utcnow() + timedelta(hours=24),
@@ -472,7 +484,7 @@ def test_losing_the_lease_mid_flight_aborts_without_committing(db_engine):
 
     with pytest.raises(ApiError) as caught, session_scope() as db:
         run_idempotent(
-            db=db, principal_id=caller.user_id, key=key, method="POST", path="/p",
+            db=db, principal=caller.principal, key=key, method="POST", path="/p",
             body={"a": 1}, handler=steal_lease_and_succeed(db),
         )
     assert caught.value.status_code == 409
@@ -516,7 +528,7 @@ def test_concurrent_identical_requests_do_the_work_once(db_engine):
                 return IdempotentResult(201, {"id": user.id})
 
             response = run_idempotent(
-                db=db, principal_id=caller.user_id, key=key, method="POST", path="/p",
+                db=db, principal=caller.principal, key=key, method="POST", path="/p",
                 body={"a": 1}, handler=work,
             )
             return response.status_code, response.body, response.headers.get("Idempotent-Replayed")
@@ -544,7 +556,7 @@ def test_many_concurrent_requests_still_run_once(db_engine):
                 return IdempotentResult(201, {"n": 1})
 
             return run_idempotent(
-                db=db, principal_id=caller.user_id, key=key, method="POST", path="/p",
+                db=db, principal=caller.principal, key=key, method="POST", path="/p",
                 body={"a": 1}, handler=work,
             ).status_code
 
@@ -566,7 +578,7 @@ def test_concurrent_same_key_with_different_bodies_never_runs_both(db_engine):
                 return IdempotentResult(201, {"who": index})
 
             return run_idempotent(
-                db=db, principal_id=caller.user_id, key=key, method="POST", path="/p",
+                db=db, principal=caller.principal, key=key, method="POST", path="/p",
                 body={"who": index}, handler=work,
             ).status_code
 

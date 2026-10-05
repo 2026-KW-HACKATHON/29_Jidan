@@ -129,16 +129,30 @@ def create_store(body: StoreIn, owner: CsrfOwner, db: DbSession, key: Idempotenc
         return IdempotentResult(201, {"id": store.id})
 
     return run_idempotent(
-        db=db, principal_id=owner.user_id, key=key, method="POST",
+        db=db, principal=owner, key=key, method="POST",
         path="/api/stores", body=body, handler=work,
         revalidate=lambda: ensure_still_owner(db, owner),  # 재현 직전 권한 재확인
     )
 ```
 
+- 멱등성 주체(`subject_id`)는 회원 id가 아니라 **Google `sub`의 SHA-256**(`subject_id_for(principal)`)입니다. 회원 세션은 `users.google_sub`, 가입 세션은 검증된 Google `sub`를 쓰므로 같은 사람은 가입 전후에 같은 주체이고, 서로 다른 `sub`의 같은 key는 서로 무관합니다. 유일 키는 `(subject_id, idempotency_key)`이고 endpoint·body 해시가 다르면 409 `IDEMPOTENCY_KEY_REUSED`입니다.
 - 같은 key·endpoint·정규화 body는 24시간 동안 최초 응답을 재현하며 `Idempotent-Replayed: true`를 붙입니다. 다른 body·endpoint는 409 `IDEMPOTENCY_KEY_REUSED`입니다. key는 UUID(대소문자 무관)여야 하며 누락·형식 오류는 422입니다.
 - 동시 같은 key는 DB 유니크 제약과 60초 임대(PROCESSING)로 한 번만 처리하고, 나머지는 최대 5초 기다렸다가 최초 응답을 재현합니다. 그래도 끝나지 않으면 409 `STATE_CONFLICT`와 `Retry-After`입니다(명세에 처리 중 전용 코드가 없어 재사용).
 - 업무 변경과 응답 저장은 한 트랜잭션으로 커밋되므로 핸들러가 직접 commit하면 안 됩니다. 핸들러가 예외를 내면 롤백하고 key를 풀어 재시도할 수 있습니다. 성공 결과만 저장합니다.
 - 만료 행은 같은 key가 다시 오면 교체되며, `purge_expired()`로 주기적으로 정리할 수 있습니다.
+
+#### #105 합의 사항: 가입 완료 endpoint의 멱등성
+
+| 항목 | 계약 |
+| --- | --- |
+| 주체 식별자 | `google_sub`(Google OIDC `sub`). `RegistrationPrincipal.google_sub`와 `MemberPrincipal.google_sub`(= `users.google_sub`)가 같은 값이어야 합니다. 저장은 `idempotency_records.subject_id = sha256(google_sub)` |
+| 주체 함수 | `app.idempotency.subject_id_for(principal) -> str`(64자 hex). `run_idempotent(db=, principal=, key=, method=, path=, body=, handler=, revalidate=)`가 내부에서 호출하므로 호출자가 직접 계산하지 않습니다 |
+| 의존성 | `CsrfMemberOrRegistration`(내부 `require_member_or_registration`): 회원 세션 우선, 없으면 가입 세션, 둘 다 없으면 401 `SESSION_EXPIRED`. 정지 계정은 403 `ACCOUNT_SUSPENDED` |
+| 연결 규칙 | 별도 연결 단계가 없습니다. 가입 전 기록은 `sha256(가입 세션의 google_sub)`로, 가입 후 회원 세션은 `sha256(users.google_sub)`로 조회하므로 같은 행을 찾습니다. 따라서 가입 트랜잭션은 **`users.google_sub`에 가입 세션의 `google_sub`를 그대로 저장**해야 합니다(정규화·소문자화 금지) |
+| 가입 트랜잭션(handler 안, `db`에 쓰고 commit 금지) | (1) 회원 세션 주체면 `ApiError(409, ALREADY_REGISTERED)`: 이미 기록이 있으면 handler까지 오지 않고 최초 응답이 재현되므로, handler에 들어온 회원 세션은 "동일 주체의 성공한 재시도"가 아닙니다. (2) `users`·프로필·(점주) 최초 매장 저장, (3) `consume_registration_session(registration_id, db=db)`가 False면 409 `STATE_CONFLICT`로 중단, (4) `create_session(user.id, db=db)`, (5) `IdempotentResult(201, 본문)` 반환 |
+| 응답 후 | `run_idempotent`가 업무 변경·응답 기록을 한 트랜잭션으로 commit한 뒤 반환하므로, 그 응답에 `set_session_cookie`로 새 회원 쿠키를 싣고 `clear_registration_cookie`로 가입 쿠키를 지웁니다. 재현 응답(`Idempotent-Replayed: true`)에는 새 세션을 만들지 않으므로 쿠키를 추가하지 않습니다(handler가 실행됐을 때만 발급) |
+| 재현 | 같은 key·같은 body: 회원 세션이든 (같은 Google 계정으로 다시 로그인해 얻은) 가입 세션이든 최초 201을 재현. 다른 body·다른 endpoint: 409 `IDEMPOTENCY_KEY_REUSED`. 재현 직전에 `revalidate`가 양쪽 세션에서 호출됩니다 |
+| 쿠키까지 잃은 경우 | 가입이 이미 끝났다면 Google 재로그인은 회원 세션을 발급하므로 같은 key로 가입 endpoint를 재시도할 수 있습니다 |
 
 ### 페이지네이션과 레이트 리미터
 

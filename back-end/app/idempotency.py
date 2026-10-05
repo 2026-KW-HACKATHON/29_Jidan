@@ -1,18 +1,23 @@
 """`Idempotency-Key` handling for create-style endpoints.
 
-Contract (openapi.yaml): a UUID key plus the member, endpoint and normalized body are kept for
+Contract (openapi.yaml): a UUID key plus the subject, endpoint and normalized body are kept for
 24 hours. Retrying the same request replays the first response, the same key with another body
 or endpoint is `409 IDEMPOTENCY_KEY_REUSED`, and concurrent requests with the same key run the
 work once.
 
 How it works. `run_idempotent` first *reserves* the key in its own short transaction (a unique
-`(principal, key)` row in state PROCESSING with a 60 second lease), so competing requests see it
+`(subject, key)` row in state PROCESSING with a 60 second lease), so competing requests see it
 at once. The handler then does its business writes on the request's session, and the same
 transaction flips the row to COMPLETED with the response. Business data and the stored response
 therefore commit together; a crash leaves nothing behind but an expiring lease, and a failed
 handler rolls back and releases the key so the client can retry.
 
 Only successful results are stored. Errors raised by the handler are not replayed.
+
+Subject. Records are keyed by the person's Google `sub` (hashed), not by the session kind: a
+registration session and the member session created from it map to the same subject, so the
+registration request can be retried after registering (docs/auth-design.md). See
+`subject_id_for`.
 """
 
 import hashlib
@@ -31,6 +36,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
+from app.auth import MemberPrincipal, RegistrationPrincipal
 from app.db import new_uuid, session_scope, utcnow
 from app.db.models import IdempotencyRecord
 from app.errors import ApiError, ErrorCode
@@ -46,6 +52,20 @@ POLL_INTERVAL_SECONDS = 0.1
 MAX_RESERVE_ATTEMPTS = 5
 
 _UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def subject_id_for(principal: MemberPrincipal | RegistrationPrincipal) -> str:
+    """The idempotency subject of a caller: SHA-256 hex of its Google `sub`.
+
+    Member session -> `users.google_sub`; registration session -> the verified Google `sub`.
+    Both are the same string for the same person, so a record written during registration is
+    found again by the member session created at the end of it, with no linking step. Hashing
+    keeps the 255 character `sub` within the 64 character column and out of the table.
+    """
+    google_sub = principal.google_sub
+    if not isinstance(google_sub, str) or not google_sub:
+        raise ValueError("principal has no Google sub")
+    return hashlib.sha256(google_sub.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -111,7 +131,7 @@ def _reuse_error() -> ApiError:
     return ApiError(409, ErrorCode.IDEMPOTENCY_KEY_REUSED)
 
 
-def _reserve(principal_id: str, key: str, endpoint: str, request_hash: str):
+def _reserve(subject_id: str, key: str, endpoint: str, request_hash: str):
     """Claim the key (_Owned), find its stored result (_Completed) or see it in use (_Busy)."""
     for _ in range(MAX_RESERVE_ATTEMPTS):
         now = utcnow()
@@ -119,7 +139,7 @@ def _reserve(principal_id: str, key: str, endpoint: str, request_hash: str):
         try:
             with session_scope() as session:
                 record = IdempotencyRecord(
-                    principal_id=principal_id, idempotency_key=key, endpoint=endpoint,
+                    subject_id=subject_id, idempotency_key=key, endpoint=endpoint,
                     request_hash=request_hash, state="PROCESSING", lock_token=lock_token,
                     locked_until=now + PROCESSING_LEASE, created_at=now,
                     expires_at=now + RECORD_TTL,
@@ -134,7 +154,7 @@ def _reserve(principal_id: str, key: str, endpoint: str, request_hash: str):
         with session_scope() as session:
             record = session.execute(
                 select(IdempotencyRecord).where(
-                    IdempotencyRecord.principal_id == principal_id,
+                    IdempotencyRecord.subject_id == subject_id,
                     IdempotencyRecord.idempotency_key == key,
                 )
             ).scalar_one_or_none()
@@ -203,7 +223,7 @@ def _response(status_code: int, body: Any, *, replayed: bool) -> Response:
 def run_idempotent(
     *,
     db: Session,
-    principal_id: str,
+    principal: MemberPrincipal | RegistrationPrincipal,
     key: str,
     method: str,
     path: str,
@@ -216,7 +236,8 @@ def run_idempotent(
     * `db` is the request's session; `handler` does its writes on it and returns an
       `IdempotentResult`. This function commits `db` together with the stored response, so
       the handler must not commit itself.
-    * `principal_id` is the member id (or the Google sub for registration).
+    * `principal` is the caller, a `MemberPrincipal` or a `RegistrationPrincipal`; the stored
+      subject comes from `subject_id_for`.
     * `body` is the request body (pydantic model or JSON-compatible value).
     * `revalidate` runs before a stored response is replayed. Raise `ApiError` there when the
       principal has lost the right to see the original result (e.g. store ownership changed);
@@ -225,11 +246,12 @@ def run_idempotent(
     Raises 409 IDEMPOTENCY_KEY_REUSED for the same key with another body/endpoint and 409
     STATE_CONFLICT (with Retry-After) if the original is still running after the wait timeout.
     """
+    subject_id = subject_id_for(principal)
     endpoint = _endpoint(method, path)
     request_hash = body_hash(body)
     deadline = time.monotonic() + WAIT_TIMEOUT_SECONDS
     while True:
-        outcome = _reserve(principal_id, key, endpoint, request_hash)
+        outcome = _reserve(subject_id, key, endpoint, request_hash)
         if isinstance(outcome, _Owned):
             break
         if isinstance(outcome, _Completed):
