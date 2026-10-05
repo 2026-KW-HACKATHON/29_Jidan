@@ -20,7 +20,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table('users',
-    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
     sa.Column('google_sub', sa.String(length=255), nullable=False),
     sa.Column('google_email', sa.String(length=320), nullable=False),
     sa.Column('email_verified', sa.Boolean(), nullable=False),
@@ -36,8 +36,8 @@ def upgrade() -> None:
     sa.UniqueConstraint('google_sub', name=op.f('uq_users_google_sub'))
     )
     op.create_table('stores',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('owner_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('owner_id', sa.CHAR(length=36), nullable=False),
     sa.Column('name', sa.String(length=100), nullable=False),
     sa.Column('industry', sa.String(length=50), nullable=False),
     sa.Column('postal_code', sa.String(length=10), nullable=False),
@@ -57,7 +57,7 @@ def upgrade() -> None:
     )
     op.create_index('ix_stores_owner_id', 'stores', ['owner_id'], unique=False)
     op.create_table('worker_profiles',
-    sa.Column('user_id', sa.String(length=36), nullable=False),
+    sa.Column('user_id', sa.CHAR(length=36), nullable=False),
     sa.Column('birth_date', sa.Date(), nullable=False),
     sa.Column('gender', sa.String(length=8), nullable=False),
     sa.Column('experience_level', sa.String(length=16), nullable=False),
@@ -67,8 +67,8 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('user_id', name=op.f('pk_worker_profiles'))
     )
     op.create_table('availability_rules',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('worker_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('worker_id', sa.CHAR(length=36), nullable=False),
     sa.Column('sort_order', sa.Integer(), nullable=False),
     sa.Column('start_time', sa.Time(), nullable=False),
     sa.Column('end_time', sa.Time(), nullable=False),
@@ -80,9 +80,9 @@ def upgrade() -> None:
     sa.UniqueConstraint('worker_id', 'sort_order', name=op.f('uq_availability_rules_worker_id_sort_order'))
     )
     op.create_table('job_postings',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('store_id', sa.String(length=36), nullable=False),
-    sa.Column('created_by_owner_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('store_id', sa.CHAR(length=36), nullable=False),
+    sa.Column('created_by_owner_id', sa.CHAR(length=36), nullable=False),
     sa.Column('title', sa.String(length=100), nullable=False),
     sa.Column('duty_description', sa.Text(), nullable=False),
     sa.Column('work_part', sa.String(length=16), nullable=False),
@@ -116,8 +116,8 @@ def upgrade() -> None:
     op.create_index('ix_job_postings_status_work_date', 'job_postings', ['status', 'work_date'], unique=False)
     op.create_index('ix_job_postings_store_id_status', 'job_postings', ['store_id', 'status'], unique=False)
     op.create_table('store_approval_requests',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('store_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('store_id', sa.CHAR(length=36), nullable=False),
     sa.Column('status', sa.String(length=16), nullable=False),
     sa.Column('submitted_at', UTC_DATETIME, nullable=False),
     sa.Column('approved_at', UTC_DATETIME, nullable=True),
@@ -128,18 +128,18 @@ def upgrade() -> None:
     sa.UniqueConstraint('store_id', name=op.f('uq_store_approval_requests_store_id'))
     )
     op.create_table('store_invitations',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('store_id', sa.String(length=36), nullable=False),
-    sa.Column('inviter_owner_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('store_id', sa.CHAR(length=36), nullable=False),
+    sa.Column('inviter_owner_id', sa.CHAR(length=36), nullable=False),
     sa.Column('invited_email', sa.String(length=320), nullable=False),
     sa.Column('token_hash', sa.String(length=64), nullable=False),
     sa.Column('created_at', UTC_DATETIME, nullable=False),
     sa.Column('last_sent_at', UTC_DATETIME, nullable=False),
     sa.Column('expires_at', UTC_DATETIME, nullable=False),
     sa.Column('access_expires_at', UTC_DATETIME, nullable=True),
-    sa.Column('accepted_by_worker_id', sa.String(length=36), nullable=True),
+    sa.Column('accepted_by_worker_id', sa.CHAR(length=36), nullable=True),
     sa.Column('accepted_at', UTC_DATETIME, nullable=True),
-    sa.Column('declined_by_worker_id', sa.String(length=36), nullable=True),
+    sa.Column('declined_by_worker_id', sa.CHAR(length=36), nullable=True),
     sa.Column('declined_at', UTC_DATETIME, nullable=True),
     sa.Column('canceled_at', UTC_DATETIME, nullable=True),
     sa.CheckConstraint('(accepted_at IS NOT NULL) + (declined_at IS NOT NULL) + (canceled_at IS NOT NULL) <= 1', name=op.f('ck_store_invitations_single_outcome')),
@@ -156,8 +156,8 @@ def upgrade() -> None:
     )
     op.create_index('ix_store_invitations_store_id_invited_email', 'store_invitations', ['store_id', 'invited_email'], unique=False)
     op.create_table('worker_careers',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('worker_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('worker_id', sa.CHAR(length=36), nullable=False),
     sa.Column('sort_order', sa.Integer(), nullable=False),
     sa.Column('industry', sa.String(length=50), nullable=False),
     sa.Column('duties', sa.String(length=500), nullable=False),
@@ -173,8 +173,8 @@ def upgrade() -> None:
     sa.UniqueConstraint('worker_id', 'sort_order', name=op.f('uq_worker_careers_worker_id_sort_order'))
     )
     op.create_table('availability_days',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('rule_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('rule_id', sa.CHAR(length=36), nullable=False),
     sa.Column('weekday', sa.String(length=3), nullable=False),
     sa.CheckConstraint("weekday IN ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')", name=op.f('ck_availability_days_weekday')),
     sa.ForeignKeyConstraint(['rule_id'], ['availability_rules.id'], name=op.f('fk_availability_days_rule_id_availability_rules')),
@@ -182,9 +182,9 @@ def upgrade() -> None:
     sa.UniqueConstraint('rule_id', 'weekday', name=op.f('uq_availability_days_rule_id_weekday'))
     )
     op.create_table('job_applications',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('job_id', sa.String(length=36), nullable=False),
-    sa.Column('worker_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('job_id', sa.CHAR(length=36), nullable=False),
+    sa.Column('worker_id', sa.CHAR(length=36), nullable=False),
     sa.Column('introduction', sa.String(length=500), nullable=False),
     sa.Column('status', sa.String(length=16), nullable=False),
     sa.Column('applied_at', UTC_DATETIME, nullable=False),
@@ -193,7 +193,7 @@ def upgrade() -> None:
     sa.Column('age_at_submission', sa.Integer(), nullable=False),
     sa.Column('experience_level', sa.String(length=16), nullable=False),
     sa.Column('revision', sa.Integer(), nullable=False),
-    sa.Column('active_worker_id', sa.String(length=36), sa.Computed("CASE WHEN status IN ('APPLIED', 'REQUESTED', 'CONFIRMED') THEN worker_id END", persisted=True), nullable=True),
+    sa.Column('active_worker_id', sa.CHAR(length=36), sa.Computed("CASE WHEN status IN ('APPLIED', 'REQUESTED', 'CONFIRMED') THEN worker_id END", persisted=True), nullable=True),
     sa.CheckConstraint("(status = 'WITHDRAWN') = (withdrawn_at IS NOT NULL)", name=op.f('ck_job_applications_withdrawn_consistency')),
     sa.CheckConstraint("TRIM(introduction) <> ''", name=op.f('ck_job_applications_introduction')),
     sa.CheckConstraint("experience_level IN ('NEW', 'EXPERIENCED')", name=op.f('ck_job_applications_experience_level')),
@@ -207,8 +207,8 @@ def upgrade() -> None:
     )
     op.create_index('ix_job_applications_worker_id', 'job_applications', ['worker_id'], unique=False)
     op.create_table('application_careers',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('application_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('application_id', sa.CHAR(length=36), nullable=False),
     sa.Column('sort_order', sa.Integer(), nullable=False),
     sa.Column('industry', sa.String(length=50), nullable=False),
     sa.Column('duties', sa.String(length=500), nullable=False),
@@ -223,16 +223,16 @@ def upgrade() -> None:
     sa.UniqueConstraint('application_id', 'sort_order', name=op.f('uq_application_careers_application_id_sort_order'))
     )
     op.create_table('work_requests',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('application_id', sa.String(length=36), nullable=False),
-    sa.Column('requested_by_owner_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('application_id', sa.CHAR(length=36), nullable=False),
+    sa.Column('requested_by_owner_id', sa.CHAR(length=36), nullable=False),
     sa.Column('status', sa.String(length=32), nullable=False),
     sa.Column('requested_at', UTC_DATETIME, nullable=False),
     sa.Column('expires_at', UTC_DATETIME, nullable=False),
     sa.Column('responded_at', UTC_DATETIME, nullable=True),
     sa.Column('ended_at', UTC_DATETIME, nullable=True),
     sa.Column('revision', sa.Integer(), nullable=False),
-    sa.Column('pending_application_id', sa.String(length=36), sa.Computed("CASE WHEN status = 'PENDING' THEN application_id END", persisted=True), nullable=True),
+    sa.Column('pending_application_id', sa.CHAR(length=36), sa.Computed("CASE WHEN status = 'PENDING' THEN application_id END", persisted=True), nullable=True),
     sa.CheckConstraint("(status = 'PENDING') = (ended_at IS NULL)", name=op.f('ck_work_requests_ended_consistency')),
     sa.CheckConstraint("status IN ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'CONFIRMATION_WITHDRAWN')", name=op.f('ck_work_requests_status')),
     sa.CheckConstraint("status NOT IN ('ACCEPTED', 'DECLINED', 'CONFIRMATION_WITHDRAWN') OR responded_at IS NOT NULL", name=op.f('ck_work_requests_responded_consistency')),
@@ -245,8 +245,8 @@ def upgrade() -> None:
     )
     op.create_index('ix_work_requests_application_id', 'work_requests', ['application_id'], unique=False)
     op.create_table('application_selection_effects',
-    sa.Column('request_id', sa.String(length=36), nullable=False),
-    sa.Column('application_id', sa.String(length=36), nullable=False),
+    sa.Column('request_id', sa.CHAR(length=36), nullable=False),
+    sa.Column('application_id', sa.CHAR(length=36), nullable=False),
     sa.Column('previous_status', sa.String(length=16), nullable=False),
     sa.Column('applied_revision', sa.Integer(), nullable=False),
     sa.Column('restored_at', UTC_DATETIME, nullable=True),
@@ -257,13 +257,13 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('request_id', 'application_id', name=op.f('pk_application_selection_effects'))
     )
     op.create_table('shift_assignments',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('job_id', sa.String(length=36), nullable=False),
-    sa.Column('work_request_id', sa.String(length=36), nullable=False),
-    sa.Column('worker_id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('job_id', sa.CHAR(length=36), nullable=False),
+    sa.Column('work_request_id', sa.CHAR(length=36), nullable=False),
+    sa.Column('worker_id', sa.CHAR(length=36), nullable=False),
     sa.Column('confirmed_at', UTC_DATETIME, nullable=False),
     sa.Column('withdrawn_at', UTC_DATETIME, nullable=True),
-    sa.Column('active_job_id', sa.String(length=36), sa.Computed('CASE WHEN withdrawn_at IS NULL THEN job_id END', persisted=True), nullable=True),
+    sa.Column('active_job_id', sa.CHAR(length=36), sa.Computed('CASE WHEN withdrawn_at IS NULL THEN job_id END', persisted=True), nullable=True),
     sa.CheckConstraint('withdrawn_at IS NULL OR withdrawn_at >= confirmed_at', name=op.f('ck_shift_assignments_withdrawn_after')),
     sa.ForeignKeyConstraint(['job_id'], ['job_postings.id'], name=op.f('fk_shift_assignments_job_id_job_postings')),
     sa.ForeignKeyConstraint(['work_request_id'], ['work_requests.id'], name=op.f('fk_shift_assignments_work_request_id_work_requests')),
@@ -275,11 +275,11 @@ def upgrade() -> None:
     op.create_index('ix_shift_assignments_job_id', 'shift_assignments', ['job_id'], unique=False)
     op.create_index('ix_shift_assignments_worker_id', 'shift_assignments', ['worker_id'], unique=False)
     op.create_table('store_access_grants',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('store_id', sa.String(length=36), nullable=False),
-    sa.Column('worker_id', sa.String(length=36), nullable=False),
-    sa.Column('invitation_id', sa.String(length=36), nullable=True),
-    sa.Column('assignment_id', sa.String(length=36), nullable=True),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
+    sa.Column('store_id', sa.CHAR(length=36), nullable=False),
+    sa.Column('worker_id', sa.CHAR(length=36), nullable=False),
+    sa.Column('invitation_id', sa.CHAR(length=36), nullable=True),
+    sa.Column('assignment_id', sa.CHAR(length=36), nullable=True),
     sa.Column('duty_label', sa.String(length=100), nullable=True),
     sa.Column('granted_at', UTC_DATETIME, nullable=False),
     sa.Column('valid_until', UTC_DATETIME, nullable=True),

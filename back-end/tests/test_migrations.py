@@ -101,3 +101,61 @@ def test_mysql_stores_timestamps_in_utc(mysql_session):
         text("SELECT created_at FROM users WHERE id = :id"), {"id": user.id}).scalar()
     assert raw == datetime(2026, 10, 5, 3, 0, 0, 123456)  # noqa: DTZ001 - microseconds survive, no zone shift
 
+
+def uuid_columns():
+    """Every UUID-valued column: primary keys, foreign keys and the generated uniqueness helpers."""
+    from sqlalchemy import Computed
+
+    return [
+        column
+        for table in Base.metadata.tables.values()
+        for column in table.columns
+        if column.primary_key and column.type.python_type is str
+        or column.foreign_keys
+        or isinstance(column.computed, Computed)
+    ]
+
+
+def test_uuid_columns_are_char36_in_models_and_sqlite_schema(engine):
+    from sqlalchemy import CHAR
+
+    columns = uuid_columns()
+    assert len(columns) >= 40  # guards against the helper silently matching nothing
+    for column in columns:
+        assert isinstance(column.type, CHAR) and column.type.length == 36, str(column)
+    inspector = inspect(engine)
+    for column in columns:
+        reflected = {c["name"]: c for c in inspector.get_columns(column.table.name)}[column.name]
+        assert reflected["type"].__class__.__name__ == "CHAR", str(column)
+        assert reflected["type"].length == 36, str(column)
+
+
+@pytest.mark.mysql
+def test_mysql_uuid_columns_are_char36_with_matching_collation(mysql_engine):
+    from sqlalchemy import text
+
+    rows = {}
+    with mysql_engine.connect() as connection:
+        for row in connection.execute(text(
+            "SELECT table_name, column_name, column_type, character_set_name, collation_name "
+            "FROM information_schema.columns WHERE table_schema = DATABASE()"
+        )):
+            rows[(row[0].lower(), row[1].lower())] = row[2:]
+        columns = uuid_columns()
+        assert len(columns) >= 40
+        for column in columns:
+            column_type, charset, collation = rows[(column.table.name, column.name)]
+            assert column_type == "char(36)", f"{column}: {column_type}"
+            for foreign_key in column.foreign_keys:
+                target = foreign_key.column
+                assert rows[(target.table.name, target.name)] == (column_type, charset, collation), (
+                    f"{column} differs from referenced {target}"
+                )
+        # No UUID column may have been created as VARCHAR(36).
+        assert not [key for key, value in rows.items() if value[0] == "varchar(36)"]
+        # SHOW CREATE TABLE exposes the generated active_* helper columns as CHAR(36) too.
+        for table, column in (("job_applications", "active_worker_id"),
+                              ("shift_assignments", "active_job_id"),
+                              ("work_requests", "pending_application_id")):
+            ddl = connection.execute(text(f"SHOW CREATE TABLE {table}")).one()[1]
+            assert f"`{column}` char(36)" in ddl and "GENERATED ALWAYS" in ddl

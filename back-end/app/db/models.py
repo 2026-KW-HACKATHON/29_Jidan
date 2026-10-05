@@ -10,6 +10,7 @@ which makes a CHECK on it ineffective.
 from datetime import date, datetime, time
 
 from sqlalchemy import (
+    CHAR,
     Boolean,
     CheckConstraint,
     Computed,
@@ -67,7 +68,7 @@ SHIFT_SPAN = (
 
 
 def _id() -> Mapped[str]:
-    return mapped_column(String(36), primary_key=True, default=new_uuid)
+    return mapped_column(CHAR(36), primary_key=True, default=new_uuid)
 
 
 class User(Base):
@@ -269,7 +270,7 @@ class JobApplication(Base):
     experience_level: Mapped[str] = mapped_column(String(16))
     revision: Mapped[int] = mapped_column(Integer, default=1)
     active_worker_id: Mapped[str | None] = mapped_column(
-        String(36),
+        CHAR(36),
         Computed(
             "CASE WHEN status IN ('APPLIED', 'REQUESTED', 'CONFIRMED') THEN worker_id END",
             persisted=True,
@@ -326,7 +327,7 @@ class WorkRequest(Base):
     ended_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     pending_application_id: Mapped[str | None] = mapped_column(
-        String(36),
+        CHAR(36),
         Computed("CASE WHEN status = 'PENDING' THEN application_id END", persisted=True),
     )
 
@@ -348,7 +349,7 @@ class ShiftAssignment(Base):
     confirmed_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     withdrawn_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     active_job_id: Mapped[str | None] = mapped_column(
-        String(36),
+        CHAR(36),
         Computed("CASE WHEN withdrawn_at IS NULL THEN job_id END", persisted=True),
     )
 
