@@ -97,3 +97,19 @@ class WorkerInput(Input):
                 intervals.append((begin, finish))
         return self
 
+
+
+class StoreInput(Input):
+    name: Annotated[str, Field(min_length=1, max_length=100, pattern=r"\S", strict=True)]
+    industry: Industry
+    postalCode: Annotated[str, Field(pattern=r"^[0-9]{5}$", strict=True)]
+    address: Annotated[str, Field(min_length=1, max_length=200, pattern=r"\S", strict=True)]
+    detailAddress: Annotated[str, Field(max_length=200, strict=True)] = ""
+    businessRegistrationNumber: Annotated[str, Field(pattern=r"^[0-9]{10}$", strict=True)]
+    phoneNumber: Annotated[str, Field(pattern=r"^0[0-9]{8,10}$", strict=True)]
+
+
+class OwnerInput(Input):
+    name: Name
+    phoneNumber: Phone
+    store: StoreInput

@@ -13,13 +13,16 @@ from app.db.models import (
     AvailabilityDay,
     AvailabilityRule,
     RegistrationSession,
+    Store,
+    StoreApprovalRequest,
     User,
     WorkerCareer,
     WorkerProfile,
 )
 from app.errors import ApiError, ErrorCode
 from app.idempotency import IdempotencyKey, IdempotentResult, run_idempotent
-from app.registration_inputs import WorkerInput
+from app.registration_inputs import OwnerInput, WorkerInput
+from app.store_address import verify_store_address
 
 router = APIRouter(prefix="/api/auth/registrations")
 
@@ -66,7 +69,6 @@ def register(db, principal, key, path, body, create):
         # to public codes; unrelated database errors are never presented as duplicate accounts.
         if db.scalar(select(User.id).where(User.google_sub == principal.google_sub)) is not None:
             raise ApiError(409, ErrorCode.ALREADY_REGISTERED) from None
-        from app.db.models import Store
         if hasattr(body, "store") and db.scalar(select(Store.id).where(
             Store.business_registration_number == body.store.businessRegistrationNumber,
         )) is not None:
@@ -103,3 +105,27 @@ def register_worker(body: WorkerInput, principal: CsrfMemberOrRegistration,
         db.flush()
         return user
     return register(db, principal, key, "/api/auth/registrations/workers", body, create)
+
+
+@router.post("/owners")
+def register_owner(body: OwnerInput, principal: CsrfMemberOrRegistration,
+                   db: SessionDep, key: IdempotencyKey):
+    def create():
+        user = new_user(db, principal, body, "OWNER")
+        store = body.store
+        if db.scalar(select(Store.id).where(
+            Store.business_registration_number == store.businessRegistrationNumber,
+        )) is not None:
+            raise ApiError(409, ErrorCode.STORE_ALREADY_REGISTERED)
+        canonical_address = verify_store_address(store)
+        row = Store(owner_id=user.id, name=store.name, industry=store.industry,
+                    postal_code=store.postalCode, address=canonical_address,
+                    detail_address=store.detailAddress,
+                    business_registration_number=store.businessRegistrationNumber,
+                    phone_number=store.phoneNumber, approval_status="PENDING")
+        db.add(row)
+        db.flush()
+        db.add(StoreApprovalRequest(store_id=row.id, status="PENDING"))
+        db.flush()
+        return user
+    return register(db, principal, key, "/api/auth/registrations/owners", body, create)
