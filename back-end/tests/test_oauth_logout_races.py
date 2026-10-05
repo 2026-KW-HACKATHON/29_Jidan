@@ -27,9 +27,11 @@ def test_logout_cancels_callback_sessions(db_engine, monkeypatch, existing, orde
     }.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(oauth, "enforce_login_rate_limit", lambda request: None)
+    previous = None
     if existing:
         with Session(db_engine) as db:
-            make_user(db, "WORKER", google_sub="subject")
+            user = make_user(db, "WORKER", google_sub="subject")
+            previous = auth.create_session(user.id, db=db)
             db.commit()
     app = FastAPI()
     install_error_handlers(app)
@@ -51,13 +53,17 @@ def test_logout_cancels_callback_sessions(db_engine, monkeypatch, existing, orde
         return original(*args, **kwargs)
     monkeypatch.setattr(auth, setter_name, delayed_cookie)
     with ContractClient(app, follow_redirects=False, raise_server_exceptions=False) as callback_api:
+        if previous:
+            callback_api.cookies.set(auth.SESSION_COOKIE_NAME, previous.token)
         params = begin(callback_api)
         token = callback_api.cookies.get(oauth.OAUTH_COOKIE)
         def sign_out():
             with ContractClient(app, raise_server_exceptions=False) as other:
                 return other.post("/api/auth/logout", headers={
                     "Origin": "http://frontend.test",
-                    "Cookie": f"{oauth.OAUTH_LOGOUT_COOKIE}={token}",
+                    "Cookie": f"{oauth.OAUTH_LOGOUT_COOKIE}={token}" + (
+                        f"; {auth.SESSION_COOKIE_NAME}={previous.token}" if previous else ""),
+                    **({"X-CSRF-Token": previous.csrf_token} if previous else {}),
                 })
         def callback():
             return callback_api.get("/api/auth/google/callback", params={"state": params["state"], "code": "code"})
@@ -88,4 +94,4 @@ def test_logout_cancels_callback_sessions(db_engine, monkeypatch, existing, orde
             assert bool(row.issued_session_id) == existing
             assert bool(row.issued_registration_id) != existing
         else:
-            assert not members and not signups
+            assert len(members) == int(existing) and not signups

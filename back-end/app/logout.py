@@ -31,9 +31,11 @@ def logout(request: Request, db: SessionDep) -> Response:
             csrf = auth.csrf_token_for(registration_token)
     if csrf is not None:
         verify_csrf_token(request, csrf)
+    # Callback locks OAuth before rotating browser sessions. Use the same lock order
+    # so logout cannot deadlock against that transaction.
+    revoke_oauth(db, request.cookies.get(OAUTH_LOGOUT_COOKIE))
     auth.revoke_session(member_token, db=db)
     auth.revoke_registration_session(registration_token, db=db)
-    revoke_oauth(db, request.cookies.get(OAUTH_LOGOUT_COOKIE))
     db.commit()
     response = Response(status_code=204)
     auth.clear_session_cookie(response)
