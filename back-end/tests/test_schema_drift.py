@@ -30,10 +30,27 @@ def test_model_and_sqlite_checks_match(engine):
 
 @pytest.mark.mysql
 def test_model_and_mysql_checks_match(mysql_engine):
-    model = model_checks(Base.metadata)
+    model = model_checks(Base.metadata, mysql_engine.dialect)
     database = database_checks(inspect(mysql_engine))
     assert check_differences(model, database, keep_parentheses=False) == []
     assert len(database) == len(model) >= 40
+
+
+def test_dialect_specific_checks_render_differently_per_database():
+    from sqlalchemy.dialects import mysql
+
+    sqlite = model_checks(Base.metadata)
+    on_mysql = model_checks(Base.metadata, mysql.dialect())
+    assert sqlite.keys() == on_mysql.keys()
+    different = sorted(key for key in sqlite if sqlite[key] != on_mysql[key])
+    assert different == [
+        ("application_careers", "ck_application_careers_store_name_not_blank"),
+        ("job_applications", "ck_job_applications_introduction"),
+        ("stores", "ck_stores_brn_digits"),
+        ("worker_careers", "ck_worker_careers_store_name_not_blank"),
+    ]
+    assert "GLOB" in sqlite[("stores", "ck_stores_brn_digits")]
+    assert "REGEXP_LIKE" in on_mysql[("stores", "ck_stores_brn_digits")]
 
 
 # --- the comparison itself must notice drift -------------------------------------------------

@@ -60,14 +60,22 @@ def normalize_check_sql(sql: str, keep_parentheses: bool) -> str:
     return " ".join(tokens)
 
 
-def model_checks(metadata) -> dict[tuple[str, str], str]:
-    """{(table, constraint name): raw SQL} for every CheckConstraint in the metadata."""
+def model_checks(metadata, dialect=None) -> dict[tuple[str, str], str]:
+    """{(table, constraint name): SQL as rendered for `dialect`} for every CheckConstraint.
+
+    Dialect-specific checks (`app.db.checks.DialectSql`) render differently per dialect, so the
+    SQLite comparison uses the default dialect and the MySQL comparison `mysql.dialect()`.
+    """
+    from sqlalchemy.engine.default import DefaultDialect
+
+    dialect = dialect or DefaultDialect()
     checks = {}
     for table in metadata.tables.values():
         for constraint in table.constraints:
             if isinstance(constraint, CheckConstraint):
                 assert constraint.name, f"unnamed CHECK on {table.name}"
-                checks[(table.name, str(constraint.name))] = str(constraint.sqltext)
+                checks[(table.name, str(constraint.name))] = str(constraint.sqltext.compile(
+                    dialect=dialect, compile_kwargs={"literal_binds": True}))
     return checks
 
 

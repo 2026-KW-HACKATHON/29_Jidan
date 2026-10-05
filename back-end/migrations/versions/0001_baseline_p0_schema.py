@@ -16,6 +16,23 @@ def cs_string(length):
     return sa.String(length).with_variant(sa.String(length, collation="utf8mb4_0900_as_cs"), "mysql")
 
 
+# CHECKs whose text must differ per database (LENGTH counts bytes on MySQL, MySQL's default
+# collation ignores some characters, ...). Frozen copies of app.db.checks.
+WHITESPACE = "char(9,10,11,12,13,32,133,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288)"
+
+
+def dialect_check(name, mysql, sqlite):
+    is_mysql = op.get_context().dialect.name in ("mysql", "mariadb")
+    return sa.CheckConstraint(mysql if is_mysql else sqlite, name=op.f(name))
+
+
+def not_blank(name, column, nullable=False):
+    prefix = f"{column} IS NULL OR " if nullable else ""
+    return dialect_check(
+        name, f"{prefix}REGEXP_LIKE({column}, '[^[:space:]]')", f"{prefix}TRIM({column}, {WHITESPACE}) <> ''",
+    )
+
+
 UTC_DATETIME = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql")
 
 revision = "0001"
@@ -56,7 +73,11 @@ def upgrade() -> None:
     sa.Column('approved_at', UTC_DATETIME, nullable=True),
     sa.CheckConstraint("(approval_status = 'PENDING' AND approved_at IS NULL) OR (approval_status = 'APPROVED' AND approved_at IS NOT NULL)", name=op.f('ck_stores_approval_consistency')),
     sa.CheckConstraint("approval_status IN ('PENDING', 'APPROVED')", name=op.f('ck_stores_approval_status')),
-    sa.CheckConstraint('LENGTH(business_registration_number) = 10', name=op.f('ck_stores_brn_digits')),
+    dialect_check(
+        'ck_stores_brn_digits',
+        "CHAR_LENGTH(business_registration_number) = 10 AND REGEXP_LIKE(business_registration_number, '^[0-9]{10}$')",
+        "LENGTH(business_registration_number) = 10 AND business_registration_number NOT GLOB '*[^0-9]*'",
+    ),
     sa.ForeignKeyConstraint(['owner_id'], ['users.id'], name=op.f('fk_stores_owner_id_users')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_stores')),
     sa.UniqueConstraint('business_registration_number', name=op.f('uq_stores_business_registration_number'))
@@ -174,7 +195,7 @@ def upgrade() -> None:
     sa.CheckConstraint('(is_current = 1 AND end_month IS NULL) OR (is_current = 0 AND end_month IS NOT NULL)', name=op.f('ck_worker_careers_current_end_month')),
     sa.CheckConstraint('end_month IS NULL OR start_month <= end_month', name=op.f('ck_worker_careers_month_order')),
     sa.CheckConstraint('sort_order >= 0', name=op.f('ck_worker_careers_sort_order')),
-    sa.CheckConstraint("store_name IS NULL OR TRIM(store_name) <> ''", name=op.f('ck_worker_careers_store_name_not_blank')),
+    not_blank('ck_worker_careers_store_name_not_blank', 'store_name', nullable=True),
     sa.ForeignKeyConstraint(['worker_id'], ['worker_profiles.user_id'], name=op.f('fk_worker_careers_worker_id_worker_profiles')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_worker_careers')),
     sa.UniqueConstraint('worker_id', 'sort_order', name=op.f('uq_worker_careers_worker_id_sort_order'))
@@ -202,7 +223,7 @@ def upgrade() -> None:
     sa.Column('revision', sa.Integer(), nullable=False),
     sa.Column('active_worker_id', sa.CHAR(length=36), sa.Computed("CASE WHEN status IN ('APPLIED', 'REQUESTED', 'CONFIRMED') THEN worker_id END", persisted=True), nullable=True),
     sa.CheckConstraint("(status = 'WITHDRAWN') = (withdrawn_at IS NOT NULL)", name=op.f('ck_job_applications_withdrawn_consistency')),
-    sa.CheckConstraint("TRIM(introduction) <> ''", name=op.f('ck_job_applications_introduction')),
+    not_blank('ck_job_applications_introduction', 'introduction'),
     sa.CheckConstraint("experience_level IN ('NEW', 'EXPERIENCED')", name=op.f('ck_job_applications_experience_level')),
     sa.CheckConstraint("status IN ('APPLIED', 'REQUESTED', 'CONFIRMED', 'WITHDRAWN', 'NOT_SELECTED', 'COMPLETED')", name=op.f('ck_job_applications_status')),
     sa.CheckConstraint('age_at_submission >= 0', name=op.f('ck_job_applications_age')),
@@ -225,7 +246,7 @@ def upgrade() -> None:
     sa.Column('is_current', sa.Boolean(), nullable=False),
     sa.CheckConstraint('(is_current = 1 AND end_month IS NULL) OR (is_current = 0 AND end_month IS NOT NULL)', name=op.f('ck_application_careers_current_end_month')),
     sa.CheckConstraint('sort_order >= 0', name=op.f('ck_application_careers_sort_order')),
-    sa.CheckConstraint("store_name IS NULL OR TRIM(store_name) <> ''", name=op.f('ck_application_careers_store_name_not_blank')),
+    not_blank('ck_application_careers_store_name_not_blank', 'store_name', nullable=True),
     sa.ForeignKeyConstraint(['application_id'], ['job_applications.id'], name=op.f('fk_application_careers_application_id_job_applications')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_application_careers')),
     sa.UniqueConstraint('application_id', 'sort_order', name=op.f('uq_application_careers_application_id_sort_order'))

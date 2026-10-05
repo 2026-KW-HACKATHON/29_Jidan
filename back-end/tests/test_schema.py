@@ -28,13 +28,15 @@ from tests.factories import (
 )
 
 
-def rejected(session, action):
-    """The statement must violate a constraint; the savepoint keeps earlier rows intact."""
+def rejected(session, action, also=()):
+    """The statement must violate a constraint; the savepoint keeps earlier rows intact.
+
+    `also` lists extra MySQL error codes that count, e.g. 1406 (value longer than the column)."""
     with pytest.raises(DBAPIError) as caught, session.begin_nested():
         action()
         session.flush()
     # MySQL reports a violated CHECK (errno 3819) as OperationalError, not IntegrityError.
-    assert isinstance(caught.value, IntegrityError) or caught.value.orig.args[0] == 3819
+    assert isinstance(caught.value, IntegrityError) or caught.value.orig.args[0] in (3819, *also)
 
 
 def test_users_unique_google_sub_and_enum_checks(session):
@@ -59,6 +61,32 @@ def test_business_registration_number_unique_and_ten_digits(session):
     rejected(session, lambda: make_store(
         session, business_registration_number=store.business_registration_number))
     rejected(session, lambda: make_store(session, business_registration_number="123456789"))
+
+
+@pytest.mark.parametrize("value", [
+    "가나다a",  # 4 characters but 10 bytes: LENGTH counts bytes on MySQL
+    "123456789",
+    "12345678901",
+    "12345abcde",
+    "123-45-6789",
+    "12345 6789",
+    " 123456789",
+    "123456789 ",
+    "123456789\n",
+    "１２３４５６７８９０",  # full-width digits: 10 characters, 30 bytes
+    "",
+], ids=["hangul-10-bytes", "9-digits", "11-digits", "letters", "hyphens", "inner-space",
+        "leading-space", "trailing-space", "trailing-newline", "full-width-digits", "empty"])
+def test_business_registration_number_rejects_anything_but_ten_ascii_digits(session, value):
+    # Longer than the VARCHAR(10) column: MySQL refuses it before the CHECK (1406), SQLite has no limit.
+    rejected(session, lambda: make_store(session, business_registration_number=value), also=(1406,))
+
+
+@pytest.mark.parametrize("value", ["0123456789", "0000000000", "1234567890"])
+def test_business_registration_number_accepts_ten_digits_including_leading_zero(session, value):
+    store = make_store(session, business_registration_number=value)
+    session.expire_all()
+    assert store.business_registration_number == value
 
 
 def test_one_approval_request_per_store(session):
@@ -227,6 +255,42 @@ def test_application_content_rules(session):
     rejected(session, lambda: make_application(session, job, withdrawn_at=NOW))  # timestamp but live
     rejected(session, lambda: make_application(session, job, status="MAYBE"))
     rejected(session, lambda: make_application(session, job, age_at_submission=-1))
+
+
+# Whitespace-only values must be rejected identically by SQLite and MySQL: tab, newline, vertical
+# tab, form feed, carriage return, NBSP, NEL, en/em space, line/paragraph separator, ideographic
+# space. Invisible non-whitespace (zero-width space, control characters) is content on both.
+BLANKS = ["", " ", "  ", "\t", "\n", "\r\n", "\x0b", "\x0c", "\u00a0", "\u0085", "\u2003",
+          "\u2028", "\u2029", "\u3000", " \t\n\u3000 "]
+INVISIBLE_CONTENT = ["\u200b", "\x01", "\ufeff"]
+
+
+@pytest.mark.parametrize("value", BLANKS, ids=repr)
+def test_blank_introduction_is_rejected_in_every_whitespace_form(session, value):
+    rejected(session, lambda: make_application(session, make_job(session), introduction=value))
+
+
+@pytest.mark.parametrize("value", ["a", " a ", "\ta\n", "가", *INVISIBLE_CONTENT], ids=repr)
+def test_introduction_with_any_non_whitespace_character_is_accepted(session, value):
+    application = make_application(session, make_job(session), introduction=value)
+    session.expire_all()
+    assert application.introduction == value
+
+
+@pytest.mark.parametrize("table", [WorkerCareer.__table__, ApplicationCareer.__table__])
+def test_store_name_check_treats_whitespace_forms_alike_on_both_databases(session, table):
+    if table.name == "worker_careers":
+        owner = {"worker_id": make_worker(session).id}
+    else:
+        owner = {"application_id": make_application(session, make_job(session, make_store(session))).id}
+    values = {**owner, "sort_order": 0, "industry": "CAFE", "duties": "서빙",
+              "start_month": "2024-01", "end_month": None, "is_current": True}
+    for n, blank in enumerate(BLANKS):
+        rejected(session, lambda n=n, blank=blank: session.execute(table.insert().values(
+            **values, id=f"blank-{n}", store_name=blank)))
+    for n, content in enumerate(["a", " a ", *INVISIBLE_CONTENT]):
+        session.execute(table.insert().values(
+            **{**values, "sort_order": n + 1}, id=f"ok-{n}", store_name=content))
 
 
 def test_work_request_rules(session):

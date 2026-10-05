@@ -3,6 +3,8 @@
 Conventions: CHAR(36) UUID keys, UTC DATETIME(6), enum-like values as VARCHAR + CHECK.
 Rules that need other tables (role of a referenced user, same-store consistency, overlap
 checks, row-count limits, 30-minute alignment) are enforced in the service layer, not here.
+Text rules whose meaning differs between SQLite and MySQL (digits-only, not-blank) use
+app.db.checks so both databases enforce the same thing.
 So is invited_email normalization: MySQL's default collation compares case-insensitively,
 which makes a CHECK on it ineffective.
 """
@@ -26,6 +28,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 
+from app.db.checks import digits_only, not_blank
 from app.db.types import UtcDateTime, cs_string, new_uuid, normalize_optional_text, utcnow
 
 NAMING_CONVENTION = {
@@ -108,7 +111,7 @@ class WorkerCareer(Base):
     __table_args__ = (
         UniqueConstraint("worker_id", "sort_order"),
         CheckConstraint("sort_order >= 0", name="sort_order"),
-        CheckConstraint("store_name IS NULL OR TRIM(store_name) <> ''", name="store_name_not_blank"),
+        CheckConstraint(not_blank("store_name", nullable=True), name="store_name_not_blank"),
         CheckConstraint(
             "(is_current = 1 AND end_month IS NULL) OR (is_current = 0 AND end_month IS NOT NULL)",
             name="current_end_month",
@@ -168,7 +171,7 @@ class Store(Base):
             " OR (approval_status = 'APPROVED' AND approved_at IS NOT NULL)",
             name="approval_consistency",
         ),
-        CheckConstraint("LENGTH(business_registration_number) = 10", name="brn_digits"),
+        CheckConstraint(digits_only("business_registration_number", 10), name="brn_digits"),
         Index("ix_stores_owner_id", "owner_id"),
     )
 
@@ -254,7 +257,7 @@ class JobApplication(Base):
         UniqueConstraint("job_id", "active_worker_id"),
         CheckConstraint(_in("status", APPLICATION_STATUSES), name="status"),
         CheckConstraint(_in("experience_level", EXPERIENCE_LEVELS), name="experience_level"),
-        CheckConstraint("TRIM(introduction) <> ''", name="introduction"),
+        CheckConstraint(not_blank("introduction"), name="introduction"),
         CheckConstraint("age_at_submission >= 0", name="age"),
         CheckConstraint("revision >= 1", name="revision"),
         CheckConstraint(
@@ -288,7 +291,7 @@ class ApplicationCareer(Base):
     __table_args__ = (
         UniqueConstraint("application_id", "sort_order"),
         CheckConstraint("sort_order >= 0", name="sort_order"),
-        CheckConstraint("store_name IS NULL OR TRIM(store_name) <> ''", name="store_name_not_blank"),
+        CheckConstraint(not_blank("store_name", nullable=True), name="store_name_not_blank"),
         CheckConstraint(
             "(is_current = 1 AND end_month IS NULL) OR (is_current = 0 AND end_month IS NOT NULL)",
             name="current_end_month",
