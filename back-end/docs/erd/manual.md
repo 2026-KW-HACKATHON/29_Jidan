@@ -12,7 +12,13 @@ erDiagram
     MANUAL_VERSIONS ||--o{ MANUAL_SECTIONS : contains
     MANUAL_SHIFTS o|--o{ MANUAL_SECTIONS : scopes
     MANUAL_SECTIONS ||--o{ MANUAL_STEPS : describes
-    MANUAL_SECTIONS ||--o{ MANUAL_MEDIA : illustrates
+    STORES ||--o{ MANUAL_MEDIA : stores
+    USERS ||--o{ MANUAL_MEDIA : uploads
+    MANUAL_VERSIONS ||--o{ MANUAL_PHOTO_ATTACHMENTS : attaches
+    MANUAL_SECTIONS o|--o{ MANUAL_PHOTO_ATTACHMENTS : illustrates
+    MANUAL_MEDIA ||--o{ MANUAL_PHOTO_ATTACHMENTS : uses
+    INTERVIEW_TURNS ||--o{ INTERVIEW_TURN_PHOTOS : attaches
+    MANUAL_MEDIA ||--o{ INTERVIEW_TURN_PHOTOS : inputs
     MANUAL_VERSIONS ||--o{ INTERVIEW_SESSIONS : has_interviews
     USERS ||--o{ INTERVIEW_SESSIONS : interviews
     INTERVIEW_QUESTION_SETS ||--o{ INTERVIEW_INTENTS : defines
@@ -91,11 +97,30 @@ erDiagram
     }
     MANUAL_MEDIA {
         uuid id PK
-        uuid section_id FK
-        int sort_order
+        uuid store_id FK
+        uuid uploaded_by_owner_id FK
+        string kind
         string object_key
         string mime_type
+        int byte_size
+        int duration_seconds
+        datetime created_at
+        datetime expires_at
+        datetime deleted_at
+    }
+    MANUAL_PHOTO_ATTACHMENTS {
+        uuid id PK
+        uuid version_id FK
+        uuid section_id FK
+        uuid media_id FK
+        int sort_order
+        string title
         string caption
+    }
+    INTERVIEW_TURN_PHOTOS {
+        uuid turn_id PK, FK
+        uuid media_id PK, FK
+        int sort_order
     }
     INTERVIEW_QUESTION_SETS {
         uuid id PK
@@ -222,7 +247,10 @@ erDiagram
 | `manual_versions` | `(manual_id, revision_no)` UNIQUE. revision_no는 게시 버전 번호, revision은 같은 초안의 동시 수정 검사용 값으로 구분. 매뉴얼당 활성 DRAFT는 최대 한 개. generation_status는 `NOT_STARTED/RUNNING/READY/ERROR`이며 API의 생성 상태를 표현. `status`는 `DRAFT`/`PUBLISHED`. 초안은 `published_at IS NULL`, 게시본은 게시 시각 필수이며 게시 후 내용 불변 |
 | `manual_shifts` | 버전별 오전·오후·야간 등 근무조와 시간. `(version_id, sort_order)` UNIQUE |
 | `manual_sections` | `category`는 `COMMON_TASK`/`SHIFT_TASK`/`RULE`/`EQUIPMENT`. `SHIFT_TASK`만 shift_id 필수이며 같은 버전이어야 함. 나머지 category는 shift_id NULL. `(version_id, sort_order)` UNIQUE |
-| `manual_steps`, `manual_media` | 각 섹션 안에서 순서 UNIQUE. 사진은 파일 본문 대신 저장소 `object_key`와 선택 설명을 보관. 삭제 시 파일 정리 정책 필요 |
+| `manual_steps` | `(section_id, sort_order)` UNIQUE. checklist_item은 지시문의 힌트이며 근무자의 완료 기록이 아님 |
+| `manual_media` | 업로드 자산은 섹션 생성 전에도 존재. 같은 매장/업로드 점주 귀속, kind는 IMAGE/AUDIO, object_key는 비공개. 음성만 duration_seconds 사용. 삭제 tombstone으로 최초 주체·매장을 보존 |
+| `manual_photo_attachments` | 같은 버전·매장의 IMAGE만 연결. section_id NULL은 근무 구조 전체 사진, 값이 있으면 같은 버전의 섹션. 각 연결 범위 내 sort_order와 media_id 중복 금지. title 필수·최대 100자, caption은 선택·최대 300자. nullable section_id의 UNIQUE 의미는 구현 시 생성 키 등으로 보완 |
+| `interview_turn_photos` | 같은 매장/세션의 OWNER ANSWER 턴과 IMAGE 연결. `(turn_id, sort_order)` UNIQUE. 답변 원문과 사진 연결을 보존하며 최종 첨부의 이름·설명은 별도 관리 |
 | `interview_question_sets`, `interview_intents` | 필수 질문 셋의 버전과 순서를 보관. 각 인텐트는 기본 질문과 확인할 정보의 기준을 가짐. `(question_set_id, sort_order)` 및 `(question_set_id, intent_key)` UNIQUE. 사용한 질문 셋은 수정하지 않고 새 버전을 생성 |
 | `interview_sessions`, `interview_session_intents` | 세션 생성 시 `DRAFT` 버전에 연결하고 질문 셋 버전을 고정. 매뉴얼 게시 후에도 세션은 같은 버전을 참조해 작성 이력을 보존. 세션의 `status`는 `IN_PROGRESS`/`ERROR`/`COMPLETED`이며 `COMPLETED`에서만 `completed_at`을 기록. 시작할 때 질문 셋의 모든 필수 인텐트에 상태 행을 생성. 수집 상태는 `PENDING`/`NEEDS_DETAIL`/`COVERED`; 인텐트는 세션의 질문 셋에 속해야 함. `finished_at`은 해당 인텐트에서 다음 질문으로 이동한 시각이며, `covered_at`은 정보 수집 완료 시각. depth 5에서 수집이 부족하면 `NEEDS_DETAIL`로 검수중 표시하고 `finished_at`을 기록한 뒤 점주 확인 대기 없이 즉시 다음 인텐트로 이동. 마지막 인텐트면 초안 생성 준비로 이동. 부족 항목은 최종 초안 검토에서 점주 확인만으로 게시 가능하며 보완 답변은 필수가 아님 |
 | `interview_intent_reviews` | `(session_id, intent_id)` 복합 PK/FK로 같은 인텐트 진행 행에 귀속. 완료 인텐트마다 독립 revision과 `PROCESSING/READY/ERROR` 상태. ready_content는 마지막 성공 요약의 구조화 JSON. 최초 생성 전 NULL, 정정 처리/실패 중에는 마지막 성공 내용을 보존. confirmed_at과 확인 주체는 같은 검토 revision에만 유효 |
@@ -256,5 +284,7 @@ erDiagram
 - 성공한 평가의 `applied_at` 기록과 인텐트 상태·다음 묶음 생성 예약 또는 다음 인텐트 이동은 하나의 트랜잭션으로 처리한다. 이미 적용한 평가를 다시 적용하지 않는다. 같은 세션의 동시 요청도 같은 depth에서 중복 묶음이나 중복 진행을 만들지 않도록 직렬화한다.
 
 - 매뉴얼 조회와 AI 질의응답은 [매장 접근 권한](access.md)을 확인한 근무자에게 현재 게시 버전만 제공한다. 질의응답 저장 행은 당시 버전을 가리켜 이후 수정에도 출처가 달라지지 않는다.
-- 사진은 공통 업무·규정 등 연결된 섹션에 붙인다. IR 자료에는 영상 보완 언급도 있지만 현재 상세 화면은 사진 첨부를 구체화했으므로 영상 처리·보존 정책은 후속 결정이다. 음성 원본의 장기 보관도 화면에서 확정되지 않아 이 ERD에는 전사 텍스트만 둔다.
+- 사진은 답변 입력, 인텐트 ready_content의 structurePhotos/섹션 photos, 초안·게시본의 첨부에서 참조한다. 검토 사진의 title/caption/순서는 JSON snapshot에 보존하고 초안 생성 시 같은 섹션 ID의 첨부로 옮긴다. 게시본마다 첨부 행을 두므로 같은 파일도 버전별 이름·설명이 달라질 수 있으며 과거 게시본은 불변이다.
+- 파일 삭제/정리 전 턴·검토·평가/생성 snapshot·초안·게시본의 살아 있는 참조를 모두 검사한다. 파일 하나에 연결이 여러 개면 마지막 유효 참조가 해제되기 전에는 삭제하지 않는다. 같은 매장의 소유권과 현재 게시본의 참조를 매 조회 재검증하고 object_key/공개 URL을 응답하지 않는다.
+- 미첨부 업로드는 24시간 뒤, 음성 원본은 전사 종료 후 24시간 이내 정리하는 OpenAPI 제안을 따른다. 연결된 사진은 참조가 유지되는 동안 보존한다. expires_at은 정리 후보 시각이며 참조 보호를 우회하지 않는다. 음성 전사 결과·작업 상태는 실행 기반 저장소에서 관리하고 답변에는 제출된 전사 텍스트를 보존한다. 사진 10 MiB, 음성 20 MiB·120초 상한과 실제 MIME/디코딩·EXIF 제거는 구현 검증 대상이다.
 - 화면 근거: [매뉴얼 작성 시작](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=560-4170), [AI 인터뷰](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2713), [최종 검토·게시](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2757), [사진 첨부](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-2979), [업무 목록](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2819), [단계별 상세](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=624-2603), [AI 질의응답](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2914), [IR Deck의 AI Rule Book](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=597-2700).
