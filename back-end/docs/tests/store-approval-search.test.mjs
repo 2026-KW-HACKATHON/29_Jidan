@@ -17,7 +17,7 @@ const op = spec.paths['/api/admin/store-approval-requests/search'].post;
 const pending = op.responses['200'].content['application/json'].examples.pending.value.items[0];
 
 test('관리자 조회: 전체 조회 기본값과 최대 페이지 크기 허용', () => {
-  for (const input of [{ password: '<admin-password>' }, { password: '<admin-password>', status: 'APPROVED', page: 2, size: 100 }]) {
+  for (const input of [{ password: '<admin-password>' }, { password: '<admin-password>', page: 0 }, { password: '<admin-password>', status: 'APPROVED', page: 2, size: 100 }]) {
     assert.ok(search(input), JSON.stringify(search.errors));
   }
 });
@@ -25,7 +25,7 @@ for (const [name, input] of [
   ['비밀번호 누락', {}], ['빈 비밀번호', { password: '' }], ['공백 비밀번호', { password: '   ' }],
   ['비밀번호 숫자 타입', { password: 1234 }], ['비밀번호 과대 길이', { password: 'a'.repeat(1025) }],
   ['미정 상태', { password: '<admin-password>', status: 'REJECTED' }],
-  ['0 페이지', { password: '<admin-password>', page: 0 }], ['음수 페이지', { password: '<admin-password>', page: -1 }],
+  ['음수 페이지', { password: '<admin-password>', page: -1 }],
   ['소수 페이지', { password: '<admin-password>', page: 1.5 }], ['0 크기', { password: '<admin-password>', size: 0 }],
   ['최대 크기 초과', { password: '<admin-password>', size: 101 }],
   ['임의 관리자 역할 주입', { password: '<admin-password>', role: 'ADMIN' }],
