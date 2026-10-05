@@ -73,16 +73,19 @@ def test_offline_sql_generation_needs_no_connection(monkeypatch, capsys):
 @pytest.mark.mysql
 def test_mysql_migration_round_trip_and_no_drift(mysql_engine):
     config = alembic_config()
-    command.downgrade(config, "base")
-    command.upgrade(config, "head")
-    with mysql_engine.connect() as connection:
-        assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
-        context = MigrationContext.configure(connection, opts={"compare_type": True})
-        assert compare_metadata(context, Base.metadata) == []
-    command.downgrade(config, "-1")
-    command.upgrade(config, "head")
-    with mysql_engine.connect() as connection:
-        assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
+    try:
+        command.downgrade(config, "base")
+        command.upgrade(config, "head")
+        with mysql_engine.connect() as connection:
+            assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
+            context = MigrationContext.configure(connection, opts={"compare_type": True})
+            assert compare_metadata(context, Base.metadata) == []
+        command.downgrade(config, "-1")
+        command.upgrade(config, "head")
+        with mysql_engine.connect() as connection:
+            assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
+    finally:
+        command.upgrade(config, "head")  # leave the shared test schema at head for later tests
 
 
 @pytest.mark.mysql
@@ -97,3 +100,4 @@ def test_mysql_stores_timestamps_in_utc(mysql_session):
     raw = mysql_session.execute(
         text("SELECT created_at FROM users WHERE id = :id"), {"id": user.id}).scalar()
     assert raw == datetime(2026, 10, 5, 3, 0, 0, 123456)  # noqa: DTZ001 - microseconds survive, no zone shift
+
