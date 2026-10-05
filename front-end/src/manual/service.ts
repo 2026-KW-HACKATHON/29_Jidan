@@ -15,6 +15,7 @@ export function createManualHttpService(storeId:string, csrf:()=>string|null, tr
  return {storeId, async call<N extends Operation>(name:N,params:Record<string,string>,input:Operations[N]['input'],options:RequestOptions):Promise<Result<Operations[N]['output']>> {
   const op=operations[name];let path:string=op.path
   path=path.replace(/\{(\w+)\}/g,(_,key)=>{const value=key==='storeId'?storeId:params[key];if(!value || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(value))throw new ManualError('INVALID_TARGET');return encodeURIComponent(value)})
+  if(name==='getManualInterviewTurns'){const query=new URLSearchParams({page:params.page??'0',size:'100'});path+='?'+query.toString()}
   if(/\{/.test(path)||/\/\//.test(path))throw new ManualError('INVALID_TARGET')
   const headers=new Headers(); const write=op.method!=='GET'
   if(write){const token=csrf();if(!token)throw new ManualError('CSRF_REQUIRED');headers.set('X-CSRF-Token',token);if(!options.key)throw new ManualError('IDEMPOTENCY_KEY_REQUIRED');headers.set('Idempotency-Key',options.key)}
