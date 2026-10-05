@@ -45,7 +45,7 @@ it('같은 주소 선택은 입력을 초기화하거나 이력을 추가하지 
  fireEvent.click(menu.getAllByRole('link',{name:'기본 정보'})[1])
  expect(name).toHaveValue('직접 입력');expect(history.length).toBe(before)
  fireEvent.click(screen.getByRole('button',{name:'뒤로 가기'}))
- await waitFor(()=>expect(location.pathname).toBe('/__auth/signup'))
+ await waitFor(()=>expect(location.pathname).toBe('/__preview/signup'))
  await screen.findByRole('heading',{name:'가입 유형 선택'})
 })
 it('캐시된 점주 모듈도 URL별 승인 대기와 매장 정보 예시를 다시 초기화한다',async()=>{

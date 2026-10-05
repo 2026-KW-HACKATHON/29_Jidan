@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AuthFlow, type AuthPath } from './auth/AuthFlow'
+import { canonicalAuthPath } from './auth/routes'
+import { OwnerPending } from './registration/owner/OwnerPending'
 import type { AuthService } from './auth/session'
 import { AppBar } from './ui/AppBar'
 import { Button } from './ui/Button'
@@ -11,7 +13,7 @@ import { WorkerArea } from './profile/WorkerArea'
 import HealthScreen from './health/HealthScreen'
 
 const authPaths: readonly string[] = ['/', '/login', '/signup', '/signup/owner', '/signup/worker', '/home']
-const locationSnapshot = () => ({ path: window.location.pathname, search: window.location.search })
+const locationSnapshot = () => ({ path: canonicalAuthPath(window.location.pathname), search: window.location.search })
 
 export default function App({ authService }: { authService?: AuthService } = {}) {
   const [location, setLocation] = useState(locationSnapshot)
@@ -33,6 +35,7 @@ export default function App({ authService }: { authService?: AuthService } = {})
 
   useEffect(() => {
     // Consume UI error hints once. OAuth code/state belong to the backend callback.
+    if (canonicalAuthPath(window.location.pathname) !== window.location.pathname) window.history.replaceState(null, '', location.path)
     if ((location.path === '/login' || location.path === '/') && location.search) window.history.replaceState(null, '', location.path)
   }, [location])
 
@@ -40,6 +43,6 @@ export default function App({ authService }: { authService?: AuthService } = {})
   if (!authPaths.includes(location.path)) return <MobileLayout header={<AppBar title="페이지를 찾을 수 없어요" onBack={() => navigate('/')} />}><Button onClick={() => navigate('/')}>처음으로</Button></MobileLayout>
 
   return <AuthFlow key={`${location.path}${location.search}:${revision}`} service={authService} path={location.path as AuthPath} search={location.search} navigate={navigate}
-    renderHome={session => session.accountType === 'OWNER' ? <OwnerHome displayName={session.displayName} /> : <WorkerArea displayName={session.displayName} />}
+    renderHome={session => session.nextAction === 'OWNER_APPROVAL_PENDING' && session.stores?.[0] ? <OwnerPending receipt={{id:session.stores[0].storeId,ownerName:session.displayName,storeName:session.stores[0].storeName,status:'PENDING'}} /> : session.accountType === 'OWNER' ? <OwnerHome displayName={session.displayName} /> : <WorkerArea displayName={session.displayName} />}
     renderRegistration={role => role === 'owner' ? <OwnerRegistration onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} /> : <WorkerRegistration onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} onHome={() => navigate('/home')} />} />
 }
