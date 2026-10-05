@@ -109,6 +109,88 @@ def client(db_engine):
     def read_only(session: SessionDep):
         return {"count": session.scalar(select(func.count()).select_from(User))}
 
+    def _savepoint_user(session, sub, fail=False):
+        try:
+            with session.begin_nested():
+                session.add(new_user(sub))
+                session.flush()
+                if fail:
+                    raise ValueError("undo savepoint")
+        except ValueError:
+            pass
+
+    @app.post("/sp-closed-no-commit")  # add, flush, savepoint closes, no commit
+    def sp_closed_no_commit(session: SessionDep):
+        session.add(new_user("outer"))
+        session.flush()
+        with session.begin_nested():
+            session.execute(select(1))
+        return {"status": "created"}
+
+    @app.post("/sp-closed-commit")
+    def sp_closed_commit(session: SessionDep):
+        session.add(new_user("outer"))
+        session.flush()
+        with session.begin_nested():
+            session.execute(select(1))
+        session.commit()
+        return {"status": "created"}
+
+    @app.post("/sp-only-no-commit")
+    def sp_only_no_commit(session: SessionDep):
+        _savepoint_user(session, "inner")
+        return {"status": "created"}
+
+    @app.post("/sp-rollback-then-commit")
+    def sp_rollback_then_commit(session: SessionDep):
+        _savepoint_user(session, "inner", fail=True)
+        session.add(new_user("outer"))
+        session.commit()
+        return {"status": "created"}
+
+    @app.post("/sp-rollback-only")  # the only write was undone: nothing is lost
+    def sp_rollback_only(session: SessionDep):
+        _savepoint_user(session, "inner", fail=True)
+        return {"status": "nothing"}
+
+    @app.post("/sp-rollback-then-forgot")  # undone savepoint must not hide the outer write
+    def sp_rollback_then_forgot(session: SessionDep):
+        _savepoint_user(session, "inner", fail=True)
+        session.add(new_user("outer"))
+        return {"status": "created"}
+
+    @app.post("/sp-nested-no-commit")
+    def sp_nested_no_commit(session: SessionDep):
+        session.add(new_user("outer"))
+        session.flush()
+        with session.begin_nested(), session.begin_nested():
+            session.add(new_user("inner"))
+            session.flush()
+        return {"status": "created"}
+
+    @app.post("/sp-nested-commit")
+    def sp_nested_commit(session: SessionDep):
+        with session.begin_nested():
+            session.add(new_user("outer"))
+            session.flush()
+            with session.begin_nested():
+                session.add(new_user("inner"))
+                session.flush()
+        session.commit()
+        return {"status": "created"}
+
+    @app.post("/sp-read-only")
+    def sp_read_only(session: SessionDep):
+        with session.begin_nested():
+            session.scalar(select(func.count()).select_from(User))
+        return {"status": "ok"}
+
+    @app.post("/sp-write-after-closed-no-commit")  # write, savepoint, write again, no commit
+    def sp_write_after(session: SessionDep):
+        _savepoint_user(session, "inner")
+        session.add(new_user("later"))
+        return {"status": "created"}
+
     def tracked_session():
         try:
             yield from get_session()
@@ -196,3 +278,30 @@ def test_connections_are_returned_to_the_pool(client, db_engine):
     client.post("/commit-fails")
     if hasattr(db_engine.pool, "checkedout"):  # MySQL QueuePool
         assert db_engine.pool.checkedout() == 0
+
+
+# --- savepoints must not clear the tracking of the outer transaction -------------------------
+
+
+@pytest.mark.parametrize("path", ["/sp-closed-no-commit", "/sp-only-no-commit",
+                                  "/sp-nested-no-commit", "/sp-write-after-closed-no-commit",
+                                  "/sp-rollback-then-forgot"])
+def test_savepoint_does_not_hide_a_forgotten_commit(client, db_engine, path):
+    assert_bare_500(client.post(path))
+    assert user_count(db_engine) == 0
+
+
+@pytest.mark.parametrize("path,rows", [
+    ("/sp-closed-commit", 1), ("/sp-rollback-then-commit", 1), ("/sp-nested-commit", 2)])
+def test_commit_after_savepoints_persists(client, db_engine, path, rows):
+    assert client.post(path).status_code == 200
+    assert user_count(db_engine) == rows
+
+
+def test_rolled_back_savepoint_alone_is_not_an_error(client, db_engine):
+    assert client.post("/sp-rollback-only").status_code == 200
+    assert user_count(db_engine) == 0
+
+
+def test_read_only_savepoint_is_not_flagged(client, db_engine):
+    assert client.post("/sp-read-only").status_code == 200
