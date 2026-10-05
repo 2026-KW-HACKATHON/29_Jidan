@@ -18664,7 +18664,11 @@ components:
       - field
       - description
       oneOf:
-      - properties:
+      - required:
+        - target
+        - targetId
+        - field
+        properties:
           target:
             const: MANUAL
           targetId:
@@ -18673,7 +18677,11 @@ components:
             enum:
             - shifts
             - sections
-      - properties:
+      - required:
+        - target
+        - targetId
+        - field
+        properties:
           target:
             const: SHIFT
           targetId:
@@ -18684,7 +18692,11 @@ components:
             - startTime
             - endTime
             - endsNextDay
-      - properties:
+      - required:
+        - target
+        - targetId
+        - field
+        properties:
           target:
             const: SECTION
           targetId:
@@ -18800,7 +18812,9 @@ components:
       - processing
       - error
       oneOf:
-      - properties:
+      - required:
+        - status
+        properties:
           status:
             const: READY
           content:
@@ -18809,7 +18823,9 @@ components:
             type: 'null'
           error:
             type: 'null'
-      - properties:
+      - required:
+        - status
+        properties:
           status:
             const: PROCESSING
           confirmedAt:
@@ -18818,7 +18834,9 @@ components:
             $ref: '#/components/schemas/ManualReviewProcessing'
           error:
             type: 'null'
-      - properties:
+      - required:
+        - status
+        properties:
           status:
             const: ERROR
           confirmedAt:

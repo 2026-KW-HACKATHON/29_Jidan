@@ -5,6 +5,13 @@ const session='/api/stores/{storeId}/manual/interviews/{sessionId}';
 const root=session+'/intents/{intentId}/review';
 const examples=spec.paths[root].get.responses['200'].content['application/json'].examples;
 const validate=validator('ManualIntentReview');
+test('검토 모든 상태에서 분기 판별 status 필수 및 미정 상태 거절',()=>{
+ for(const {value} of Object.values(examples)){
+  const missing={...value};delete missing.status;
+  assert.equal(validate(missing),false);
+  assert.equal(validate({...value,status:'UNKNOWN'}),false);
+ }
+});
 test('다음 질문 수집과 이전 인텐트 요약 조회를 동시에 표현',()=>{
  const progress=spec.paths[session].get.responses['200'].content['application/json'].examples.nextQuestionAfterSufficientAnswer.value;
  assert.ok(validator('ManualInterviewSession')(progress));assert.ok(validate(examples.ready.value));
