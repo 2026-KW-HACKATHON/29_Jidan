@@ -31,3 +31,12 @@ it('삭제된 업무 대상에는 사진 선택을 허용하지 않는다',()=>{
  expect(screen.getByRole('alert')).toHaveTextContent('연결할 업무가 바뀌었어요');expect(screen.queryByRole('button',{name:'＋사진 추가'})).not.toBeInTheDocument()
  fireEvent.click(screen.getByRole('button',{name:'첨부 완료'}))
 })
+it('연결 실패 전까지 로컬 사진을 표시하고 첨부 취소·이탈 시 URL을 해제한다',async()=>{
+ const service=createManualPreviewService(true,'review'),original=service.call.bind(service),call=vi.spyOn(service,'call').mockImplementation(async(...args)=>{if(args[0]==='replaceManualInterviewReviewPhotos')throw Error('lost');return original(...args)})
+ const {unmount}=render(<ManualReviewPhotos service={service} sessionId={interviewFixture.id} review={reviewFixture} target={{target:'WORK_STRUCTURE',sectionId:null}} onUpdate={vi.fn()} onClose={vi.fn()}/> )
+ fireEvent.change(screen.getByLabelText('첨부할 사진'),{target:{files:[]}});expect(call.mock.calls.some(c=>c[0]==='uploadManualMedia')).toBe(false)
+ fireEvent.change(screen.getByLabelText('첨부할 사진'),{target:{files:[new File(['p'],'p.png',{type:'image/png'})]}})
+ await screen.findByRole('button',{name:'이 첨부 취소'});expect(screen.getByRole('img',{name:'사진 1 연결 전 미리보기'})).toBeInTheDocument()
+ fireEvent.click(screen.getByRole('button',{name:'이 첨부 취소'}));expect(screen.queryByRole('img',{name:'사진 1 연결 전 미리보기'})).not.toBeInTheDocument();expect(URL.revokeObjectURL).toHaveBeenCalled()
+ unmount();expect(call.mock.calls.some(c=>c[0]==='deleteUnusedManualMedia')).toBe(false)
+})

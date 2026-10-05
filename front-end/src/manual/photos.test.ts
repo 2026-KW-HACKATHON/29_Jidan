@@ -23,3 +23,16 @@ it('사진 이름은 충돌 없이 부여하고 연결 응답 유실 시 업로�
  expect(call.mock.calls[1][2]).toEqual({expectedRevision:review.revision,target:'WORK_STRUCTURE',sectionId:null,photos:[photo,{mediaId,caption:null,title:'사진 2'}]})
  expect(call.mock.calls[1][2]).toEqual(call.mock.calls[2][2]);expect(call.mock.calls[1][3].key).toBe(call.mock.calls[2][3].key)
 })
+
+it('같은 대상의 중복 media ID는 연결하지 않고 다른 section에서는 같은 사진을 허용한다',async()=>{
+ const blob=new Blob(['photo'],{type:'image/png'}),signal=new AbortController().signal,review={...reviewFixture,content:{...reviewFixture.content!,structurePhotos:[photo],sections:[{id:crypto.randomUUID(),category:'COMMON_TASK' as const,shiftId:null,title:'다른 업무',steps:[],photos:[]}]}}
+ const call=vi.fn().mockResolvedValue({data:{id:photo.mediaId,purpose:'MANUAL_PHOTO',storeId:manualStoreId}}),service={storeId:manualStoreId,call} as ManualService
+ await expect(createPhotoAttachment(service,interviewFixture.id,review,{target:'WORK_STRUCTURE',sectionId:null},blob)(signal)).rejects.toThrow('PHOTO_ALREADY_ATTACHED');expect(call).toHaveBeenCalledOnce()
+ call.mockResolvedValueOnce({data:{id:photo.mediaId,purpose:'MANUAL_PHOTO',storeId:manualStoreId}}).mockResolvedValueOnce({data:review})
+ await createPhotoAttachment(service,interviewFixture.id,review,{target:'SECTION',sectionId:review.content.sections[0].id},blob)(signal)
+ expect(call.mock.calls.at(-1)?.[2]).toMatchObject({target:'SECTION',photos:[{mediaId:photo.mediaId,title:'사진 1',caption:null}]})
+})
+it('취소된 업로드 응답은 업무 연결로 이어지지 않는다',async()=>{
+ const controller=new AbortController(),call=vi.fn(async()=>{controller.abort();return {data:{id:crypto.randomUUID(),purpose:'MANUAL_PHOTO',storeId:manualStoreId},retryAfterMs:2000}})
+ await expect(createPhotoAttachment({storeId:manualStoreId,call} as ManualService,interviewFixture.id,reviewFixture,{target:'WORK_STRUCTURE',sectionId:null},new Blob(['p'],{type:'image/png'}))(controller.signal)).rejects.toThrow();expect(call).toHaveBeenCalledOnce()
+})
