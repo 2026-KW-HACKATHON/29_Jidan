@@ -19066,6 +19066,9 @@ components:
           withdrawnAt:
             type: string
             format: date-time
+        required:
+        - status
+        - withdrawnAt
       - properties:
           status:
             type: string
@@ -19077,6 +19080,9 @@ components:
             - COMPLETED
           withdrawnAt:
             type: 'null'
+        required:
+        - status
+        - withdrawnAt
     ApplicationRevision:
       type: object
       additionalProperties: false
@@ -19209,11 +19215,17 @@ components:
             const: NEW
           careers:
             maxItems: 0
+        required:
+        - experienceLevel
+        - careers
       - properties:
           experienceLevel:
             const: EXPERIENCED
           careers:
             minItems: 1
+        required:
+        - experienceLevel
+        - careers
     OwnerJobApplicationPage:
       type: object
       additionalProperties: false
