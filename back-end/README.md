@@ -46,7 +46,7 @@ python -m alembic upgrade head --sql  # 연결 없이 SQL만 출력(오프라인
 python -m alembic revision --autogenerate -m "변경 설명"  # 새 리비전 초안, 반드시 직접 검토
 ```
 
-**리비전은 한 줄(선형)로만 유지한다.** 새 리비전은 항상 현재 head 뒤에 붙이고, 한 시점에 한 사람만 추가한다. 병렬 PR로 head가 둘이 되면 `tests/test_migrations.py`가 실패한다. 발행된 리비전은 수정하지 않고 새 리비전을 추가한다. 모델과 마이그레이션이 어긋나면 같은 테스트가 실패한다.
+**리비전은 한 줄(선형)로만 유지한다.** 새 리비전은 항상 현재 head 뒤에 붙이고, 한 시점에 한 사람만 추가한다. 병렬 PR로 head가 둘이 되면 `tests/test_migrations.py`가 실패한다. 발행된 리비전은 수정하지 않고 새 리비전을 추가한다. 모델과 마이그레이션이 어긋나면 같은 테스트가 실패한다. `compare_metadata`는 CHECK 제약을 비교하지 않으므로 `tests/test_schema_drift.py`가 CHECK의 이름과 정규화한 SQL(SQLite·MySQL 각각)을 따로 비교한다. 정규화 규칙(대소문자·따옴표·공백·`_utf8mb4` 제거, 문자열 리터럴은 원문 비교, MySQL은 괄호 비교 제외)은 `tests/schema_checks.py` 설명에 있다. UNIQUE·INDEX·FK 어긋남은 `compare_metadata`가 잡으며 같은 파일에서 확인한다.
 
 ### 요청 처리 commit 규칙 (#104/#105 공통)
 
