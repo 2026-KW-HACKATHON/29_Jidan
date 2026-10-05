@@ -20,7 +20,7 @@ flowchart TD
 
 요청 철회는 지원자의 신청 철회와 별개입니다. PENDING만 CANCELLED로 종료하고 신청은 APPLIED로 돌아갑니다. 확정 철회는 근무 시작 전의 현재 ACCEPTED 요청만 대상으로 합니다. 최초 수락 시각과 철회 시각을 모두 남기며 해당 요청의 TEMPORARY 접근만 REVOKED로 종료합니다. 정기 접근과 다른 대타 접근은 유지합니다. 취소 일정은 활성 월별 캘린더에 노출하지 않되 감사 이력은 보존합니다.
 
-수락으로 NOT_SELECTED가 된 지원은 원인 requestId·직전 상태·ID를 기록하여 확정 철회 때 그 변경만 되돌립니다. WITHDRAWN이나 개별 종료된 지원을 복구하지 않습니다. 기존 요청을 재활성화하지 않고 새 요청 ID/key를 발급합니다.
+수락은 만료 요청을 먼저 정리한 뒤 선택 지원 이외의 현재 APPLIED/REQUESTED 지원만 NOT_SELECTED로 바꿉니다. 과거 WITHDRAWN/NOT_SELECTED/COMPLETED 지원의 상태·revision·철회 시각·요청 이력은 보존합니다. 실제 바뀐 지원만 원인 requestId·직전 상태·ID·적용 후 revision을 기록하고, 확정 철회 때 현재 NOT_SELECTED와 적용 revision이 일치하는 지원만 APPLIED로 복구합니다. REQUESTED나 취소된 요청은 복원하지 않습니다. WITHDRAWN이나 개별 종료된 지원을 복구하지 않습니다. 기존 요청을 재활성화하지 않고 새 요청 ID/key를 발급합니다.
 
 수락과 동시에 공고는 RECRUITING→CLOSED, closedAt=respondedAt으로 전환됩니다. 거절은 공고를 마감하지 않습니다. 근무 시작 전 확정 철회는 CLOSED→RECRUITING, closedAt=null로 전환해 다시 모집합니다. 원래 수락·마감·철회 이력은 보존하고 공고 revision을 증가시킵니다. 근무 종료만으로 다시 열리지 않습니다.
 

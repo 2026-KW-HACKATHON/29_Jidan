@@ -74,3 +74,16 @@ test('점주·일반회원 공고 모두 모집·마감 시각 불변식 적용'
     }
   }
 });
+
+test('수락·확정 철회는 현재 지원만 변경하고 재지원 전 종료 이력은 보존', () => {
+  for (const re of [/선택 지원을 제외한 현재 APPLIED\/REQUESTED 지원만 NOT_SELECTED/,
+    /만료된 요청과 연결 지원을 먼저 정리/,
+    /과거 WITHDRAWN\/NOT_SELECTED\/COMPLETED 지원은 변경 대상에서 제외/,
+    /상태·revision·철회 시각·요청 이력을 보존/,
+    /실제 NOT_SELECTED로 변경한 지원만/,
+    /현재 NOT_SELECTED 및 적용 revision이 일치하는 지원만 APPLIED/,
+    /REQUESTED나 취소된 요청은 복원하지 않습니다/]) {
+    assert.match(response.description, re);
+  }
+  assert.match(withdrawal.description, /WITHDRAWN\/개별 종료\/다른 확정에 따른 이력은 되살리지/);
+});
