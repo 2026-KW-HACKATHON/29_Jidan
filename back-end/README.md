@@ -199,7 +199,7 @@ def create_store(body: StoreIn, owner: CsrfOwner, db: DbSession, key: Idempotenc
 ## API 설계
 
 [Figma 기반 OpenAPI 명세](openapi.yaml)를 제공합니다.
-인증 API 8개(Google 시작/callback, 가입 컨텍스트, 일반회원/점주 가입, 세션/CSRF 조회, 로그아웃)를 구현했습니다. 외부 인증 설정과 프론트 `__auth` 진입점 연결은 [인증 설계](docs/auth-design.md#105-구현과-운영-설정)를 참고합니다. 프로필 수정·매장 관리·초대·근무자 관리 endpoint는 아직 제공하지 않습니다.
+인증 API 8개(Google 시작/callback, 가입 컨텍스트, 일반회원/점주 가입, 세션/CSRF 조회, 로그아웃)를 구현했습니다. 외부 인증 설정과 프론트 `__auth` 진입점 연결은 [인증 설계](docs/auth-design.md#105-구현과-운영-설정)를 참고합니다. 일반회원 프로필 조회·기본 정보 부분 수정·경력/가능 시간 전체 교체 API 4개도 구현했습니다. [프로필 구현과 검증](docs/worker-profile-design.md#106-구현과-검증)을 참고합니다. 매장 관리·초대·근무자 관리 endpoint는 아직 제공하지 않습니다.
 
 - [인증 화면 근거·인가 정책](docs/auth-design.md)
 - [관리자 매장 승인 계약](docs/store-approval-design.md)
