@@ -76,3 +76,17 @@ def test_kakao_administrative_dong(monkeypatch, scenario, expected):
         assert "SECRET-KEY" not in exc.value.message
     else:
         assert store_address.verify_store_address(StoreInput.model_validate(OWNER["store"])) == OWNER["store"]["address"]
+
+
+def test_duplicate_business_number_is_not_access_grant(worker_api, db_engine, monkeypatch):
+    from tests.factories import make_store, make_user
+    with Session(db_engine) as db:
+        owner = make_user(db, "OWNER")
+        make_store(db, owner, business_registration_number=OWNER["store"]["businessRegistrationNumber"])
+        db.commit()
+    monkeypatch.setattr(registration, "verify_store_address", lambda store: pytest.fail("duplicate must stop first"))
+    r = worker_api.post("/api/auth/registrations/owners", json=OWNER, headers=headers(worker_api))
+    assert r.status_code == 409 and r.json()["code"] == "STORE_ALREADY_REGISTERED"
+    with Session(db_engine) as db:
+        assert db.scalar(select(func.count()).select_from(User)) == 1
+        assert db.scalar(select(func.count()).select_from(Store)) == 1
