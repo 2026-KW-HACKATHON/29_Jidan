@@ -140,7 +140,7 @@ def create_store(body: StoreIn, owner: CsrfOwner, db: DbSession, key: Idempotenc
 - 동시 같은 key는 DB 유니크 제약과 60초 임대(PROCESSING)로 한 번만 처리하고, 나머지는 최대 5초 기다렸다가 최초 응답을 재현합니다. 그래도 끝나지 않으면 409 `STATE_CONFLICT`와 `Retry-After`입니다(명세에 처리 중 전용 코드가 없어 재사용).
 - **재현되는 헤더**: `IdempotentResult(status, body, headers={...})`의 헤더는 허용 목록(`REPLAY_HEADERS`: `Location`, `Content-Location`, `ETag`)만 저장·재현합니다(`idempotency_records.response_headers`, 마이그레이션 0004). 목록 밖 헤더는 조용히 버리지 않고 `ValueError`로 거절하며, 재현 시에도 목록으로 다시 걸러냅니다. **`Set-Cookie`와 세션·토큰 비밀은 DB에 저장하지 않으며 재현되지 않습니다.** 쿠키는 결과가 아니라 호출자가 핸들러를 실제로 실행한 요청의 응답(`Idempotent-Replayed` 헤더 없음)에만 붙입니다. 재현 응답에는 항상 `Idempotent-Replayed: true`가 붙고 0004 이전 행은 헤더 없이 재현됩니다.
 - 예약 단계에서는 유니크 충돌과 락 대기 초과·데드락(MySQL 1205·1213, SQLite locked/busy)만 경합으로 보고 기다립니다. 연결 오류 등 그 밖의 DB 오류는 기다리지 않고 그대로 전파되어 500입니다(409 `STATE_CONFLICT` 아님).
-- 대기 뒤 소유권을 얻으면 핸들러 호출 직전에 `db.commit()`으로 요청 트랜잭션을 끝내므로(인증 시점에 열린 REPEATABLE READ 스냅샷이 아닌) 핸들러는 최신 커밋을 읽습니다. 그 전에 쓴 변경은 이때 함께 commit됩니다.
+- 핸들러 호출과 재현 응답의 권한 재검사 직전에 `db.commit()`으로 읽기 스냅샷을 갱신하고 `db.expire_all()`로 기존 ORM 캐시도 만료합니다. 대기 중 계정 정지·접근 변경을 이전 상태로 판정하지 않도록 합니다. 그 전에 쓴 변경은 이때 함께 commit됩니다.
 - 업무 변경과 응답 저장은 한 트랜잭션으로 커밋되므로 핸들러가 직접 commit하면 안 됩니다. 핸들러가 예외를 내면 롤백하고 key를 풀어 재시도할 수 있습니다. 성공 결과만 저장합니다.
 - 만료 행은 같은 key가 다시 오면 교체되며, `purge_expired()`로 주기적으로 정리할 수 있습니다.
 

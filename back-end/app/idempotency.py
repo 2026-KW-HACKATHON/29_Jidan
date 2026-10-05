@@ -329,6 +329,10 @@ def run_idempotent(
         if isinstance(outcome, _Owned):
             break
         if isinstance(outcome, _Completed):
+            # Authorization may have changed while this request waited. Both the database
+            # snapshot and retained ORM objects must be fresh before the replay is authorized.
+            db.commit()
+            db.expire_all()
             if revalidate is not None:
                 revalidate()
             return _response(outcome.status_code, outcome.body, outcome.headers, replayed=True)
@@ -346,6 +350,7 @@ def run_idempotent(
         # the handler's first read opens a fresh one. Anything written before this call is
         # committed (never silently dropped); the handler's own writes commit below.
         db.commit()
+        db.expire_all()  # expire_on_commit=False otherwise keeps previously loaded ORM values
         result = handler()
         _complete(db, outcome, result)
         db.commit()

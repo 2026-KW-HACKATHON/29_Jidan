@@ -792,6 +792,40 @@ def test_handler_sees_data_committed_while_it_waited_for_the_key(mysql_caller_en
 
 # --- replayed headers ------------------------------------------------------------------------
 
+@pytest.mark.parametrize("replay", [False, True], ids=["handler", "revalidation"])
+def test_processing_and_replay_refresh_cached_authorization(db_engine, replay):
+    caller = Caller(db_engine)
+    key = new_key()
+    if replay:
+        with session_scope() as db:
+            run_idempotent(
+                db=db, principal=caller.principal, key=key, method="POST", path="/p",
+                body={}, handler=lambda: IdempotentResult(201, {"ok": True}),
+            )
+
+    with session_scope() as db:
+        cached_user = db.get(User, caller.user_id)
+        assert cached_user.status == "ACTIVE"
+        with Session(db_engine) as other:
+            other.execute(update(User).where(User.id == caller.user_id).values(status="SUSPENDED"))
+            other.commit()
+
+        def check_current_authorization():
+            if db.get(User, caller.user_id).status != "ACTIVE":
+                raise ApiError(403, ErrorCode.ACCOUNT_SUSPENDED)
+
+        def work():
+            check_current_authorization()
+            return IdempotentResult(201, {"ok": True})
+
+        with pytest.raises(ApiError) as caught:
+            run_idempotent(
+                db=db, principal=caller.principal, key=key, method="POST", path="/p",
+                body={}, handler=work, revalidate=check_current_authorization,
+            )
+        assert caught.value.code == ErrorCode.ACCOUNT_SUSPENDED
+
+
 def header_app(headers):
     app = FastAPI()
     install_error_handlers(app)
