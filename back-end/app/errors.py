@@ -201,7 +201,14 @@ def _field_error(error: dict) -> dict[str, str]:
     if location and location[0] in {"body", "query", "path", "header", "cookie"}:
         location = location[1:]
     kind = error["type"]
-    if kind == "missing":
+    registration_messages = {
+        "future_birthday": "생년월일은 오늘 이후일 수 없습니다.",
+        "career_count": "경력 여부에 맞게 경력 항목을 입력해 주세요.",
+        "availability_overlap": "근무 가능 시간이 겹치지 않도록 입력해 주세요.",
+    }
+    if kind in registration_messages:
+        code, message = "INVALID_FORMAT", registration_messages[kind]
+    elif kind == "missing":
         code, message = "REQUIRED", "필수 항목입니다."
     elif kind.startswith(("greater", "less", "too_short", "too_long", "string_too")):
         code, message = "OUT_OF_RANGE", "허용 범위를 벗어났습니다."

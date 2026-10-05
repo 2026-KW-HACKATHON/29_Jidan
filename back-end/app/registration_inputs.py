@@ -4,7 +4,8 @@ from datetime import date, datetime
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
 Industry = Literal["RESTAURANT", "CAFE", "CONVENIENCE_STORE", "OTHER"]
 Weekday = Literal["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
@@ -80,18 +81,30 @@ class WorkerInput(Input):
             raise ValueError("ISO calendar date required")
         return value
 
-    @model_validator(mode="after")
-    def profile(self):
-        if self.birthDate > today():
-            raise ValueError("Future birthday")
-        if (self.experienceLevel == "NEW") != (len(self.careers) == 0):
-            raise ValueError("Career count does not match experienceLevel")
+    @field_validator("birthDate")
+    @classmethod
+    def past_birthday(cls, value):
+        if value > today():
+            raise PydanticCustomError("future_birthday", "Future birthday")
+        return value
+
+    @field_validator("careers")
+    @classmethod
+    def career_count(cls, value, info: ValidationInfo):
+        level = info.data.get("experienceLevel")
+        if level is not None and (level == "NEW") != (len(value) == 0):
+            raise PydanticCustomError("career_count", "Career count does not match experienceLevel")
+        return value
+
+    @field_validator("availabilities")
+    @classmethod
+    def available_intervals(cls, value):
         weekdays = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
         intervals = []
         def minutes(value):
             h, m = map(int, value.split(":"))
             return h * 60 + m
-        for group in self.availabilities:
+        for group in value:
             start = minutes(group.startTime)
             end = minutes(group.endTime) + 1440 * group.endsNextDay
             for day in group.days:
@@ -100,10 +113,9 @@ class WorkerInput(Input):
                 # Shift both directions so Sunday->Monday overlap is detected.
                 for a, b in intervals:
                     if any(begin < b + shift and a + shift < finish for shift in (-10080, 0, 10080)):
-                        raise ValueError("Overlapping availabilities")
+                        raise PydanticCustomError("availability_overlap", "Overlapping availabilities")
                 intervals.append((begin, finish))
-        return self
-
+        return value
 
 
 class StoreInput(Input):

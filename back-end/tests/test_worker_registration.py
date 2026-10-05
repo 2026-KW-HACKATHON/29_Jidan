@@ -134,3 +134,16 @@ def test_career_optional_store_and_24_hour_availability():
         {"days": ["SUN"], "startTime": "09:00", "endTime": "09:00", "endsNextDay": True},
     ]})
     assert model.careers[0].storeName is None
+
+
+@pytest.mark.parametrize("change,field,message", [
+    ({"birthDate": "2999-01-01"}, "birthDate", "생년월일"),
+    ({"experienceLevel": "EXPERIENCED"}, "careers", "경력"),
+    ({"availabilities": WORKER["availabilities"] * 2}, "availabilities", "겹치지"),
+])
+def test_profile_error_identifies_field(worker_api, change, field, message):
+    response = worker_api.post("/api/auth/registrations/workers", json={**WORKER, **change}, headers=headers(worker_api))
+    assert response.status_code == 422
+    errors = response.json()["fieldErrors"]
+    assert errors[0]["field"] == field
+    assert message in errors[0]["message"]
