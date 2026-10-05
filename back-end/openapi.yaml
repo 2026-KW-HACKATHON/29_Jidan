@@ -11737,7 +11737,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CalendarMonth'
+                $ref: '#/components/schemas/WorkerCalendarMonth'
               example:
                 month: 2026-10
                 timezone: Asia/Seoul
@@ -12433,7 +12433,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CalendarEvent'
+                $ref: '#/components/schemas/WorkerCalendarEvent'
               example:
                 kind: TEMPORARY_WORK
                 title: 주말 오픈 대타
@@ -19857,6 +19857,7 @@ components:
           minimum: 1
         editable:
           type: boolean
+          description: 이벤트 원천에 따른 점주의 수정 가능 여부입니다. WORKER에게는 변경 API 권한이 없습니다.
       required:
       - id
       - store
@@ -19882,6 +19883,12 @@ components:
             type: 'null'
           editable:
             const: true
+        required:
+        - kind
+        - workerId
+        - workerName
+        - jobId
+        - editable
       - properties:
           kind:
             const: REGULAR_WORK
@@ -19894,6 +19901,15 @@ components:
             type: 'null'
           editable:
             const: true
+          allDay:
+            const: false
+        required:
+        - kind
+        - workerId
+        - workerName
+        - jobId
+        - editable
+        - allDay
       - properties:
           kind:
             const: TEMPORARY_WORK
@@ -19907,6 +19923,15 @@ components:
             format: uuid
           editable:
             const: false
+          allDay:
+            const: false
+        required:
+        - kind
+        - workerId
+        - workerName
+        - jobId
+        - editable
+        - allDay
     CalendarEventInput:
       type: object
       additionalProperties: false
@@ -19947,12 +19972,21 @@ components:
             const: STORE_EVENT
           workerId:
             type: 'null'
+        required:
+        - kind
+        - workerId
       - properties:
           kind:
             const: REGULAR_WORK
           workerId:
             type: string
             format: uuid
+          allDay:
+            const: false
+        required:
+        - kind
+        - workerId
+        - allDay
     CalendarEventEdit:
       type: object
       additionalProperties: false
@@ -19997,12 +20031,21 @@ components:
             const: STORE_EVENT
           workerId:
             type: 'null'
+        required:
+        - kind
+        - workerId
       - properties:
           kind:
             const: REGULAR_WORK
           workerId:
             type: string
             format: uuid
+          allDay:
+            const: false
+        required:
+        - kind
+        - workerId
+        - allDay
     FavoriteStorePage:
       type: object
       additionalProperties: false
@@ -20538,6 +20581,40 @@ components:
       - conversation
       - turns
       - nextBeforeSequence
+    WorkerCalendarEvent:
+      $ref: '#/components/schemas/CalendarEvent'
+      properties:
+        kind:
+          type: string
+          enum:
+          - REGULAR_WORK
+          - TEMPORARY_WORK
+      required:
+      - kind
+    WorkerCalendarMonth:
+      type: object
+      additionalProperties: false
+      properties:
+        month:
+          type: string
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+        timezone:
+          type: string
+          const: Asia/Seoul
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerCalendarEvent'
+          minItems: 0
+          maxItems: 1000
+        asOf:
+          type: string
+          format: date-time
+      required:
+      - month
+      - timezone
+      - events
+      - asOf
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
