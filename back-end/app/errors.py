@@ -13,6 +13,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.log_privacy import install_log_privacy
+
 logger = logging.getLogger("jidan.errors")
 
 MAX_FIELD_ERRORS = 100
@@ -247,12 +249,13 @@ async def handle_unstructured_http_exception(
 
 
 async def handle_unexpected_error(_request: Request, exc: Exception) -> JSONResponse:
-    # The traceback goes to the server log only; the client sees a generic message.
+    # The logging filter removes exception payloads; log only the exception class.
     logger.error("Unhandled error", exc_info=(type(exc), exc, exc.__traceback__))
     return error_response(500, ErrorCode.INTERNAL_ERROR, DEFAULT_MESSAGES[ErrorCode.INTERNAL_ERROR])
 
 
 def install_error_handlers(app: FastAPI) -> None:
+    install_log_privacy()
     app.add_exception_handler(ApiError, handle_api_error)
     app.add_exception_handler(RequestValidationError, handle_validation_error)
     app.add_exception_handler(UnstructuredHTTPException, handle_unstructured_http_exception)

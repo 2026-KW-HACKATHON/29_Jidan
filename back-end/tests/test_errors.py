@@ -123,7 +123,9 @@ def test_unhandled_exception_is_generic_500_without_internals(client, caplog):
     assert_error(response, 500, "INTERNAL_ERROR")
     assert "hunter2" not in response.text and "db.internal" not in response.text
     assert "RuntimeError" not in response.text
-    assert any(record.exc_info for record in caplog.records)  # kept in the server log only
+    assert caplog.records and all(record.exc_info is None for record in caplog.records)
+    assert "hunter2" not in caplog.text and "db.internal" not in caplog.text
+    assert "RuntimeError" in caplog.text
 
 
 def test_health_failure_keeps_its_legacy_detail_body(monkeypatch):

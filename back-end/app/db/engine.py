@@ -32,7 +32,7 @@ def get_engine() -> Engine:
     with _engine_lock:
         if _engine is None:
             _engine = create_engine(
-                database_url(), pool_pre_ping=True, pool_recycle=1800,
+                database_url(), pool_pre_ping=True, pool_recycle=1800, hide_parameters=True,
                 connect_args={
                     "connect_timeout": CONNECT_TIMEOUT_SECONDS,
                     "read_timeout": CONNECT_TIMEOUT_SECONDS,
