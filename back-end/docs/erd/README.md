@@ -41,7 +41,7 @@ erDiagram
 | 초대·정기/임시 자료 접근 | [매장 접근](access.md) | store_invitations, store_access_grants |
 | 대타 공고·지원·요청·확정 | [대타 공고](jobs.md) | job_postings, job_applications, application_careers, work_requests, shift_assignments, application_selection_effects |
 | 관심 매장 | [관심 관계](favorite-store.md) | favorite_stores |
-| AI 인터뷰·검토·사진·게시 | [업무 매뉴얼](manual.md) | store_manuals, manual_versions, manual_shifts, manual_sections, manual_steps, manual_media, manual_photo_attachments, interview_turn_photos, interview_question_sets, interview_intents, interview_sessions, interview_session_intents, interview_intent_reviews, interview_probe_batches, interview_turns, interview_evaluations, manual_review_issues, manual_issue_acknowledgements |
+| AI 인터뷰·검토·사진·게시 | [업무 매뉴얼](manual.md) | store_manuals, manual_versions, manual_shifts, manual_sections, manual_steps, manual_media, manual_photo_attachments, interview_turn_photos, interview_question_sets, interview_intents, interview_sessions, interview_session_intents, interview_intent_reviews, interview_review_confirmations, interview_probe_batches, interview_turns, interview_evaluations, manual_review_issues, manual_issue_acknowledgements |
 | 질문·답변별 평가와 추가 질문 | [AI 인터뷰 실행 흐름](ai-interview-flow.md) | 질문 하나 → 답변 하나 → Jev 판단, depth 0~5 |
 | 근무자 대화·질문·인용 | [AI 업무 질문](qa.md) | manual_qa_conversations, manual_qa, manual_qa_citations, qa_media, manual_qa_photos |
 | 점주·일반회원 알림 | [앱 알림](notification.md) | notifications |

@@ -27,6 +27,8 @@ erDiagram
     INTERVIEW_SESSIONS ||--o{ INTERVIEW_SESSION_INTENTS : tracks
     INTERVIEW_SESSION_INTENTS ||--o| INTERVIEW_INTENT_REVIEWS : summarizes
     USERS o|--o{ INTERVIEW_INTENT_REVIEWS : confirms
+    INTERVIEW_INTENT_REVIEWS ||--o{ INTERVIEW_REVIEW_CONFIRMATIONS : retains
+    USERS ||--o{ INTERVIEW_REVIEW_CONFIRMATIONS : confirms
     MANUAL_VERSIONS ||--o{ MANUAL_REVIEW_ISSUES : exposes
     INTERVIEW_INTENTS o|--o{ MANUAL_REVIEW_ISSUES : originates
     MANUAL_REVIEW_ISSUES ||--o{ MANUAL_ISSUE_ACKNOWLEDGEMENTS : acknowledges
@@ -159,6 +161,16 @@ erDiagram
         uuid confirmed_by_owner_id FK
         datetime confirmed_at
     }
+    INTERVIEW_REVIEW_CONFIRMATIONS {
+        uuid id PK
+        uuid session_id FK
+        uuid intent_id FK
+        int reviewed_revision
+        int confirmed_revision
+        json confirmed_content
+        uuid owner_id FK
+        datetime confirmed_at
+    }
     MANUAL_REVIEW_ISSUES {
         uuid id PK
         uuid version_id FK
@@ -238,7 +250,8 @@ erDiagram
 | `interview_turn_photos` | 같은 매장/세션의 OWNER ANSWER 턴과 IMAGE 연결. `(turn_id, sort_order)` UNIQUE. 답변 원문과 사진 연결을 보존하며 최종 첨부의 이름·설명은 별도 관리 |
 | `interview_question_sets`, `interview_intents` | 필수 질문 셋의 버전과 순서를 보관. 각 인텐트는 기본 질문과 확인할 정보의 기준을 가짐. `(question_set_id, sort_order)` 및 `(question_set_id, intent_key)` UNIQUE. 사용한 질문 셋은 수정하지 않고 새 버전을 생성 |
 | `interview_sessions`, `interview_session_intents` | 세션 생성 시 `DRAFT` 버전에 연결하고 질문 셋 버전을 고정. 매뉴얼 게시 후에도 세션은 같은 버전을 참조해 작성 이력을 보존. 세션의 `status`는 `IN_PROGRESS`/`ERROR`/`COMPLETED`이며 `COMPLETED`에서만 `completed_at`을 기록. 시작할 때 질문 셋의 모든 필수 인텐트에 상태 행을 생성. 수집 상태는 `PENDING`/`NEEDS_DETAIL`/`COVERED`; 인텐트는 세션의 질문 셋에 속해야 함. `finished_at`은 해당 인텐트에서 다음 질문으로 이동한 시각이며, `covered_at`은 정보 수집 완료 시각. depth 5에서 수집이 부족하면 `NEEDS_DETAIL`로 검수중 표시하고 `finished_at`을 기록한 뒤 점주 확인 대기 없이 즉시 다음 인텐트로 이동. 마지막 인텐트면 초안 생성 준비로 이동. 부족 항목은 최종 초안 검토에서 점주 확인만으로 게시 가능하며 보완 답변은 필수가 아님 |
-| `interview_intent_reviews` | `(session_id, intent_id)` 복합 PK/FK로 같은 인텐트 진행 행에 귀속. 완료 인텐트마다 독립 revision과 `PROCESSING/READY/ERROR` 상태. ready_content는 마지막 성공 요약의 구조화 JSON. 최초 생성 전 NULL, 정정 처리/실패 중에는 마지막 성공 내용을 보존. 미확인 상태는 confirmed_at과 확인 주체가 모두 NULL. 확인은 현 내용에 귀속하며 정정/사진 실질 변경 시 두 값을 초기화 |
+| `interview_intent_reviews` | `(session_id, intent_id)` 복합 PK/FK로 같은 인텐트 진행 행에 귀속. 완료 인텐트마다 독립 revision과 `PROCESSING/READY/ERROR` 상태. ready_content는 마지막 성공 요약의 구조화 JSON. 최초 생성 전 NULL, 정정 처리/실패 중에는 마지막 성공 내용을 보존. 미확인 상태는 confirmed_at과 확인 주체가 모두 NULL. 확인은 현 내용에 귀속하며 정정/사진 실질 변경 시 두 값을 초기화. 과거 확인은 interview_review_confirmations에 별도 보존 |
+| `interview_review_confirmations` | `(session_id, intent_id)` 복합 FK로 검토에 귀속. `(session_id, intent_id, confirmed_revision)` UNIQUE. reviewed_revision은 확인 요청의 expectedRevision, confirmed_revision은 확인 적용 후 검토 revision. 두 revision·confirmed_content(당시 요약/근무조/섹션/사진/미확정 정보 전체)·점주·확인 시각은 필수이며 수정·삭제하지 않음. 최종 초안 부족 항목 확인과 별도 이력 |
 | `manual_review_issues` | 같은 초안/게시 버전의 부족 항목. 편집 유래이면 intent_id NULL. 미확정 필드이면 target_kind/target_id/field_name/public_description을 저장하여 API missingInformation과 같은 issue ID로 투영. 값 보완 시 resolved_at을 기록해 현재 목록에서 제외하고 감사 이력은 유지 |
 | `manual_issue_acknowledgements` | `(issue_id, version_revision)` UNIQUE. 확인 시의 리소스 revision·content_revision·점주·메모·시각과 acknowledged_snapshot(당시 내용/항목)을 보존. 같은 content_revision의 최신 확인이 있으면 ACKNOWLEDGED, 없으면 OPEN으로 투영. 다른 항목 확인이나 게시로 revision만 증가해도 기존 확인은 유지 |
 | `interview_probe_batches` | 같은 인텐트의 추가 질문 한 개에 대한 생성 단위. API batchId에 대응하며 READY마다 질문은 정확히 한 개. `depth`는 기본 질문 이후 1부터 시작하고 최대 5. `(session_id, intent_id, depth)` UNIQUE. `status`는 `GENERATING`/`READY`/`ERROR`; 재시도와 fallback이 모두 실패하면 `ERROR`와 오류 코드를 기록하고 세션도 `ERROR`로 표시. 인텐트는 세션의 질문 셋에 속해야 함 |
@@ -250,6 +263,8 @@ erDiagram
 ## 인텐트 검토와 최종 게시
 
 - 인텐트 요약은 session_intent의 finished_at 이후 생성한다. PENDING 인텐트는 검토할 수 없다. 질문 진행의 세션 revision과 인텐트별 검토 revision은 독립적이다. 검토 정정·사진 실질 변경 시 확인을 초기화하고, 동일 확인/변경 없는 편집은 revision을 증가시키지 않는다.
+- 최초 확인은 검토 잠금과 expectedRevision 검사 후 확인 이력 추가·현재 확인 주체/시각 기록·검토 revision 증가를 같은 트랜잭션에서 처리한다. 같은 key 재시도 또는 이미 확인된 현재 revision에 대한 재확인은 이력·revision·최초 시각을 늘리지 않는다. 정정/사진 실질 변경은 현재 확인만 초기화하고 과거 확인의 revision·본문·사진 연결 snapshot을 유지한다. ERROR/PROCESSING 검토 및 GENERATING/COMPLETED 세션의 확인은 계약대로 차단한다.
+- 예: 미확인 revision 3을 확인하면 reviewed_revision=3/confirmed_revision=4 이력 한 건과 현재 확인을 저장한다. revision 4 재확인은 한 건을 유지한다. 사진 변경 후 revision 5의 현재 확인은 NULL이지만 revision 4 이력은 남는다. 다시 확인하면 reviewed_revision=5/confirmed_revision=6 이력 한 건을 추가한다. 인텐트 정정도 같은 보존 규칙을 적용하며 과거 확인 snapshot의 사진 참조 역시 파일 정리 전에 검사한다.
 - ready_content는 API ManualInterviewReview의 summary/shifts/sections/needsDetail/missingInformation 및 사진 연결을 보존한다. JSON 내부 shift/section ID는 매뉴얼 생성 시 유지하며 중복과 참조 귀속을 검증한다. 정정 턴은 해당 세션·인텐트의 CORRECTION으로 보존한다.
 - 요약 생성/정정 실패는 해당 검토 ERROR이며 질문 진행은 계속한다. 현재 평가/질문 생성은 예약 시 사용한 검토 내용과 revision을 입력 snapshot에 고정한다. 정정 중에는 마지막 READY 내용, 이후 예약부터 새 내용을 사용한다. 비동기 작업 식별·오류·재시도 저장은 별도 실행 기반 설계에서 정의한다.
 - completion은 세션 revision과 전체 intentId/revision 목록을 확인하여 모든 검토 READY 및 상호 참조 일치를 검사한다. 현재 확인 여부는 생성 조건이 아니다. `generation_input_snapshot`에 선택 검토 revision·전체 내용·사진·미확정 정보를 복사하고 GENERATING 전환과 함께 원자 저장한다. 실행 작업은 이 불변 입력만 사용한다. 정정과 생성 중 먼저 접수된 작업이 상태/revision을 확보하고 다른 작업은 충돌한다.
