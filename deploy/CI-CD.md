@@ -50,20 +50,31 @@ PR은 테스트·빌드만 수행한다. 같은 저장소의 PR만 self-hosted r
 
 ### DB 마이그레이션
 
-도구는 Alembic이며 리비전은 `back-end/migrations/versions/`에 있고 이미지에 함께 들어간다. **배포 시 자동 실행은 아직 넣지 않았다.** 스키마가 바뀌는 릴리즈는 다음 순서로 수동 적용한다.
+도구는 Alembic이며 리비전은 `back-end/migrations/versions/`에 있고 이미지에 함께 들어간다.
 
-1. 새 이미지 배포가 성공한 뒤(또는 이전 코드가 새 스키마와 호환되는 경우 배포 전에) RPi5의 해당 환경 백엔드 릴리즈 디렉터리에서 실행한다.
+**dev 백엔드는 배포 시 자동 적용한다.** `deploy.sh`는 `dev/backend`일 때만 새 이미지 pull 직후, `pending` 기록과 컨테이너 교체 전에 새 릴리즈의 Compose 정의로 일회성 컨테이너를 실행한다.
+
+```bash
+docker compose run --rm --no-deps -T --name <프로젝트>-migrate-<릴리즈> backend python -m alembic upgrade head
+```
+
+- 같은 이미지·`runtime.env`·`shared-mysql_default` 네트워크를 쓰며 포트는 열지 않는다. 대상 DB는 `jidan_dev`다.
+- 실패하면 배포를 즉시 중단한다. 실행 중인 이전 릴리즈와 `current`는 그대로 두고 새 컨테이너를 띄우지 않는다. 트랜잭션 DDL이 없는 MySQL 특성상 일부 리비전만 적용됐을 수 있으므로 `alembic current`와 실제 테이블을 확인해 정리한 뒤 다시 배포한다.
+- SIGINT·SIGTERM으로 중단되면 실행 중인 명령과 일회성 컨테이너를 정리하고 이전 릴리즈를 유지한다.
+- 마이그레이션 출력은 Actions 로그에 남는다. 연결 정보는 `DB_*`에서 읽어 출력하지 않으며, 실패한 SQL의 바인딩 값도 출력하지 않는다(`hide_parameters=True`).
+
+**production과 frontend는 자동 실행하지 않는다.** production은 dev에서 적용·검증된 리비전만 RPi5의 `production/backend` 현재 릴리즈 디렉터리에서 수동으로 적용한다.
+
+1. 새 리비전이 이전 버전 코드와 호환되면(아래 정책) 새 이미지 배포 전에 실행한다.
    ```bash
    docker compose exec backend python -m alembic current
    docker compose exec backend python -m alembic upgrade head
    ```
    컨테이너에는 `runtime.env`의 `DB_*`가 이미 주입되어 있다. 자격 증명은 출력하거나 기록하지 않는다.
 2. 적용 뒤 `current`가 head 리비전이고 `GET /api/health`가 `database: ok`인지 확인한다.
-3. 마이그레이션이 실패하면 트랜잭션 DDL이 없는 MySQL 특성상 일부만 적용될 수 있다. 새 배포를 진행하지 말고 `alembic current`와 실제 테이블을 확인해 수동으로 정리한다.
+3. 실패하면 일부만 적용될 수 있다. 새 배포를 진행하지 말고 `alembic current`와 실제 테이블을 확인해 수동으로 정리한다.
 
-**롤백 한계**: 이미지 롤백(배포 스크립트의 자동 복구)은 DB 스키마를 되돌리지 않는다. 스키마를 되돌리려면 이전 이미지로 복구하기 전에 `alembic downgrade -1`을 따로 실행해야 하며, 데이터를 삭제하는 downgrade는 사전에 백업한 뒤에만 수행한다. 따라서 스키마 변경은 이전 버전 코드와 호환되도록 두 단계(추가 → 코드 전환 → 제거)로 나눈다. 자동 실행은 실패 시 중단·복구 정책을 정한 뒤 별도 이슈에서 추가한다.
-
-dev 환경에서는 `jidan_dev`에 위 절차로 적용한 뒤 헬스체크를 확인한다. 운영 환경은 dev 적용과 검증이 끝난 리비전만 적용한다.
+**expand-only 정책과 롤백 한계**: 이미지 롤백(배포 스크립트의 자동 복구, 커밋 revert 후 재배포)은 DB 스키마를 되돌리지 않는다. dev는 마이그레이션이 성공한 뒤 새 컨테이너 시작·헬스체크가 실패하면 이전 이미지가 새 스키마에서 다시 실행된다. 따라서 리비전은 이전 버전 코드와 호환되는 변경(테이블·nullable 또는 기본값 있는 컬럼·인덱스 추가)만 한다. 컬럼·테이블 삭제, 이름 변경, 타입 축소 같은 비호환 변경은 추가 → 코드 전환 → 제거의 별도 릴리즈로 나눈다. 스키마를 되돌려야 하면 이전 이미지로 복구하기 전에 `alembic downgrade -1`을 수동으로 실행하며, 데이터를 삭제하는 downgrade는 사전에 백업한 뒤에만 수행한다.
 
 ## RPi5 네트워크 및 DB
 
@@ -88,7 +99,7 @@ Nginx 설정 원본은 `deploy/nginx/`에 있고, 서버에서는 `/etc/nginx/si
 1. RPi4에서 테스트 단계와 런타임 이미지를 각각 빌드한다.
 2. 저장소의 `GITHUB_TOKEN`으로 GHCR에 게시한다. 별도의 레지스트리 비밀번호는 필요하지 않다.
 3. RPi5에서 이미지 digest와 환경별 설정으로 새 릴리즈 디렉터리를 만든다.
-4. 이미지를 pull하고 `docker compose up -d --wait`로 시작한다.
+4. 이미지를 pull한다. dev 백엔드는 이때 [DB 마이그레이션](#db-마이그레이션)을 적용하고, 실패하면 컨테이너를 바꾸지 않고 중단한다. 이후 `docker compose up -d --wait`로 시작한다.
 5. 실행 이미지 ID, 로컬 헬스체크, 공개 도메인 응답을 확인한다.
 6. 성공하면 `current` 심볼릭 링크를 새 릴리즈로 전환한다.
 7. 오류·SIGINT·SIGTERM 종료 시 실행 중인 배포 명령을 멈추고 이전 Compose·이미지·환경 파일로 복구를 시도한다. 첫 배포라 이전 릴리즈가 없다면 실패한 컴포넌트를 내린다.
