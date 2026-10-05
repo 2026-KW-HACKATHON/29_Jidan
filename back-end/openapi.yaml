@@ -19300,6 +19300,11 @@ components:
         accessGrant:
           oneOf:
           - $ref: '#/components/schemas/StoreAccessGrant'
+            properties:
+              type:
+                const: TEMPORARY
+            required:
+            - type
           - type: 'null'
       required:
       - id
@@ -19324,6 +19329,11 @@ components:
             type: 'null'
           accessGrant:
             type: 'null'
+        required:
+        - status
+        - respondedAt
+        - endedAt
+        - accessGrant
       - properties:
           status:
             const: ACCEPTED
@@ -19335,6 +19345,16 @@ components:
             format: date-time
           accessGrant:
             $ref: '#/components/schemas/StoreAccessGrant'
+            properties:
+              type:
+                const: TEMPORARY
+            required:
+            - type
+        required:
+        - status
+        - respondedAt
+        - endedAt
+        - accessGrant
       - properties:
           status:
             const: DECLINED
@@ -19346,6 +19366,11 @@ components:
             format: date-time
           accessGrant:
             type: 'null'
+        required:
+        - status
+        - respondedAt
+        - endedAt
+        - accessGrant
       - properties:
           status:
             type: string
@@ -19359,6 +19384,11 @@ components:
             format: date-time
           accessGrant:
             type: 'null'
+        required:
+        - status
+        - respondedAt
+        - endedAt
+        - accessGrant
     WorkRequestPage:
       type: object
       additionalProperties: false
