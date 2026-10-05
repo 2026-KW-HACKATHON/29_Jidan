@@ -131,6 +131,21 @@ def _reuse_error() -> ApiError:
     return ApiError(409, ErrorCode.IDEMPOTENCY_KEY_REUSED)
 
 
+# MySQL errors that mean "another transaction holds the row": lock wait timeout, deadlock.
+_MYSQL_LOCK_ERRNOS = frozenset({1205, 1213})
+_SQLITE_LOCK_MESSAGES = ("database is locked", "database table is locked", "database is busy")
+
+
+def _is_lock_contention(error: OperationalError) -> bool:
+    """True only for lock waits and deadlocks; connection errors and the rest must propagate."""
+    original = error.orig
+    args = getattr(original, "args", ())
+    if args and isinstance(args[0], int):
+        return args[0] in _MYSQL_LOCK_ERRNOS
+    text = str(original).lower()
+    return any(message in text for message in _SQLITE_LOCK_MESSAGES)
+
+
 def _reserve(subject_id: str, key: str, endpoint: str, request_hash: str):
     """Claim the key (_Owned), find its stored result (_Completed) or see it in use (_Busy)."""
     for _ in range(MAX_RESERVE_ATTEMPTS):
@@ -148,8 +163,12 @@ def _reserve(subject_id: str, key: str, endpoint: str, request_hash: str):
                 session.flush()
                 record_id = record.id
             return _Owned(record_id, lock_token)
-        except (IntegrityError, OperationalError):
-            pass  # the key exists (or a lock deadlock): look at what is stored
+        except IntegrityError:
+            pass  # the key exists: look at what is stored
+        except OperationalError as error:
+            if not _is_lock_contention(error):
+                raise  # connection loss and the like: a 500 now, not a wait and a false 409
+            # lock wait timeout or deadlock on the unique index: look at what is stored
 
         with session_scope() as session:
             record = session.execute(

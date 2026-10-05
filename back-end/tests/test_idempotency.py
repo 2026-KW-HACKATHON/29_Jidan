@@ -1,3 +1,4 @@
+import sqlite3
 import threading
 import time
 import uuid
@@ -8,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app import idempotency
@@ -605,3 +607,98 @@ def test_canonical_body_is_stable():
     assert canonical_body({"a": 1}) != canonical_body({"a": 2})
     assert canonical_body(ThingIn(name="x")) == canonical_body({"name": "x", "tags": []})
     assert canonical_body(None) == "null"
+
+
+# --- reservation errors: contention versus real failures -------------------------------------
+
+class _DriverError(Exception):
+    """Stands in for a DBAPI error: pymysql puts the MySQL errno in args[0]."""
+
+
+def operational_error(errno: int | None, message: str = "driver failure") -> OperationalError:
+    orig = _DriverError(errno, message) if errno is not None else _DriverError(message)
+    return OperationalError("INSERT ...", {}, orig)
+
+
+def fail_first_reservation(monkeypatch, error: Exception, *, always: bool = False) -> dict:
+    """Make the reservation's first session_scope raise `error` (every one if `always`)."""
+    real = idempotency.session_scope
+    state = {"calls": 0}
+
+    def scope():
+        state["calls"] += 1
+        if always or state["calls"] == 1:
+            raise error
+        return real()
+
+    monkeypatch.setattr(idempotency, "session_scope", scope)
+    return state
+
+
+def no_sleeping(monkeypatch) -> list:
+    """Record every wait; a connection failure must never wait."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(idempotency.time, "sleep", sleeps.append)
+    return sleeps
+
+
+@pytest.mark.parametrize("errno", [2003, 2006, 2013, 1045, 1040, None])
+def test_connection_errors_propagate_at_once_instead_of_becoming_a_conflict(
+    db_engine, monkeypatch, errno,
+):
+    caller = Caller(db_engine)
+    state = fail_first_reservation(monkeypatch, operational_error(errno), always=True)
+    sleeps = no_sleeping(monkeypatch)
+    started = time.monotonic()
+    with pytest.raises(OperationalError), session_scope() as db:
+        run_idempotent(
+            db=db, principal=caller.principal, key=new_key(), method="POST", path="/p",
+            body={"a": 1}, handler=lambda: pytest.fail("handler must not run"),
+        )
+    assert state["calls"] == 1 and sleeps == []
+    assert time.monotonic() - started < 1
+
+
+def test_connection_error_is_a_500_not_a_409(db_engine, monkeypatch):
+    caller = Caller(db_engine)
+    fail_first_reservation(monkeypatch, operational_error(2003), always=True)
+    sleeps = no_sleeping(monkeypatch)
+    api = TestClient(build_app(), raise_server_exceptions=False)
+    response = post(api, caller, new_key())
+    assert response.status_code == 500 and "STATE_CONFLICT" not in response.text
+    assert hooks.calls == 0 and sleeps == []
+
+
+@pytest.mark.parametrize("error", [
+    operational_error(1205, "Lock wait timeout exceeded"),
+    operational_error(1213, "Deadlock found"),
+    OperationalError("INSERT", {}, sqlite3.OperationalError("database is locked")),
+    OperationalError("INSERT", {}, sqlite3.OperationalError("database table is locked")),
+    OperationalError("INSERT", {}, sqlite3.OperationalError("database is busy")),
+], ids=["mysql-1205", "mysql-1213", "sqlite-locked", "sqlite-table-locked", "sqlite-busy"])
+def test_lock_timeout_and_deadlock_are_treated_as_contention(api, caller, db_engine, monkeypatch, error):
+    key = new_key()
+    assert post(api, caller, key).status_code == 201
+    state = fail_first_reservation(monkeypatch, error)
+    response = post(api, caller, key)
+    assert response.status_code == 201 and response.headers["Idempotent-Replayed"] == "true"
+    assert hooks.calls == 1 and state["calls"] >= 2
+
+
+def test_unique_conflict_is_still_contention(api, caller):
+    key = new_key()
+    assert post(api, caller, key).status_code == 201
+    assert post(api, caller, key).headers["Idempotent-Replayed"] == "true"
+
+
+def test_unrelated_sqlite_operational_errors_propagate(db_engine, monkeypatch):
+    caller = Caller(db_engine)
+    fail_first_reservation(
+        monkeypatch, OperationalError("INSERT", {}, sqlite3.OperationalError("disk I/O error")),
+        always=True,
+    )
+    with pytest.raises(OperationalError), session_scope() as db:
+        run_idempotent(
+            db=db, principal=caller.principal, key=new_key(), method="POST", path="/p",
+            body={"a": 1}, handler=lambda: IdempotentResult(201),
+        )
