@@ -2,6 +2,10 @@
 
 Python 3.12 / FastAPI 기반 API.
 
+## 데이터 설계
+
+[Figma 기반 MVP ERD](docs/erd/README.md)는 인증·프로필·매장·초대·대타·관심 매장·매뉴얼·Q&A·알림의 관계와 확정 정책을 정리한 구현 전 문서입니다.
+
 ```bash
 cd back-end
 python3.12 -m venv .venv
