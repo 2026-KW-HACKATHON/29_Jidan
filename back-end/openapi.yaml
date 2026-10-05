@@ -6932,6 +6932,8 @@ paths:
       operationId: getPublishedManual
       summary: 게시된 매뉴얼 업무 목록·근무조 조회
       description: |-
+        AI 답변 근거/목록에서 받은 expectedVersionId를 보낼 수 있습니다. 현재 게시본과 다르면 409 MANUAL_VERSION_CHANGED이며 최신 매뉴얼을 다시 조회하도록 안내합니다. 예전 답변을 새 매뉴얼의 동명 섹션에 잘못 연결하지 않습니다.
+
         공개 missingInformation을 반환해 미확정 내용을 숨기지 않습니다. 목록은 전체 게시본의 항목을, 상세는 해당 섹션과 참조 근무조의 항목만 반환합니다. 내부 issue/평가/점주 메모는 반환하지 않습니다. 빈 목록과 절차 미확정은 missingInformation으로 구별합니다.
 
         현재 게시본의 근무 구조와 업무 목록을 반환합니다. sections는 content 순서를 유지하고 단계/사진 건수를 제공합니다. filter=SHIFT는 선택 근무조 업무와 모든 조의 공통 업무·규정·설비를 함께 표시합니다. 해당 조에 별도 업무가 없거나 필터 결과가 비면 200 sections=[]입니다.
@@ -7048,6 +7050,17 @@ paths:
                       endTime: 07:00
                       endsNextDay: true
                     sections: []
+        '409':
+          description: 게시 매뉴얼이 갱신되었습니다. 최신 목록을 다시 확인해 주세요.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MANUAL_VERSION_CHANGED
+                message: 게시 매뉴얼이 갱신되었습니다. 최신 목록을 다시 확인해 주세요.
+                requestId: req_chapter_100
+                fieldErrors: []
       parameters:
       - name: storeId
         in: path
@@ -7075,6 +7088,13 @@ paths:
           type: string
           format: uuid
         example: 44b35781-3e98-4f28-9505-2178b2863c5e
+      - name: expectedVersionId
+        in: query
+        required: false
+        description: AI 답변/기존 목록의 버전. 생략하면 최신 게시본; 보내면 현재 게시 버전과 같아야 합니다.
+        schema:
+          type: string
+          format: uuid
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=624-2990
@@ -7085,6 +7105,8 @@ paths:
       operationId: getPublishedManualSection
       summary: 게시된 업무의 단계·위치 사진 상세 조회
       description: |-
+        AI 답변 근거/목록에서 받은 expectedVersionId를 보낼 수 있습니다. 현재 게시본과 다르면 409 MANUAL_VERSION_CHANGED이며 최신 매뉴얼을 다시 조회하도록 안내합니다. 예전 답변을 새 매뉴얼의 동명 섹션에 잘못 연결하지 않습니다.
+
         공개 missingInformation을 반환해 미확정 내용을 숨기지 않습니다. 목록은 전체 게시본의 항목을, 상세는 해당 섹션과 참조 근무조의 항목만 반환합니다. 내부 issue/평가/점주 메모는 반환하지 않습니다. 빈 목록과 절차 미확정은 missingInformation으로 구별합니다.
 
         현재 게시 버전에 속한 섹션만 순서대로 제공합니다. 점주 확인 표시·지시 단계·선택 사진 설명을 포함하며 사진 byte는 media/{mediaId}/content에서 현재 권한을 검사하여 받습니다.
@@ -7182,15 +7204,15 @@ paths:
                     checklistItem: true
                   photos: []
         '409':
-          description: 목록을 읽은 이후 현재 게시 버전 변경.
+          description: 게시 매뉴얼이 갱신되었습니다. 최신 목록을 다시 확인해 주세요.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
                 code: MANUAL_VERSION_CHANGED
-                message: 최신 매뉴얼 목록을 다시 확인해 주세요.
-                requestId: req_profile_001
+                message: 게시 매뉴얼이 갱신되었습니다. 최신 목록을 다시 확인해 주세요.
+                requestId: req_chapter_100
                 fieldErrors: []
       parameters:
       - name: storeId
@@ -7217,6 +7239,7 @@ paths:
           type: string
           format: uuid
         example: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+        required: false
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=624-2603
