@@ -4,11 +4,13 @@ import pymysql
 from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.auth import validate_cookie_settings
 from app.database import database_status
 from app.design_docs import install_design_docs
 from app.errors import UnstructuredHTTPException, install_error_handlers
 from app.middleware import install_middleware
 
+validate_cookie_settings()  # a bad COOKIE_SECURE stops the process before it serves anything
 app = FastAPI(title="Jidan API", version="0.1.0")
 install_error_handlers(app)
 install_middleware(app)

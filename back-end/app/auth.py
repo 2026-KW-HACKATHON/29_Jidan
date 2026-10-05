@@ -104,12 +104,38 @@ def csrf_token_for(session_token: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
+class ConfigurationError(RuntimeError):
+    """The process environment is unsafe or malformed; the application must not start."""
+
+
 def cookie_secure() -> bool:
-    """Secure cookies everywhere except local HTTP; COOKIE_SECURE=true|false overrides."""
-    override = os.getenv("COOKIE_SECURE", "").strip().lower()
-    if override in {"true", "false"}:
-        return override == "true"
-    return os.getenv("APP_ENV", "local") != "local"
+    """The `Secure` attribute for every session cookie, from `APP_ENV` and `COOKIE_SECURE`.
+
+    * `COOKIE_SECURE` may be unset/blank, `true` or `false` (case and spaces ignored); any
+      other value (a typo like `ture`) raises `ConfigurationError` instead of being ignored.
+    * `production` (and any unknown `APP_ENV`, treated as production) is always Secure:
+      `COOKIE_SECURE=false` raises `ConfigurationError`, so a misconfigured deployment fails
+      at startup (`validate_cookie_settings`) rather than serving cookies over HTTP.
+    * `dev` is Secure by default but may set `COOKIE_SECURE=false`: the shared development
+      server can be reached over plain HTTP and holds no production data.
+    * `local` is not Secure by default (the plain-HTTP dev server); `COOKIE_SECURE=true` works.
+    """
+    raw = os.getenv("COOKIE_SECURE", "").strip().lower()
+    if raw not in {"", "true", "false"}:
+        raise ConfigurationError("COOKIE_SECURE must be true or false")
+    environment = os.getenv("APP_ENV", "local").strip()
+    if environment == "local":
+        return raw == "true"
+    if environment == "dev":
+        return raw != "false"
+    if raw == "false":
+        raise ConfigurationError("COOKIE_SECURE=false is not allowed outside local and dev")
+    return True
+
+
+def validate_cookie_settings() -> None:
+    """Fail fast at startup if the cookie settings are invalid (called when the app is built)."""
+    cookie_secure()
 
 
 @contextmanager

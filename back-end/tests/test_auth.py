@@ -443,27 +443,85 @@ def test_registration_cookie_attributes(local_env):
     assert "domain" not in attrs
 
 
+def secure_cookie_for(monkeypatch, environment, override):
+    for name, value in (("APP_ENV", environment), ("COOKIE_SECURE", override)):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    issued = IssuedSession("tok", utcnow() + timedelta(days=1))
+    return {
+        "member": "secure" in attributes(set_cookie_of(set_session_cookie, issued)),
+        "registration": "secure" in attributes(set_cookie_of(set_registration_cookie, issued)),
+    }
+
+
 @pytest.mark.parametrize("environment", ["production", "dev", "unknown"])
 def test_cookies_are_secure_outside_local(monkeypatch, environment):
-    monkeypatch.delenv("COOKIE_SECURE", raising=False)
-    monkeypatch.setenv("APP_ENV", environment)
-    issued = IssuedSession("tok", utcnow() + timedelta(days=1))
-    assert "secure" in attributes(set_cookie_of(set_session_cookie, issued))
-    assert "secure" in attributes(set_cookie_of(set_registration_cookie, issued))
+    assert secure_cookie_for(monkeypatch, environment, None) == {"member": True, "registration": True}
 
 
-@pytest.mark.parametrize(("override", "secure"), [("true", True), ("false", False), (" TRUE ", True)])
-def test_cookie_secure_override(monkeypatch, override, secure):
-    monkeypatch.setenv("APP_ENV", "dev" if secure is False else "local")
-    monkeypatch.setenv("COOKIE_SECURE", override)
-    issued = IssuedSession("tok", utcnow() + timedelta(days=1))
-    assert ("secure" in attributes(set_cookie_of(set_session_cookie, issued))) is secure
+@pytest.mark.parametrize("override", ["true", "TRUE", " true "])
+@pytest.mark.parametrize("environment", ["production", "dev", "local", "unknown"])
+def test_cookie_secure_true_is_honored_everywhere(monkeypatch, environment, override):
+    assert secure_cookie_for(monkeypatch, environment, override)["member"] is True
 
 
-def test_invalid_cookie_secure_override_falls_back_to_the_environment(monkeypatch):
+@pytest.mark.parametrize("override", ["false", "FALSE", " false "])
+def test_production_never_accepts_insecure_cookies(monkeypatch, override):
+    with pytest.raises(auth.ConfigurationError):
+        secure_cookie_for(monkeypatch, "production", override)
+
+
+def test_unknown_environment_is_treated_like_production(monkeypatch):
+    with pytest.raises(auth.ConfigurationError):
+        secure_cookie_for(monkeypatch, "prod", "false")
+
+
+def test_dev_may_opt_out_of_secure_for_its_http_server(monkeypatch):
+    assert secure_cookie_for(monkeypatch, "dev", "false") == {"member": False, "registration": False}
+
+
+def test_local_is_insecure_by_default_and_when_false(monkeypatch):
+    assert secure_cookie_for(monkeypatch, "local", None)["member"] is False
+    assert secure_cookie_for(monkeypatch, "local", "false")["member"] is False
+    assert secure_cookie_for(monkeypatch, None, None)["member"] is False  # APP_ENV unset = local
+
+
+@pytest.mark.parametrize("environment", ["production", "dev", "local"])
+@pytest.mark.parametrize("override", ["maybe", "ture", "1", "0", "yes", "no", "false true"])
+def test_invalid_cookie_secure_value_is_rejected_not_ignored(monkeypatch, environment, override):
+    with pytest.raises(auth.ConfigurationError):
+        secure_cookie_for(monkeypatch, environment, override)
+
+
+def test_blank_cookie_secure_counts_as_unset(monkeypatch):
+    assert secure_cookie_for(monkeypatch, "production", "  ")["member"] is True
+
+
+def test_validation_fails_application_start(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("COOKIE_SECURE", "maybe")
-    assert auth.cookie_secure() is True
+    monkeypatch.setenv("COOKIE_SECURE", "false")
+    with pytest.raises(auth.ConfigurationError):
+        auth.validate_cookie_settings()
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    auth.validate_cookie_settings()
+
+
+def test_importing_the_app_fails_with_an_insecure_production_config(monkeypatch):
+    import importlib
+    import sys
+
+    import app.main
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("COOKIE_SECURE", "false")
+    try:
+        with pytest.raises(auth.ConfigurationError):
+            importlib.reload(app.main)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(sys.modules["app.main"])
 
 
 def test_clearing_cookies_expires_them_with_the_same_scope(local_env):

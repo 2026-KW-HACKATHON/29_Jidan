@@ -109,7 +109,7 @@ from app.auth import CurrentOwner, CurrentWorker, DbSession
 def list_stores(owner: CurrentOwner, db: DbSession): ...
 ```
 
-- 쿠키: 회원 `jidan_session`(HttpOnly, SameSite=Lax, Path=`/`, 유휴 24시간·절대 7일), 가입 `jidan_registration`(HttpOnly, SameSite=Lax, Path=`/api/auth`, 고정 10분). Domain은 설정하지 않습니다. `Secure`는 `APP_ENV`가 `local`이 아니면 항상 켜지며 `COOKIE_SECURE=true|false`로 덮어쓸 수 있습니다(HTTP 개발 서버용).
+- 쿠키: 회원 `jidan_session`(HttpOnly, SameSite=Lax, Path=`/`, 유휴 24시간·절대 7일), 가입 `jidan_registration`(HttpOnly, SameSite=Lax, Path=`/api/auth`, 고정 10분). Domain은 설정하지 않습니다. `Secure`는 `production`(및 알 수 없는 `APP_ENV`)에서 항상 켜지며 `COOKIE_SECURE=false`이면 앱이 시작되지 않습니다(`ConfigurationError`). `dev`는 기본 Secure이고 HTTP로 접속하는 공용 개발 서버를 위해 `COOKIE_SECURE=false`만 허용하며, `local`은 기본 꺼짐입니다. `true`/`false` 외의 값(오타)은 조용히 무시하지 않고 시작을 거부합니다.
 - 서버에는 토큰 원문이 아니라 SHA-256 해시만 저장합니다(`auth_sessions`, `registration_sessions`). 역할·계정 상태는 매 요청 DB에서 확인합니다.
 - 오류: 세션 없음·만료·폐기 401 `SESSION_EXPIRED`, 가입 세션만 있음 401 `REGISTRATION_REQUIRED`, 역할 불일치 403 `FORBIDDEN`, 정지 계정 403 `ACCOUNT_SUSPENDED`(세션도 폐기). `require_owner`는 역할만 보므로 매장 소유·승인(APPROVED) 확인은 endpoint에서 합니다.
 - `create_session(user_id)`로 만든 `IssuedSession`을 `set_session_cookie(response, issued)`로 내려보냅니다. 가입 세션은 `create_registration_session(sub, email)`와 `set_registration_cookie`, 가입 완료 시 `consume_registration_session(id, db=db)`(한 번만 성공)를 씁니다. `db=`를 넘기면 호출자의 트랜잭션에 참여하고 생략하면 자체 트랜잭션으로 커밋합니다.
@@ -164,7 +164,7 @@ def create_store(body: StoreIn, owner: CsrfOwner, db: DbSession, key: Idempotenc
 | 이름 | 용도 |
 | --- | --- |
 | `ALLOWED_ORIGINS` | 변경 요청을 허용할 Origin 목록. 비우면 모두 거절 |
-| `COOKIE_SECURE` | `true`/`false`로 쿠키 Secure 속성 강제. 생략 시 `APP_ENV != local`이면 켬 |
+| `COOKIE_SECURE` | 생략·빈 값·`true`·`false`만 허용(그 외는 시작 실패). `production`에서 `false`는 시작 실패, `dev`만 `false`로 끌 수 있음. 생략 시 `local`은 끔, 그 외는 켬 |
 | `TRUST_FORWARDED_FOR` | `true`면 프록시가 덧붙인 `X-Forwarded-For` 마지막 항목을 클라이언트 IP로 사용 |
 
 ### 한계
