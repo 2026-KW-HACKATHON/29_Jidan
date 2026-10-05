@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.auth import CurrentWorker
 from app.auth_views import identity
-from app.db import SessionDep
+from app.csrf import CsrfWorker
+from app.db import SessionDep, utcnow
 from app.db.models import (
     WEEKDAYS,
     AvailabilityDay,
@@ -14,6 +15,8 @@ from app.db.models import (
     WorkerCareer,
     WorkerProfile,
 )
+from app.errors import ApiError, ErrorCode
+from app.profile_inputs import BasicInput
 
 router = APIRouter(prefix="/api/users/me/profile")
 
@@ -55,3 +58,43 @@ def profile_body(db: Session, user: User, *, lock: bool = False) -> dict:
 @router.get("")
 def get_profile(member: CurrentWorker, db: SessionDep) -> dict:
     return profile_body(db, db.get(User, member.user_id))
+
+
+def lock_worker(db: Session, user_id: str) -> User:
+    # Serialize all profile areas on the parent row. Locking refresh avoids overwriting
+    # values read during authentication; children also use current (locking) reads.
+    user = db.scalar(select(User).where(User.id == user_id).with_for_update()
+                     .execution_options(populate_existing=True))
+    if user is None:
+        raise ApiError(401, ErrorCode.SESSION_EXPIRED)
+    if user.status != "ACTIVE":
+        raise ApiError(403, ErrorCode.ACCOUNT_SUSPENDED)
+    if user.role != "WORKER":
+        raise ApiError(403, ErrorCode.FORBIDDEN)
+    return user
+
+
+def commit_profile(db: Session, user: User) -> dict:
+    db.flush()
+    body = profile_body(db, user, lock=True)
+    # Construct the full response while the lock is held, but return only after durability.
+    db.commit()
+    return body
+
+
+@router.patch("/basic")
+def update_basic(body: BasicInput, member: CsrfWorker, db: SessionDep) -> dict:
+    user = lock_worker(db, member.user_id)
+    profile = db.scalar(select(WorkerProfile).where(WorkerProfile.user_id == user.id)
+                        .with_for_update().execution_options(populate_existing=True))
+    changed = False
+    targets = {"name": (user, "name"), "phoneNumber": (user, "phone_number"),
+               "birthDate": (profile, "birth_date"), "gender": (profile, "gender")}
+    for key, value in body.model_dump(exclude_unset=True).items():
+        row, column = targets[key]
+        if getattr(row, column) != value:
+            setattr(row, column, value)
+            changed = True
+    if changed:
+        user.updated_at = utcnow()
+    return commit_profile(db, user)
