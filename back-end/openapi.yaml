@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 지단 API 설계 명세
-  version: 0.7.0
+  version: 0.8.0
   description: |-
     Figma 인증·회원·매장·근무자 관리, 공고·지원·근무 확정, 홈·캘린더·알림, 매뉴얼·AI 인터뷰·업무 질문을 위한 구현 전 계약입니다.
 
@@ -23,7 +23,7 @@ info:
 
     인터뷰·생성·음성 전사는 비동기 상태와 재시도를 지원하며 답변·질문 위치·게시 버전을 보존합니다.
 
-    근무 확정 철회는 근무 시작 전까지만 가능하며 확정 철회 후 별도 모집 마감합니다. 요청 기한은 요청 후 1시간과 근무 시작 중 먼저 오는 시각입니다.
+    근무 요청 수락과 동시에 공고를 마감하고, 근무 시작 전 확정 철회 시 다시 모집 중으로 엽니다. 요청 기한은 요청 후 1시간과 근무 시작 중 먼저 오는 시각입니다.
 
     MVP 캘린더는 전체 매장의 확정 대타와 완료 이력 월별 조회만 제공합니다. 추천은 가능 시간 일치 우선, 같은 일치 여부 안에서는 근무일 가까운 순입니다.
 
@@ -8612,35 +8612,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobPosting'
-              example:
-                title: 주말 오픈 대타
-                description: 음료 제조와 고객 응대
-                workPart: WEEKEND_OPEN
-                workDate: '2026-10-10'
-                startTime: 09:00
-                endTime: '14:00'
-                endsNextDay: false
-                minimumExperience: ANY
-                experienceNotes: ''
-                hourlyPay: 12000
-                paymentTiming: WORK_DAY
-                paymentNotes: ''
-                id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                store:
-                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
-                  name: 컴포즈커피 광운대점
-                  industry: CAFE
-                  address: 서울특별시 노원구 광운로 20
-                  neighborhood: 월계1동
-                status: RECRUITING
-                recruitmentCount: 1
-                applicantCount: 0
-                startAt: '2026-10-10T00:00:00Z'
-                endAt: '2026-10-10T05:00:00Z'
-                estimatedPay: 60000
-                createdAt: '2026-10-05T01:00:00Z'
-                closedAt: null
-                revision: 1
+              examples:
+                recruiting:
+                  summary: 요청 전 모집 중
+                  value:
+                    title: 주말 오픈 대타
+                    description: 음료 제조와 고객 응대
+                    workPart: WEEKEND_OPEN
+                    workDate: '2026-10-10'
+                    startTime: 09:00
+                    endTime: '14:00'
+                    endsNextDay: false
+                    minimumExperience: ANY
+                    experienceNotes: ''
+                    hourlyPay: 12000
+                    paymentTiming: WORK_DAY
+                    paymentNotes: ''
+                    id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                    store:
+                      id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                      name: 컴포즈커피 광운대점
+                      industry: CAFE
+                      address: 서울특별시 노원구 광운로 20
+                      neighborhood: 월계1동
+                    status: RECRUITING
+                    recruitmentCount: 1
+                    applicantCount: 0
+                    startAt: '2026-10-10T00:00:00Z'
+                    endAt: '2026-10-10T05:00:00Z'
+                    estimatedPay: 60000
+                    createdAt: '2026-10-05T01:00:00Z'
+                    closedAt: null
+                    revision: 1
+                accepted:
+                  summary: 수락 직후 자동 마감
+                  value:
+                    title: 주말 오픈 대타
+                    description: 음료 제조와 고객 응대
+                    workPart: WEEKEND_OPEN
+                    workDate: '2026-10-10'
+                    startTime: 09:00
+                    endTime: '14:00'
+                    endsNextDay: false
+                    minimumExperience: ANY
+                    experienceNotes: ''
+                    hourlyPay: 12000
+                    paymentTiming: WORK_DAY
+                    paymentNotes: ''
+                    id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                    store:
+                      id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                      name: 컴포즈커피 광운대점
+                      industry: CAFE
+                      address: 서울특별시 노원구 광운로 20
+                      neighborhood: 월계1동
+                    status: CLOSED
+                    recruitmentCount: 1
+                    applicantCount: 1
+                    startAt: '2026-10-10T00:00:00Z'
+                    endAt: '2026-10-10T05:00:00Z'
+                    estimatedPay: 60000
+                    createdAt: '2026-10-05T01:00:00Z'
+                    closedAt: '2026-10-05T01:20:00Z'
+                    revision: 3
+                confirmationWithdrawn:
+                  summary: 확정 철회 직후 모집 재개
+                  value:
+                    title: 주말 오픈 대타
+                    description: 음료 제조와 고객 응대
+                    workPart: WEEKEND_OPEN
+                    workDate: '2026-10-10'
+                    startTime: 09:00
+                    endTime: '14:00'
+                    endsNextDay: false
+                    minimumExperience: ANY
+                    experienceNotes: ''
+                    hourlyPay: 12000
+                    paymentTiming: WORK_DAY
+                    paymentNotes: ''
+                    id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                    store:
+                      id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                      name: 컴포즈커피 광운대점
+                      industry: CAFE
+                      address: 서울특별시 노원구 광운로 20
+                      neighborhood: 월계1동
+                    status: RECRUITING
+                    recruitmentCount: 1
+                    applicantCount: 1
+                    startAt: '2026-10-10T00:00:00Z'
+                    endAt: '2026-10-10T05:00:00Z'
+                    estimatedPay: 60000
+                    createdAt: '2026-10-05T01:00:00Z'
+                    closedAt: null
+                    revision: 4
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=639-2971
@@ -8649,15 +8714,15 @@ paths:
       tags:
       - 점주 대타 공고
       operationId: closeJobPosting
-      summary: 지원자 선정 없이 / 확정 철회 후 모집 마감
+      summary: 지원자 선정 없이 모집 마감 또는 마감 상태 재확인
       description: |-
         ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
 
-        사용자 확정 정책: 확정 후에는 확정 철회 → 마감 순서입니다. 근무 시작 전 현재 ACCEPTED 확정이 있으면 409 CONFIRMATION_WITHDRAWAL_REQUIRED로 거절하고 먼저 confirmation-withdrawal을 호출해야 합니다. 현재 유효 PENDING 요청이 있으면 409 WORK_REQUEST_WITHDRAWAL_REQUIRED로 먼저 요청 철회하기를 호출합니다. 기한에 도달한 요청은 배치 지연과 무관하게 EXPIRED로 간주하며 마감을 막지 않습니다.
+        사용자 확정 정책: 근무 요청 수락 시 공고는 이미 CLOSED입니다. 이 API는 미확정 RECRUITING 공고의 수동 마감에 사용합니다. 현재 유효 PENDING 요청이 있으면 409 WORK_REQUEST_WITHDRAWAL_REQUIRED로 먼저 요청 철회하기를 호출합니다. 기한에 도달한 요청은 배치 지연과 무관하게 EXPIRED로 간주하며 마감을 막지 않습니다.
 
-        근무 진행 중(startAt <= now < endAt)인 확정은 409 JOB_IN_PROGRESS로 마감하지 않습니다. 근무 종료 후에는 요청 ACCEPTED/지원 COMPLETED/캘린더 과거 이력을 보존한 채 모집만 마감할 수 있습니다. 이는 확정 철회가 아니며 완료 이력을 삭제하거나 자료 접근을 복원하지 않습니다.
+        이미 CLOSED인 공고는 근무 시작 전·진행 중(startAt <= now < endAt)·완료 후 모두 최신 expectedRevision으로 200 현재 결과를 반환합니다. 최초 closedAt과 revision, 요청 ACCEPTED, 지원 CONFIRMED/COMPLETED, 접근·캘린더 이력을 유지합니다. 재마감은 확정 철회나 자료 접근 종료가 아닙니다.
 
-        expectedRevision으로 공고를 잠그고 RECRUITING→CLOSED로 전환하며 현재 APPLIED/REQUESTED 지원만 NOT_SELECTED로 종료합니다. 만료된 요청은 EXPIRED 이력으로 정리하고 지원 WITHDRAWN·확정 철회 이력은 보존합니다. 수락·지원·철회·마감은 공고 잠금으로 직렬화하여 첫 성공만 반영하고 원자 처리합니다. 철회 후 최신 공고 revision을 다시 조회해 사용합니다. CLOSED에는 같은 최신 revision 요청으로 200 현재 결과(재마감), 동일 Idempotency-Key 재시도는 최초 결과입니다.
+        새 key는 먼저 expectedRevision으로 공고를 잠그고 최신 공고 revision 일치를 검사합니다. 미확정 RECRUITING→CLOSED로 전환하며 closedAt=마감 시각을 기록하고 현재 APPLIED/REQUESTED 지원만 NOT_SELECTED로 종료합니다. 만료된 요청은 EXPIRED 이력으로 정리하고 지원 WITHDRAWN·확정 철회 이력은 보존합니다. 수락·지원·철회·마감은 공고 잠금으로 직렬화하여 첫 성공만 반영하고 원자 처리합니다. 철회 후 최신 공고 revision을 다시 조회해 사용합니다. CLOSED에는 같은 최신 revision 요청으로 200 현재 결과(재마감), 동일 Idempotency-Key 재시도는 최초 결과입니다.
 
         응답은 Cache-Control: no-store입니다.
 
@@ -8737,16 +8802,14 @@ paths:
                 requestId: req_chapter_100
                 fieldErrors: []
         '409':
-          description: 'CONFIRMATION_WITHDRAWAL_REQUIRED: 시작 전 확정 철회 필요. WORK_REQUEST_WITHDRAWAL_REQUIRED: 대기 요청 철회
-            필요. JOB_IN_PROGRESS: 근무 진행 중. JOB_REVISION_CONFLICT: 공고 revision 불일치.'
+          description: 'WORK_REQUEST_WITHDRAWAL_REQUIRED: 대기 요청 철회 필요. JOB_REVISION_CONFLICT: 공고 revision 불일치. IDEMPOTENCY_KEY_REUSED: 다른 본문에 사용한 key.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
-                code: CONFIRMATION_WITHDRAWAL_REQUIRED
-                message: 'CONFIRMATION_WITHDRAWAL_REQUIRED: 시작 전 확정 철회 필요. WORK_REQUEST_WITHDRAWAL_REQUIRED: 대기 요청
-                  철회 필요. JOB_'
+                code: WORK_REQUEST_WITHDRAWAL_REQUIRED
+                message: '유효 대기 요청을 먼저 철회한 뒤 모집을 마감해 주세요.'
                 requestId: req_chapter_100
                 fieldErrors: []
         '200':
@@ -9093,7 +9156,7 @@ paths:
       operationId: searchJobPostings
       summary: 대타 공고 검색·필터·최신순
       description: |-
-        이미 근무가 확정된 공고는 점주가 별도 모집 마감 전이어도 탐색 결과에서 제외합니다.
+        근무 요청 수락으로 CLOSED가 된 공고는 탐색 결과에서 제외합니다. 근무 시작 전 확정 철회로 RECRUITING이 되면 다시 탐색 대상에 포함합니다.
 
         ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
 
@@ -10702,7 +10765,7 @@ paths:
       description: |-
         ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
 
-        본인 PENDING 요청에 ACCEPT 또는 DECLINE합니다. now < expiresAt, 근무 시작 전, RECRUITING·미확정, 지원 미철회 상태를 공고 잠금 안에서 재검증합니다. 수락 시 요청 ACCEPTED, 지원 CONFIRMED, 다른 지원 NOT_SELECTED, 미결 요청 CANCELLED, 근무 캘린더·TEMPORARY 자료 접근·알림 outbox를 원자적으로 생성합니다. 모집은 별도 점주 마감 전까지 RECRUITING이지만 확정 후 신규 지원/요청은 JOB_FILLED로 막습니다.
+        본인 PENDING 요청에 ACCEPT 또는 DECLINE합니다. now < expiresAt, 근무 시작 전, RECRUITING·미확정, 지원 미철회 상태를 공고 잠금 안에서 재검증합니다. 수락 시 요청 ACCEPTED, 지원 CONFIRMED, 다른 지원 NOT_SELECTED, 미결 요청 CANCELLED, 근무 캘린더·TEMPORARY 자료 접근·알림 outbox를 원자적으로 생성합니다. 같은 트랜잭션에서 공고를 RECRUITING→CLOSED로 전환하고 closedAt=respondedAt을 기록하며 공고 revision을 증가시킵니다. 확정 후 신규 지원/요청은 JOB_FILLED로 막으며, 현재 확정 여부를 일반 CLOSED 검사보다 먼저 판정합니다. DECLINE은 공고를 마감하지 않고 RECRUITING/closedAt=null을 유지합니다.
 
         TEMPORARY 접근은 수락 시각부터 근무 종료 시각까지 [startedAt, validUntil)로 부여하여 출근 전 온보딩을 허용합니다. 현재 게시본이 없어도 확정은 성공하고 온보딩은 MANUAL_NOT_PUBLISHED 상태입니다. 정기 접근과 독립적으로 공존하며 기존 수동 종료 이력은 되살리지 않습니다. 거절은 지원을 APPLIED로 돌리고 점주가 다른 지원자를 선택할 수 있습니다. 본인의 이미 확정된 대타와 근무 시간이 겹치면 409 WORK_INTERVAL_CONFLICT(제안 정책); 인접 구간은 허용합니다. 새 key로 같은 응답은 409, 동일 key 재시도는 최초 결과입니다.
 
@@ -14374,7 +14437,7 @@ paths:
 
         ACCEPTED→CONFIRMATION_WITHDRAWN으로 변경하고 수락 시각 respondedAt은 보존, endedAt은 철회 시각으로 갱신합니다. 이 요청이 생성한 TEMPORARY 접근만 REVOKED/permissions=[]로 종료합니다. 신규 종료이면 revokedAt=철회 시각이고, 이미 REVOKED이면 최초 revokedAt을 유지하여 기존 수동 종료 이력을 덮어쓰지 않습니다. 캘린더 연결을 해제하여 활성 캘린더 응답에서 제외하되 확정·접근·일정 감사 이력은 삭제하지 않습니다. 다른 REGULAR 접근이나 다른 공고의 TEMPORARY 접근은 변경하지 않습니다.
 
-        해당 공고의 확정 슬롯을 해제하고 지원 CONFIRMED→APPLIED로 복구합니다. 수락 시 그 확정 requestId 때문에 NOT_SELECTED가 된 지원만 원인 이력으로 식별해 APPLIED로 복구합니다. WITHDRAWN/개별 종료/다른 확정에 따른 이력은 되살리지 않습니다. 수락 당시의 변경 원인·이전 상태·대상 지원 ID를 저장하여 정확히 복구해야 합니다. 이후 점주는 다른 지원자를 선택하거나 별도 모집 마감 API를 호출합니다. 자동 마감하지 않습니다.
+        해당 공고의 확정 슬롯을 해제하고 지원 CONFIRMED→APPLIED로 복구합니다. 수락 시 그 확정 requestId 때문에 NOT_SELECTED가 된 지원만 원인 이력으로 식별해 APPLIED로 복구합니다. WITHDRAWN/개별 종료/다른 확정에 따른 이력은 되살리지 않습니다. 수락 당시의 변경 원인·이전 상태·대상 지원 ID를 저장하여 정확히 복구해야 합니다. 같은 트랜잭션에서 공고를 CLOSED→RECRUITING으로 다시 열고 closedAt=null로 초기화합니다. 이전 수락·마감·철회 시각은 확정/상태 전이 이력에 보존합니다. 이후 신규 지원과 다른 지원자 요청을 허용하며, 점주가 모집을 끝내려면 별도 모집 마감 API를 호출합니다.
 
         공고→요청→지원→접근·캘린더 잠금으로 수락·확정 철회·마감을 직렬화하고 모든 변경과 근무자 알림 outbox를 원자 처리합니다. 요청/지원/공고 revision을 증가시킵니다. 새로운 근무 요청은 새 requestId와 key가 필요하며 철회된 기존 요청은 재수락 불가입니다. 같은 key 재시도는 최초 200 결과, 다른 key 재철회는 409 WORK_CONFIRMATION_NOT_ACTIVE입니다. 완료된 근무 이력은 이 API로 변경할 수 없습니다.
 

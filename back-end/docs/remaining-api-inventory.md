@@ -1,6 +1,6 @@
 # Figma 잔여 API 명세 목록
 
-기준: [KW-HACKATHON Figma](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1), 이슈 #100. 기존 53개 operation과 화면을 대조하여 현재 MVP에 필요한 46개를 추가한 목록입니다. 현재 OpenAPI 0.7.0은 총 99개 operation입니다. 이 문서는 구현 완료를 의미하지 않습니다.
+기준: [KW-HACKATHON Figma](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1), 이슈 #100. 기존 53개 operation과 화면을 대조하여 현재 MVP에 필요한 46개를 추가한 목록입니다. 현재 OpenAPI 0.8.0은 총 99개 operation입니다. 이 문서는 구현 완료를 의미하지 않습니다.
 
 ## 이미 명세가 있는 챕터
 
@@ -29,7 +29,7 @@ Google 인증·가입·세션, 관리자 매장 승인, 일반회원 프로필, 
 - 사용자 확정: 요청 기한은 min(요청+1시간, 근무 시작)입니다. 08:30 요청·09:00 근무이면 09:00 만료입니다.
 - 근무 요청 수락·거절 상세 화면은 없지만 요청→확정 흐름을 실행하는 데 필요하므로 보완 API로 추가합니다.
 - 사용자 범위 조정: 캘린더는 전체 매장 월별 조회만 남기고 확정 대타/완료 이력만 반환합니다. 정기 근무·매장 일반 일정·편집·단일 일정 상세 API는 MVP 제외입니다. 초대 접근 기간을 일정으로 간주하지 않습니다.
-- 사용자 첨부 수정 디자인: 수락 대기는 요청 철회, 근무 확정은 확정 철회 버튼입니다. 확정 철회는 근무 시작 전까지만 허용하고 별도 마감 전에 선행합니다. 해당 대타 접근과 캘린더 연결을 해제하며 다른 정기/대타 접근 및 이력은 유지합니다.
+- 사용자 첨부 수정 디자인: 수락 대기는 요청 철회, 근무 확정은 확정 철회 버튼입니다. 수락 시 자동 마감하고 근무 시작 전 확정 철회 시 다시 모집 중으로 엽니다. 재개 후 수동 마감은 별도 동작입니다. 해당 대타 접근과 캘린더 연결을 해제하며 다른 정기/대타 접근 및 이력은 유지합니다.
 - 사용자 확정: 신청 철회 후 공고 페이지에서 새 지원서로 재지원할 수 있습니다. 추천은 시간 일치 우선, 그 안에서 날짜 순입니다. 전체 근무를 가능 시간 합집합이 덮으면 일치로 정의하고 일부 일치/미등록은 후순위로 표시합니다.
 - 관심 매장 건수는 홈에 있으나 추가/해제 화면은 없습니다. 데이터 유지에 필요한 최소 API를 제안으로 구분합니다.
 - 최신 매뉴얼 상세에는 체크박스나 완료 저장 버튼이 없습니다. 체크리스트 수행·완료 API는 추가하지 않습니다. 기존 READ_CHECKLISTS는 향후 예약 권한입니다.
@@ -50,7 +50,7 @@ OpenAPI lint와 JSON Schema/예시/상태 계약 테스트는 구현 계약을 �
 | Method | Path | 화면 동작 |
 | --- | --- | --- |
 | GET | `/api/stores/{storeId}/job-postings/{jobId}` | [관리 공고 상세](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=639-2971) |
-| POST | `/api/stores/{storeId}/job-postings/{jobId}/closure` | [지원자 선정 없이 / 확정 철회 후 모집 마감](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=698-2765) |
+| POST | `/api/stores/{storeId}/job-postings/{jobId}/closure` | [지원자 선정 없이 모집 마감 또는 마감 상태 재확인](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=698-2765) |
 | POST | `/api/stores/{storeId}/job-postings` | [대타 공고 등록 (3단계 최종 제출)](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=639-2775) |
 | GET | `/api/stores/{storeId}/job-postings` | [매장 공고 목록 (모집 중/마감)](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=516-4923) |
 
@@ -162,4 +162,4 @@ OpenAPI lint와 JSON Schema/예시/상태 계약 테스트는 구현 계약을 �
 
 새로 확정한 요청 기한·확정 철회·재지원·캘린더 범위·추천 순서는 설계 제안으로 남겨두지 않습니다. 화면에 없는 관심 매장 등록/해제, 첫 매장 선택과 집계 상한, 파일 보관 상한 및 근무 중첩 차단은 기존 보완 설계로 유지합니다.
 
-0.7.0은 캘린더 편집/개별 상세 API 제거, TEMPORARY_WORK만 허용하는 이벤트, WORK_SCHEDULE target의 storeId/workDate 필수화, 추천 카드 matchesAvailability 필수화와 철회 상태 추가를 포함하는 계약 변경입니다. 업무 API 구현 또는 데이터 마이그레이션을 수행한 것은 아닙니다. 설계 Swagger 제공 endpoint는 별도 문서 경로이며 [개발 CI/CD와 주소](README.md#개발-서버-cicd와-endpoint)에 정리했습니다.
+0.8.0은 수락 시 CLOSED/closedAt 기록, 확정 철회 시 RECRUITING/closedAt=null 복구, 마감 재요청의 이력 보존으로 상태 전이를 보정합니다. 0.7.0의 캘린더 편집/개별 상세 API 제거, TEMPORARY_WORK만 허용하는 이벤트, WORK_SCHEDULE target의 storeId/workDate 필수화, 추천 카드 matchesAvailability 필수화와 철회 상태 추가를 포함하는 계약 변경입니다. 업무 API 구현 또는 데이터 마이그레이션을 수행한 것은 아닙니다. 설계 Swagger 제공 endpoint는 별도 문서 경로이며 [개발 CI/CD와 주소](README.md#개발-서버-cicd와-endpoint)에 정리했습니다.
