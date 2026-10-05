@@ -2398,8 +2398,8 @@ paths:
 
         **취소와 재요청**
 
-        - 현재 유효한 PENDING 초대를 CANCELED로 전환하고 서버 취소 시각을 기록합니다. 이후 기존 링크는 사용할 수 없습니다.
-        - 이미 CANCELED이면 링크 기한이 지나도 최초 취소 시각을 유지하며 **200**으로 반환합니다.
+        - 현재 유효한 PENDING 초대를 CANCELLED로 전환하고 서버 취소 시각을 기록합니다. 이후 기존 링크는 사용할 수 없습니다.
+        - 이미 CANCELLED이면 링크 기한이 지나도 최초 취소 시각을 유지하며 **200**으로 반환합니다.
         - 이미 수락/거절되었으면 **409 INVITATION_STATE_CONFLICT**입니다. 수락한 근무자의 접근 종료는 근무자 관리 API를 사용합니다.
         - 기한이 지난 PENDING/EXPIRED는 **410**이며 과거 초대를 취소 상태로 덮어쓰지 않습니다.
         - 수락/취소/재전송 경쟁은 한 트랜잭션으로 직렬화합니다. 취소가 먼저 완료되면 수락을 거절하며, 수락이 먼저 완료되면 취소가 **409**입니다.
@@ -2426,7 +2426,7 @@ paths:
                 id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
                 storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
                 email: jisu@example.com
-                status: CANCELED
+                status: CANCELLED
                 createdAt: '2026-10-05T01:00:00Z'
                 lastSentAt: '2026-10-05T01:00:00Z'
                 expiresAt: '2026-10-12T01:00:00Z'
@@ -3495,7 +3495,7 @@ paths:
 
         - 점주가 해당 근무자의 이 매장 자료 접근을 즉시 종료합니다. 정기 초대에 종료일이 있어도 더 일찍 종료할 수 있습니다.
         - 미종료 정기/대타 접근을 함께 REVOKED로 바꾸고 서버 시각을 기록합니다. 이미 EXPIRED/REVOKED인 이력과 최초 revokedAt은 유지합니다.
-        - 같은 매장/근무자의 검증된 이메일에 보내 둔 유효 PENDING 초대도 CANCELED로 전환해 기존 대기 링크로 다시 접근을 만들지 못하게 합니다. 미발송 메일 outbox도 폐기합니다.
+        - 같은 매장/근무자의 검증된 이메일에 보내 둔 유효 PENDING 초대도 CANCELLED로 전환해 기존 대기 링크로 다시 접근을 만들지 못하게 합니다. 미발송 메일 outbox도 폐기합니다.
         - 자료 접근·관련 대기 초대·미발송 메일 상태를 같은 트랜잭션으로 처리합니다. 수락/재전송과 같은 매장/이메일/근무자 단위에서 직렬화합니다.
         - 완료 후 다음 매뉴얼·체크리스트·AI 질의응답 요청에서 접근을 거절합니다. 캐시·세션에 담긴 옛 권한으로 허용하지 않습니다.
         - 진행 중인 긴 응답/AI 스트림도 권한 재검증으로 종료합니다. 이미 사용자에게 전달된 자료를 회수한다는 보장은 없습니다.
@@ -16076,7 +16076,7 @@ components:
           - PENDING
           - ACCEPTED
           - DECLINED
-          - CANCELED
+          - CANCELLED
           - EXPIRED
         createdAt:
           type: string
@@ -16195,7 +16195,7 @@ components:
       - type: object
         properties:
           status:
-            const: CANCELED
+            const: CANCELLED
           acceptedAt:
             type: 'null'
           acceptedBy:
