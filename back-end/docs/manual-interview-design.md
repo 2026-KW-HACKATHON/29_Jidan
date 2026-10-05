@@ -35,7 +35,7 @@ flowchart TD
 
 ## API 목록
 
-아래 표에서 `M`은 `/api/stores/{storeId}/manual`, `S`는 `M/interviews/{sessionId}`, `R`은 `S/intents/{intentId}/review`이다. 매뉴얼·인터뷰 영역은 총 25개 operation이다.
+아래 표에서 `M`은 `/api/stores/{storeId}/manual`, `S`는 `M/interviews/{sessionId}`, `R`은 `S/intents/{intentId}/review`이다. 매뉴얼·인터뷰 영역은 총 28개 operation이다.
 
 | 그룹 | 메서드·경로 | 용도 |
 | --- | --- | --- |
@@ -111,9 +111,9 @@ COLLECTING/PROCESSING/READY_TO_GENERATE에서 이전 완료 인텐트를 조회�
 
 업로드는 실제 MIME·byte·디코딩을 검사한 뒤 mediaId를 반환한다. 사진은 JPEG/PNG/WebP 최대 10 MiB, 음성은 MPEG/MP4/WebM/WAV 최대 20 MiB 및 120초다. 상한과 포맷/보관 기간은 화면에 없는 설계 제안이다. 빈 파일·잘못된 형식·상한 초과를 구분한다. 이미지 EXIF 위치 정보는 제거한다.
 
-음성 업로드 → 전사 요청 → GET 전사 READY → 인터뷰 답변의 VOICE/transcriptionId 제출 순서다. 전사가 답변을 자동 제출하지 않는다. 텍스트를 고쳐 제출하려면 TEXT 방식으로 제출한다. 진행 중/실패 전사는 답변에 쓸 수 없다. 무음과 공백 결과는 ERROR다. 전사 ERROR는 새 key로 같은 전사 ID를 재시도하고, 이미 파일이 정리되었으면 다시 업로드한다.
+MVP에서는 답변 마치기를 제출 의사로 취급하며, 음성 업로드 → 전사 요청 → GET 전사 READY → 답변 또는 정정의 VOICE/transcriptionId 제출을 앱이 이어서 수행한다. 전사 원문 표시·확인은 요구하지 않는다. 전사가 답변을 자동 제출하지 않는다. 텍스트를 고쳐 제출하려면 TEXT 방식으로 제출한다. 진행 중/실패 전사는 답변에 쓸 수 없다. 무음과 공백 결과는 ERROR다. 전사 ERROR는 새 key로 같은 전사 ID를 재시도하고, 이미 파일이 정리되었으면 다시 업로드한다.
 
-사진은 답변의 photoIds, 완료 인텐트별 요약의 사진 또는 최종 초안 photos로 연결한다. 근무 구조 전체 사진은 `structurePhotos`, 업무별 사진은 섹션의 `photos`다. 사진 이름(title)은 필수이며 설명(caption)은 별도의 선택 값이다. 배열 순서가 표시 순서다. 연결된 파일은 삭제를 거절하며 먼저 초안 연결을 해제해야 한다. 게시본이 참조하는 사진은 계속 보존한다.
+사진은 답변의 photoIds, 완료 인텐트별 요약의 사진 또는 최종 초안 photos로 연결한다. 근무 구조 전체 사진은 `structurePhotos`, 업무별 사진은 섹션의 `photos`다. 사진 이름(title)은 필수이며 설명(caption)은 별도의 선택 값이다. MVP는 이름·설명 입력 없이 사진을 연결한다. 앱은 최초 연결 시 해당 대상의 기존 기본 이름과 겹치지 않는 양의 정수 번호로 `사진 1` 같은 이름을 부여하고 `caption: null`을 보낸다. 재조회·같은 요청 재시도·순서 변경에서는 저장한 이름을 유지하며 기존 이름을 다시 생성하지 않는다. 배열 순서가 표시 순서다. 연결된 파일은 삭제를 거절하며 먼저 초안 연결을 해제해야 한다. 게시본이 참조하는 사진은 계속 보존한다.
 
 미첨부 파일은 24시간 뒤, 음성 원본은 전사 종료 후 24시간 이내 정리한다. 세션/초안/게시본에 연결된 사진은 참조가 유지되는 동안 정리하지 않는다. 삭제·연결 경쟁, orphan 정리, 업로드 처리 한도, 실제 장기 보존/계정 삭제 정책은 구현 시 검증·확정해야 한다.
 
@@ -165,3 +165,25 @@ OpenAPI lint, 모든 요청/응답 예시의 JSON Schema 검사, 상태별 필�
 서버는 현재 권한과 멱등성을 확인한 뒤 매뉴얼 잠금 안에서 현재 초안 ID·revision 검사와 변경을 원자 처리한다. 게시와 새 초안 생성도 같은 잠금에 참여한다. 같은 key·본문 재시도는 최초 결과를 재현하며 새 초안에 재실행하지 않는다. 같은 key로 expectedVersionId를 바꾸면 `409 IDEMPOTENCY_KEY_REUSED`다.
 
 프론트는 입력 및 최종 확인을 조회 당시 versionId에 연결한다. 충돌 시 입력을 보존하되 새 초안 ID로 자동 치환하거나 게시를 자동 재시도하지 않고 사용자의 재검토를 받는다. 기존 클라이언트는 세 요청에 UUID 필드를 추가해야 하며 누락/null/잘못된 형식은 422다. 업무 API와 DB 변경은 구현 전 계약이며 DB migration은 없다.
+
+## 생성 완료된 초안의 음성 정정 (OpenAPI 0.10.0)
+
+최종 검토의 “수정할게요”는 녹음 → 전사 READY → `POST M/draft/corrections`로 이어진다. 전사 원문 검수나 직접 편집 화면은 MVP에서 요구하지 않는다. 기존 `R/corrections`는 생성 전 인텐트 요약 정정이며 COMPLETED 세션을 다시 열지 않는다. 최종 초안 정정은 별도 작업으로 수행하고 원문 인터뷰·평가·게시본을 보존한다.
+
+| 메서드·경로 | 역할 |
+| --- | --- |
+| `POST M/draft/corrections` | `expectedVersionId`, `expectedRevision`, `target`, 기존 `ManualInterviewInput`으로 정정 예약 |
+| `GET M/draft/corrections/{correctionId}` | RUNNING/SUCCEEDED/ERROR 및 공개 오류·결과 revision 조회 |
+| `POST M/draft/corrections/{correctionId}/retries` | 동일 입력 snapshot으로 실패한 최신 작업 재시도 |
+
+`target.kind=MANUAL`은 `targetId=null`, SHIFT/SECTION은 현재 초안의 항목 ID다. 개별 항목에서 시작하면 해당 ID를 전달하고 전체 수정은 MANUAL을 사용한다. SECTION 문맥에서 단계 정정도 말할 수 있다. 모호한 지시는 `CORRECTION_CLARIFICATION_REQUIRED`, 해소되지 않은 연결 참조는 `MANUAL_REFERENCE_CONFLICT`로 종료하고 다시 말하도록 안내한다. AI가 값을 추측하거나 무관한 내용을 변경하지 않는다.
+
+`ManualDraft.latestCorrection`은 정정 상태를 연결한다. 새 서버는 작업이 없으면 null을 반환한다. 기존 응답 호환을 위해 선택 필드이며 누락도 작업 없음으로 처리한다. `generationStatus`는 최초 생성 상태로 유지한다. 정정 중·실패에도 마지막 READY content와 issues를 보존한다. 조회·미리보기는 마지막 저장본이며 처리 중임을 표시한다. 성공 뒤 초안을 다시 조회하여 변경 내용을 검토한다.
+
+초안당 RUNNING은 하나다. 정정 접수와 전체 편집·부족 항목 확인·게시·새 인터뷰 시작은 같은 매뉴얼 잠금을 사용하며 정정 중 변경은 `409 MANUAL_CORRECTION_IN_PROGRESS`다. 접수/재시도는 현재 초안 ID·revision과 작업 귀속을 검사한다. worker 완료 시에도 ID·baseRevision·latestCorrection.id·attempt별 task ID·RUNNING을 검사하여 늦은 결과와 중복 적용을 차단한다. 외부 AI 호출 동안 DB 트랜잭션을 유지하지 않고 타임아웃은 공개 실패로 종료한다.
+
+정정 접수·실패·내용이 같은 성공은 content revision을 바꾸지 않는다. 실제 변경 성공은 content·missingInformation·issues를 함께 갱신하고 부족 항목 확인을 초기화하며 revision을 한 번 증가시킨다. 기존 항목 ID와 무관한 내용·사진은 보존하고, 새 항목 ID는 서버가 생성한다. 삭제한 대상의 사진 연결만 해제하며 게시본 등 다른 참조가 있는 파일은 유지한다. 모든 결과는 기존 `ManualContent`의 참조·시간·사진·미확정 값 검증을 통과해야 한다.
+
+응답 유실은 같은 key·본문으로 복구한다. 처리 실패 재시도는 새 key를 사용하며 ERROR/retryable=true인 최신 작업만 허용한다. 원래 versionId/baseRevision과 현재 초안이 달라지거나 다른 작업이 시작됐으면 재시도하지 않는다. 원래 전사 snapshot은 작업에 보존하므로 음성 원본 삭제 후에도 재시도가 가능하다. 실패 후 사용자는 새 발화로 고치거나, 보존된 내용을 명시적으로 검토하고 기존 게시 API로 게시할 수 있다. 실패를 성공으로 간주하거나 자동 게시하지 않는다.
+
+이 버전은 endpoint 3개와 선택 응답 필드를 추가한다. 기존 TEXT 입력·전체 초안 편집 계약은 유지한다. 실행 서버·DB migration·STT·AI worker는 이번 계약 작업에 포함하지 않는다. 계약 테스트의 상태/오류 문구 검증은 실제 잠금·경합·AI 품질 테스트를 대체하지 않는다.

@@ -155,3 +155,14 @@ def test_error_codes_are_unique_and_match_their_names():
 def test_redirect_only_public_codes_of_the_contract_are_defined():
     # Documented in prose (Google consent denied -> 302 with this code), not as an Error body.
     assert ErrorCode.GOOGLE_ACCESS_DENIED == "GOOGLE_ACCESS_DENIED"
+
+
+@pytest.mark.parametrize("code", [
+    "MANUAL_CORRECTION_IN_PROGRESS",
+    "MANUAL_CORRECTION_NOT_RETRYABLE",
+    "CORRECTION_CLARIFICATION_REQUIRED",
+])
+def test_manual_correction_codes_include_prose_and_async_errors(code):
+    # 재시도 불가 코드는 설명에만 있고 모호한 정정은 비동기 작업 오류에도 사용된다.
+    assert code in OPENAPI.read_text(encoding="utf-8")
+    assert ErrorCode(code).name == code

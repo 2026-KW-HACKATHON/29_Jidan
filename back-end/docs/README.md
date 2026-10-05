@@ -24,7 +24,7 @@ npm test      # 명세가 없어도 문서 서버 테스트 실행 가능
 
 ## 명세 검수
 
-[화면별 챕터와 추가 endpoint 전체 목록](remaining-api-inventory.md)에서 Figma와 OpenAPI 대응을 확인합니다. 현재 `openapi.yaml` 0.9.0은 99개 operation이며, 실제 인증·DB·AI·알림·파일 저장 구현을 뜻하지 않습니다. 챕터별 설계 문서에 화면 근거와 보완 제안을 구분했습니다.
+[화면별 챕터와 추가 endpoint 전체 목록](remaining-api-inventory.md)에서 Figma와 OpenAPI 대응을 확인합니다. 현재 `openapi.yaml` 0.10.0은 102개 operation이며, 실제 인증·DB·AI·알림·파일 저장 구현을 뜻하지 않습니다. 챕터별 설계 문서에 화면 근거와 보완 제안을 구분했습니다.
 
 계약 테스트는 요청/응답 형식과 예시, 권한·상태·참조 규칙을 검사합니다. 날짜 간 비교, 트랜잭션 경합, 실제 AI 근거 충실도는 향후 백엔드 구현에서 검증해야 합니다. Redocly lint에는 작업 전부터 있던 매뉴얼 조합/예시 경고 20개가 남아 있으며 Ajv 계약 테스트와 구분해 확인합니다. OAuth 302 응답 2개의 기존 lint 예외는 유지합니다.
 
@@ -53,3 +53,7 @@ npm run build --prefix back-end/docs -- /tmp/jidan-swagger-check
 ```
 
 Docker CI는 `DOCS_REVISION`에 GitHub Actions의 커밋 SHA를 전달하여 배포된 문서의 revision과 명세 SHA-256을 추적합니다. 업무 endpoint 전체 목록은 [검수 목록](remaining-api-inventory.md)에 있습니다.
+
+## 매뉴얼 작성 MVP 계획
+
+[점주 매뉴얼 작성 MVP 구현 계획](manual-authoring-mvp-plan.md)은 음성 답변·음성 정정·사진 업로드·최종 검토·게시의 프론트 구현 범위와 API 연결을 정의합니다. 전사 원문 확인, 직접 편집, 사진 이름·설명 편집은 MVP에서 제외합니다.
