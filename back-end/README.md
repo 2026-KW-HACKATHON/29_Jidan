@@ -2,6 +2,10 @@
 
 Python 3.12 / FastAPI 기반 API.
 
+## 데이터 설계
+
+[Figma 기반 MVP ERD](docs/erd/README.md)는 인증·프로필·매장·초대·대타·관심 매장·매뉴얼·Q&A·알림의 관계와 확정 정책을 정리한 구현 전 문서입니다.
+
 ```bash
 cd back-end
 python3.12 -m venv .venv
@@ -21,7 +25,3 @@ python -m pytest
 [CI/CD 운영 문서](../deploy/CI-CD.md)를 참고한다.
 
 로컬에서 DB 설정이 없으면 `database: not_configured`를 반환한다. `APP_ENV=dev|production`에서는 DB 설정이 필수이며, `/api/health`가 `SELECT 1`까지 확인한다. DB 장애 시 자격 증명을 노출하지 않고 503을 반환한다.
-
-## 데이터 설계
-
-[Figma 기반 MVP ERD](docs/erd/README.md)는 인증·프로필·매장·초대·대타·매뉴얼·알림의 관계와 미확정 정책을 정리한 구현 전 문서입니다.
