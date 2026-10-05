@@ -195,16 +195,11 @@ def registration_headers() -> dict:
     }
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#103: get_session still commits after the response is sent; remove this marker "
-    "once the common commit-before-response rule lands there",
-)
 def test_bare_cookie_setter_cannot_outrun_the_request_commit(api, db_engine, monkeypatch):
     """A commit failing at the end of the request must not leave a 2xx or a Set-Cookie.
 
     Uses the *bare* `set_session_cookie` (cookie set before the commit) on purpose; that is
-    only safe once `get_session` commits before the response is sent.
+    safe because the handler commits before the response and `SessionDep` closes the session first.
     """
     user_id = new_user(db_engine)
     restore = break_commits(monkeypatch)

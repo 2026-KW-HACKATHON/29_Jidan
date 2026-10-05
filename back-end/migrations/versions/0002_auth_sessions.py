@@ -20,9 +20,9 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table('auth_sessions',
-    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
     sa.Column('token_hash', sa.String(length=64), nullable=False),
-    sa.Column('user_id', sa.String(length=36), nullable=False),
+    sa.Column('user_id', sa.CHAR(length=36), nullable=False),
     sa.Column('created_at', UTC_DATETIME, nullable=False),
     sa.Column('last_seen_at', UTC_DATETIME, nullable=False),
     sa.Column('expires_at', UTC_DATETIME, nullable=False),
@@ -33,7 +33,7 @@ def upgrade() -> None:
     )
     op.create_index('ix_auth_sessions_user_id', 'auth_sessions', ['user_id'], unique=False)
     op.create_table('registration_sessions',
-    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
     sa.Column('token_hash', sa.String(length=64), nullable=False),
     sa.Column('google_sub', sa.String(length=255), nullable=False),
     sa.Column('google_email', sa.String(length=320), nullable=False),

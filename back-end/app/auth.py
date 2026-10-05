@@ -26,7 +26,7 @@ from fastapi import Depends, Request, Response
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.db import get_session, session_scope, utcnow
+from app.db import SessionDep, session_scope, utcnow
 from app.db.models import AuthSession, RegistrationSession, User
 from app.errors import ApiError, ErrorCode
 
@@ -351,22 +351,27 @@ def _resolve_member(request: Request, db: Session) -> MemberPrincipal | None:
         auth_session.revoked_at = now
         db.commit()  # persist the revocation even though this request fails
         raise ApiError(403, ErrorCode.ACCOUNT_SUSPENDED)
-    if now - auth_session.last_seen_at >= LAST_SEEN_REFRESH_INTERVAL:
-        auth_session.last_seen_at = now
-    return MemberPrincipal(
+    principal = MemberPrincipal(
         user.id, user.google_sub, user.role, auth_session.id, csrf_token_for(token), auth_session.expires_at,
     )
+    if now - auth_session.last_seen_at >= LAST_SEEN_REFRESH_INTERVAL:
+        auth_session.last_seen_at = now
+        # Dependencies run before the handler, so nothing else is pending on this session. Commit
+        # explicitly (get_session never does) so the refresh is neither lost nor flagged as an
+        # uncommitted write.
+        db.commit()
+    return principal
 
 
 def optional_member(
-    request: Request, db: Annotated[Session, Depends(get_session)],
+    request: Request, db: SessionDep,
 ) -> MemberPrincipal | None:
     """Like `require_member` but anonymous (or registration-only) callers get None."""
     return _resolve_member(request, db)
 
 
 def require_member(
-    request: Request, db: Annotated[Session, Depends(get_session)],
+    request: Request, db: SessionDep,
 ) -> MemberPrincipal:
     """Any ACTIVE member. 401 SESSION_EXPIRED / REGISTRATION_REQUIRED, 403 ACCOUNT_SUSPENDED."""
     member = _resolve_member(request, db)
@@ -394,7 +399,7 @@ def require_worker(
 
 
 def optional_registration_session(
-    request: Request, db: Annotated[Session, Depends(get_session)],
+    request: Request, db: SessionDep,
 ) -> RegistrationPrincipal | None:
     return _find_registration(db, _cookie_token(request, REGISTRATION_COOKIE_NAME))
 
@@ -411,7 +416,7 @@ def require_registration_session(
 
 
 def require_member_or_registration(
-    request: Request, db: Annotated[Session, Depends(get_session)],
+    request: Request, db: SessionDep,
 ) -> MemberPrincipal | RegistrationPrincipal:
     """A member session, else a live registration session; otherwise 401 SESSION_EXPIRED.
 
@@ -430,7 +435,7 @@ def require_member_or_registration(
 
 
 # Annotated aliases for endpoint signatures: `def handler(member: CurrentMember, db: DbSession)`.
-DbSession = Annotated[Session, Depends(get_session)]
+DbSession = SessionDep
 CurrentMember = Annotated[MemberPrincipal, Depends(require_member)]
 CurrentOwner = Annotated[MemberPrincipal, Depends(require_owner)]
 CurrentWorker = Annotated[MemberPrincipal, Depends(require_worker)]

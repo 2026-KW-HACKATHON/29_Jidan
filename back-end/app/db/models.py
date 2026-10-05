@@ -506,11 +506,11 @@ class IdempotencyRecord(Base):
     # SHA-256 hex of the Google `sub` (app.idempotency.subject_id_for): the same value before
     # and after registration, so records follow the person from registration session to member.
     subject_id: Mapped[str] = mapped_column(String(64))
-    idempotency_key: Mapped[str] = mapped_column(String(36))
+    idempotency_key: Mapped[str] = mapped_column(CHAR(36))
     endpoint: Mapped[str] = mapped_column(String(255))  # "METHOD /path"
     request_hash: Mapped[str] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(16))
-    lock_token: Mapped[str | None] = mapped_column(String(36))
+    lock_token: Mapped[str | None] = mapped_column(CHAR(36))
     locked_until: Mapped[datetime | None] = mapped_column(UtcDateTime)
     response_status: Mapped[int | None] = mapped_column(Integer)
     response_body: Mapped[Any | None] = mapped_column(JSON)

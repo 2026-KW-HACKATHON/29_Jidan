@@ -20,13 +20,13 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table('idempotency_records',
-    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.CHAR(length=36), nullable=False),
     sa.Column('subject_id', sa.String(length=64), nullable=False),
-    sa.Column('idempotency_key', sa.String(length=36), nullable=False),
+    sa.Column('idempotency_key', sa.CHAR(length=36), nullable=False),
     sa.Column('endpoint', sa.String(length=255), nullable=False),
     sa.Column('request_hash', sa.String(length=64), nullable=False),
     sa.Column('state', sa.String(length=16), nullable=False),
-    sa.Column('lock_token', sa.String(length=36), nullable=True),
+    sa.Column('lock_token', sa.CHAR(length=36), nullable=True),
     sa.Column('locked_until', UTC_DATETIME, nullable=True),
     sa.Column('response_status', sa.Integer(), nullable=True),
     sa.Column('response_body', sa.JSON(), nullable=True),
