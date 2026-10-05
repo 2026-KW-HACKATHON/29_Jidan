@@ -26,7 +26,7 @@ erDiagram
     INTERVIEW_INTENTS ||--o{ INTERVIEW_SESSION_INTENTS : covered_by
     INTERVIEW_SESSIONS ||--o{ INTERVIEW_SESSION_INTENTS : tracks
     INTERVIEW_SESSION_INTENTS ||--o| INTERVIEW_INTENT_REVIEWS : summarizes
-    USERS ||--o{ INTERVIEW_INTENT_REVIEWS : confirms
+    USERS o|--o{ INTERVIEW_INTENT_REVIEWS : confirms
     MANUAL_VERSIONS ||--o{ MANUAL_REVIEW_ISSUES : exposes
     INTERVIEW_INTENTS o|--o{ MANUAL_REVIEW_ISSUES : originates
     MANUAL_REVIEW_ISSUES ||--o{ MANUAL_ISSUE_ACKNOWLEDGEMENTS : acknowledges
@@ -59,6 +59,7 @@ erDiagram
         uuid manual_id FK
         int revision_no
         int revision
+        int content_revision
         string generation_status
         json generation_input_snapshot
         datetime updated_at
@@ -173,6 +174,8 @@ erDiagram
         uuid id PK
         uuid issue_id FK
         int version_revision
+        int content_revision
+        json acknowledged_snapshot
         uuid owner_id FK
         text owner_note
         datetime acknowledged_at
@@ -226,7 +229,7 @@ erDiagram
 | 테이블 | 제약 |
 | --- | --- |
 | `store_manuals` | `store_id` UNIQUE. `current_published_version_id`는 같은 매뉴얼의 게시 버전만 참조 |
-| `manual_versions` | `(manual_id, revision_no)` UNIQUE. revision_no는 게시 버전 번호, revision은 같은 초안의 동시 수정 검사용 값으로 구분. 매뉴얼당 활성 DRAFT는 최대 한 개. generation_status는 `NOT_STARTED/RUNNING/READY/ERROR`이며 API의 생성 상태를 표현. `status`는 `DRAFT`/`PUBLISHED`. 초안은 `published_at IS NULL`, 게시본은 게시 시각 필수이며 게시 후 내용 불변 |
+| `manual_versions` | `(manual_id, revision_no)` UNIQUE. revision_no는 게시 버전 번호, revision은 같은 초안의 변경 검사용 값, content_revision은 내용/부족 항목 정의의 변경 세대로 구분. 확인·게시만으로 content_revision을 증가시키지 않음. 매뉴얼당 활성 DRAFT는 최대 한 개. generation_status는 `NOT_STARTED/RUNNING/READY/ERROR`이며 API의 생성 상태를 표현. `status`는 `DRAFT`/`PUBLISHED`. 초안은 `published_at IS NULL`, 게시본은 게시 시각 필수이며 게시 후 내용 불변 |
 | `manual_shifts` | 버전별 오전·오후·야간 등 근무조와 시간. `(version_id, sort_order)` UNIQUE |
 | `manual_sections` | `category`는 `COMMON_TASK`/`SHIFT_TASK`/`RULE`/`EQUIPMENT`. `SHIFT_TASK`만 shift_id 필수이며 같은 버전이어야 함. 나머지 category는 shift_id NULL. `(version_id, sort_order)` UNIQUE |
 | `manual_steps` | `(section_id, sort_order)` UNIQUE. checklist_item은 지시문의 힌트이며 근무자의 완료 기록이 아님 |
@@ -235,9 +238,9 @@ erDiagram
 | `interview_turn_photos` | 같은 매장/세션의 OWNER ANSWER 턴과 IMAGE 연결. `(turn_id, sort_order)` UNIQUE. 답변 원문과 사진 연결을 보존하며 최종 첨부의 이름·설명은 별도 관리 |
 | `interview_question_sets`, `interview_intents` | 필수 질문 셋의 버전과 순서를 보관. 각 인텐트는 기본 질문과 확인할 정보의 기준을 가짐. `(question_set_id, sort_order)` 및 `(question_set_id, intent_key)` UNIQUE. 사용한 질문 셋은 수정하지 않고 새 버전을 생성 |
 | `interview_sessions`, `interview_session_intents` | 세션 생성 시 `DRAFT` 버전에 연결하고 질문 셋 버전을 고정. 매뉴얼 게시 후에도 세션은 같은 버전을 참조해 작성 이력을 보존. 세션의 `status`는 `IN_PROGRESS`/`ERROR`/`COMPLETED`이며 `COMPLETED`에서만 `completed_at`을 기록. 시작할 때 질문 셋의 모든 필수 인텐트에 상태 행을 생성. 수집 상태는 `PENDING`/`NEEDS_DETAIL`/`COVERED`; 인텐트는 세션의 질문 셋에 속해야 함. `finished_at`은 해당 인텐트에서 다음 질문으로 이동한 시각이며, `covered_at`은 정보 수집 완료 시각. depth 5에서 수집이 부족하면 `NEEDS_DETAIL`로 검수중 표시하고 `finished_at`을 기록한 뒤 점주 확인 대기 없이 즉시 다음 인텐트로 이동. 마지막 인텐트면 초안 생성 준비로 이동. 부족 항목은 최종 초안 검토에서 점주 확인만으로 게시 가능하며 보완 답변은 필수가 아님 |
-| `interview_intent_reviews` | `(session_id, intent_id)` 복합 PK/FK로 같은 인텐트 진행 행에 귀속. 완료 인텐트마다 독립 revision과 `PROCESSING/READY/ERROR` 상태. ready_content는 마지막 성공 요약의 구조화 JSON. 최초 생성 전 NULL, 정정 처리/실패 중에는 마지막 성공 내용을 보존. confirmed_at과 확인 주체는 같은 검토 revision에만 유효 |
+| `interview_intent_reviews` | `(session_id, intent_id)` 복합 PK/FK로 같은 인텐트 진행 행에 귀속. 완료 인텐트마다 독립 revision과 `PROCESSING/READY/ERROR` 상태. ready_content는 마지막 성공 요약의 구조화 JSON. 최초 생성 전 NULL, 정정 처리/실패 중에는 마지막 성공 내용을 보존. 미확인 상태는 confirmed_at과 확인 주체가 모두 NULL. 확인은 현 내용에 귀속하며 정정/사진 실질 변경 시 두 값을 초기화 |
 | `manual_review_issues` | 같은 초안/게시 버전의 부족 항목. 편집 유래이면 intent_id NULL. 미확정 필드이면 target_kind/target_id/field_name/public_description을 저장하여 API missingInformation과 같은 issue ID로 투영. 값 보완 시 resolved_at을 기록해 현재 목록에서 제외하고 감사 이력은 유지 |
-| `manual_issue_acknowledgements` | `(issue_id, version_revision)` UNIQUE. 확인한 점주·현재 초안 revision·선택 메모·최초 확인 시각 보존. 현재 revision의 확인이 있으면 ACKNOWLEDGED, 없으면 OPEN으로 투영. 옛 확인은 새 revision에 효력이 없음 |
+| `manual_issue_acknowledgements` | `(issue_id, version_revision)` UNIQUE. 확인 시의 리소스 revision·content_revision·점주·메모·시각과 acknowledged_snapshot(당시 내용/항목)을 보존. 같은 content_revision의 최신 확인이 있으면 ACKNOWLEDGED, 없으면 OPEN으로 투영. 다른 항목 확인이나 게시로 revision만 증가해도 기존 확인은 유지 |
 | `interview_probe_batches` | 같은 인텐트의 추가 질문 한 개에 대한 생성 단위. API batchId에 대응하며 READY마다 질문은 정확히 한 개. `depth`는 기본 질문 이후 1부터 시작하고 최대 5. `(session_id, intent_id, depth)` UNIQUE. `status`는 `GENERATING`/`READY`/`ERROR`; 재시도와 fallback이 모두 실패하면 `ERROR`와 오류 코드를 기록하고 세션도 `ERROR`로 표시. 인텐트는 세션의 질문 셋에 속해야 함 |
 | `interview_turns` | AI 질문과 점주 답변을 순서대로 저장. `speaker`는 `AI`/`OWNER`, `turn_kind`는 `QUESTION`/`ANSWER`/`CORRECTION`/`OTHER`, AI 질문의 `question_kind`는 `BASE`/`PROBE`. `intent_id`는 세션의 질문 셋에 속해야 함. `BASE` 질문은 인텐트마다 한 번이고 묶음이 없으며, `PROBE` 질문은 `probe_batch_id` 필수이며 묶음과 질문의 세션·인텐트가 일치해야 함. 답변에 묶음 참조를 기록하면 원 질문과 같은 묶음을 참조. 점주 답변의 `reply_to_question_turn_id`는 같은 세션·인텐트의 AI 질문을 참조. 현재 질문 한 개의 답변을 저장할 때마다 즉시 누적 문맥으로 재평가. 답변은 질문당 한 개이며 재시도는 같은 답변을 재사용. 정정은 별도 CORRECTION 턴으로 보존. 답변 방식은 `VOICE`/`TEXT`, 저장 내용은 텍스트. `(session_id, turn_no)` UNIQUE |
 | `interview_evaluations` | 기본 질문 답변 평가의 `depth`는 0이고 `probe_batch_id`는 NULL. 추가 질문 답변 평가는 해당 생성 단위의 `depth`와 `probe_batch_id`를 사용. Jev와 fallback 호출의 `provider`, `attempt_no`, 성공·실패 `status`, 판단값과 오류 코드를 기록. `(session_id, intent_id, depth, attempt_no)` UNIQUE. `probe_batch_id`가 있으면 평가와 묶음의 세션·인텐트·depth가 일치해야 함. `evaluated_through_turn_id`는 같은 세션·인텐트에서 평가에 포함한 마지막 점주 답변을 참조. `input_snapshot`은 실제 전달한 질문·답변의 ID와 텍스트, 인텐트·문맥 및 typed question을 보존. `evaluation_config_version`은 provider별 모델·질문 구성·판단 임계값을 포함한 불변 설정의 버전. 입력 범위와 재시도 규칙은 아래 실행 제약을 따름. 적용한 성공 결과의 `applied_at`을 기록하고 같은 depth의 결과는 한 건만 적용. 재시도·fallback까지 실패하면 세션을 `ERROR`로 표시 |
@@ -251,7 +254,7 @@ erDiagram
 - 요약 생성/정정 실패는 해당 검토 ERROR이며 질문 진행은 계속한다. 현재 평가/질문 생성은 예약 시 사용한 검토 내용과 revision을 입력 snapshot에 고정한다. 정정 중에는 마지막 READY 내용, 이후 예약부터 새 내용을 사용한다. 비동기 작업 식별·오류·재시도 저장은 별도 실행 기반 설계에서 정의한다.
 - completion은 세션 revision과 전체 intentId/revision 목록을 확인하여 모든 검토 READY 및 상호 참조 일치를 검사한다. 현재 확인 여부는 생성 조건이 아니다. `generation_input_snapshot`에 선택 검토 revision·전체 내용·사진·미확정 정보를 복사하고 GENERATING 전환과 함께 원자 저장한다. 실행 작업은 이 불변 입력만 사용한다. 정정과 생성 중 먼저 접수된 작업이 상태/revision을 확보하고 다른 작업은 충돌한다.
 - 알 수 없는 근무 시각과 ends_next_day는 NULL을 허용하고 확보하지 못한 근무조·섹션·단계는 0개를 허용한다. 각각 MANUAL(shifts/sections), SHIFT(startTime/endTime/endsNextDay), SECTION(steps)의 미확정 표시가 필요하다. MANUAL은 target_id NULL, 나머지는 같은 버전의 대상 ID다. 완성된 값에 부족 표시를 붙이거나 부족한 값의 표시를 빠뜨릴 수 없다.
-- 초안 content 실질 변경 시 revision을 증가시켜 기존 부족 항목 확인을 무효화한다. 이전 확인 행은 삭제하지 않는다. 게시 시 현재 revision의 모든 OPEN 항목을 명시적으로 확인하고 게시 전환·포인터 교체·활성 초안 해제·알림 outbox를 같은 트랜잭션에 저장한다. 메모나 보완 답변은 필수가 아니며 NEEDS_DETAIL을 COVERED로 바꾸지 않는다.
+- 초안 content/부족 항목 정의의 실질 변경 시 revision과 content_revision을 증가시켜 기존 부족 항목 확인을 무효화한다. 항목 확인/메모 변경은 revision만 증가시키고 같은 내용에 대한 다른 항목 확인은 유지한다. 동일 확인·메모 재요청은 최초 시각과 두 revision을 유지한다. 이전 확인 행은 삭제하지 않는다. 게시 시 expectedRevision 일치와 현재 content_revision에 대한 확인을 검사하고 남은 모든 OPEN 항목을 명시적으로 확인한 뒤 게시 전환·포인터 교체·활성 초안 해제·알림 outbox를 같은 트랜잭션에 저장한다. 메모나 보완 답변은 필수가 아니며 NEEDS_DETAIL을 COVERED로 바꾸지 않는다.
 - 게시한 내용과 공개 미확정 설명은 불변이다. 근무자는 현재 게시본의 미확정 설명만 보고 점주 확인 메모·인터뷰·평가 원문은 읽지 못한다. 옛 확인 행이 참조하는 issue는 물리 삭제하지 않는다. 이미 게시된 버전 수정은 새 초안으로 시작한다.
 
 ## 평가와 장애 복구의 실행 제약
