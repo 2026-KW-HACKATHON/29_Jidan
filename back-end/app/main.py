@@ -11,6 +11,7 @@ from app.design_docs import install_design_docs
 from app.errors import UnstructuredHTTPException, install_error_handlers
 from app.middleware import install_middleware
 from app.oauth import router as oauth_router
+from app.registration import router as registration_router
 
 validate_cookie_settings()  # a bad COOKIE_SECURE stops the process before it serves anything
 app = FastAPI(title="Jidan API", version="0.1.0")
@@ -18,6 +19,7 @@ install_error_handlers(app)
 install_middleware(app)
 app.include_router(auth_views_router)
 app.include_router(oauth_router)
+app.include_router(registration_router)
 
 
 @app.get("/api/health")
