@@ -140,6 +140,49 @@ def mysql_schema():
     reset_engine()
 
 
+@pytest.fixture(params=["sqlite", pytest.param("mysql", marks=pytest.mark.mysql)])
+def db_engine(request, tmp_path, monkeypatch):
+    """A migrated database that real request handling can use, on SQLite and on MySQL.
+
+    Unlike `session`, data really commits and several connections coexist, which is what
+    authentication, idempotency and concurrency tests need. `app.db.session_scope` and the
+    `get_session` dependency are pointed at it. Data is wiped after each test.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db import get_engine, reset_engine
+    from app.db.models import Base
+
+    if request.param == "sqlite":
+        engine = create_engine(
+            f"sqlite:///{tmp_path / 'api.sqlite'}", connect_args={"timeout": 15},
+        )
+
+        @event.listens_for(engine, "connect")
+        def _foreign_keys(dbapi_connection, _record):
+            dbapi_connection.execute("PRAGMA foreign_keys = ON")
+
+        with engine.connect() as connection:
+            command.upgrade(alembic_config(connection), "head")
+            connection.commit()
+        monkeypatch.setattr(
+            "app.db.session.get_session_factory",
+            lambda: sessionmaker(engine, expire_on_commit=False),
+        )
+        yield engine
+        engine.dispose()
+        return
+
+    request.getfixturevalue("mysql_schema")
+    reset_engine()
+    engine = get_engine()
+    yield engine
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
+    reset_engine()
+
+
 @pytest.fixture
 def mysql_engine(mysql_schema):
     from app.db import get_engine, reset_engine

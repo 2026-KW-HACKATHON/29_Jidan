@@ -445,3 +445,34 @@ class StoreAccessGrant(Base):
     granted_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     valid_until: Mapped[datetime | None] = mapped_column(UtcDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class AuthSession(Base):
+    """Server-side member session. Only the SHA-256 of the cookie token is stored."""
+
+    __tablename__ = "auth_sessions"
+    __table_args__ = (Index("ix_auth_sessions_user_id", "user_id"),)
+
+    id: Mapped[str] = _id()
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)  # absolute limit
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class RegistrationSession(Base):
+    """Google-verified identity that has not registered yet; fixed 10 minute lifetime."""
+
+    __tablename__ = "registration_sessions"
+    __table_args__ = (Index("ix_registration_sessions_expires_at", "expires_at"),)
+
+    id: Mapped[str] = _id()
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    google_sub: Mapped[str] = mapped_column(String(255))
+    google_email: Mapped[str] = mapped_column(String(320))
+    email_verified: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)

@@ -8,12 +8,14 @@ from sqlalchemy import inspect
 from app.db.models import Base
 from tests.conftest import alembic_config, migrated_sqlite_engine
 
-EXPECTED_TABLES = {
+BASELINE_TABLES = {
     "users", "worker_profiles", "worker_careers", "availability_rules", "availability_days",
     "stores", "store_approval_requests", "store_invitations", "store_access_grants",
     "job_postings", "job_applications", "application_careers", "work_requests",
     "shift_assignments", "application_selection_effects",
 }
+SESSION_TABLES = {"auth_sessions", "registration_sessions"}
+EXPECTED_TABLES = BASELINE_TABLES | SESSION_TABLES
 
 
 def test_history_is_linear_with_a_single_head():
@@ -23,6 +25,12 @@ def test_history_is_linear_with_a_single_head():
     revisions = list(script.walk_revisions())
     assert all(len(revision.nextrev) <= 1 for revision in revisions)
     assert all(not isinstance(revision.down_revision, tuple) for revision in revisions)
+
+
+def test_baseline_revision_is_untouched_and_sessions_build_on_it():
+    script = ScriptDirectory.from_config(alembic_config())
+    assert script.get_revision("0001").down_revision is None
+    assert script.get_revision("0002").down_revision == "0001"
 
 
 def test_upgrade_creates_every_baseline_table(engine):
@@ -40,7 +48,7 @@ def test_downgrade_one_step_then_upgrade_again(engine):
         config = alembic_config(connection)
         command.downgrade(config, "-1")
         connection.commit()
-        assert set(inspect(connection).get_table_names()) <= {"alembic_version"}
+        assert set(inspect(connection).get_table_names()) == BASELINE_TABLES | {"alembic_version"}
         command.upgrade(config, "head")
         connection.commit()
         assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
