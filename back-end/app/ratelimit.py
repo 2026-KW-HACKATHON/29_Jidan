@@ -9,6 +9,12 @@ Known limits, by design of this first version:
   so the address the proxy appended to `X-Forwarded-For` is used; without it every request
   looks like it comes from the proxy and shares one budget. Never enable it unless a proxy you
   control sets that header, because clients could otherwise choose their own key.
+* At most `MAX_TRACKED_KEYS` keys are tracked. Expired keys are removed first; a key still
+  inside its window is never evicted, because that would reset its budget. If the table is full
+  of live keys a *new* key gets 429 until the oldest one expires (fail-closed). A flood of
+  distinct addresses (possible when `TRUST_FORWARDED_FOR` lets clients pick their key) can
+  therefore make new clients wait up to one window, but it cannot burn CPU or clear any
+  existing client's limit.
 """
 
 import itertools
@@ -96,11 +102,24 @@ class RateLimiter:
         return event_id
 
     def _make_room(self, now: float) -> None:
-        for key in [k for k in self._events if not self._live(k, now)]:
-            del self._events[key]
+        """Free one slot for a new key by dropping expired keys, or refuse it (429).
+
+        `_events` is ordered by each key's latest event (`_add` moves a key to the end), so the
+        keys that expire first are at the front. Expired keys are popped from the front only,
+        which makes the work amortized O(1) per new key instead of a scan of every key under the
+        lock. A key that is still inside its window is never evicted: dropping it would reset
+        its budget, which a flood of forged keys could use to escape a limit. When the table is
+        full of live keys the new key is refused instead (fail-closed).
+        """
         while len(self._events) >= self.max_keys:
-            _, dropped = self._events.popitem(last=False)  # least recently active key
-            self._pending.difference_update(event_id for _, event_id in dropped)
+            oldest = next(iter(self._events))
+            events = self._live(oldest, now)
+            if events:
+                raise ApiError(
+                    429, ErrorCode.RATE_LIMITED,
+                    headers={"Retry-After": str(max(1, math.ceil(events[-1][0] + self.window - now)))},
+                )
+            del self._events[oldest]
 
     def check(self, key: str) -> None:
         """Raise 429 if `key` is out of budget; records nothing."""

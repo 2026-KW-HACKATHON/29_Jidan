@@ -119,24 +119,126 @@ def test_invalid_configuration_is_rejected(limit, window):
         RateLimiter(limit, window)
 
 
-def test_memory_is_bounded_and_active_keys_survive():
+def test_memory_is_bounded_and_expired_keys_are_reclaimed():
     clock = FakeClock()
     limiter = RateLimiter(5, 60, max_keys=100, clock=clock)
     for index in range(1000):
-        limiter.hit(f"ip-{index}")
-    assert len(limiter._events) <= 100
-    # expired keys are purged first, so a quiet period frees the whole table
+        if index < 100:
+            limiter.hit(f"ip-{index}")
+        else:
+            assert blocked(limiter, f"ip-{index}").status_code == 429  # full of live keys
+    assert len(limiter._events) == 100
     clock.now += 61
     limiter.hit("fresh")
-    assert len(limiter._events) == 1
+    assert "fresh" in limiter._events and len(limiter._events) <= 100
 
 
-def test_a_flood_of_new_keys_cannot_evict_the_most_recent_one():
-    limiter = RateLimiter(1, 60, max_keys=10, clock=FakeClock())
+def fill(limiter, count, prefix="ip"):
+    for index in range(count):
+        limiter.hit(f"{prefix}-{index}")
+
+
+def test_full_table_refuses_new_keys_with_retry_after_and_records_nothing():
+    clock = FakeClock()
+    limiter = RateLimiter(5, 60, max_keys=10, clock=clock)
+    fill(limiter, 10)
+    clock.now += 20
+    error = blocked(limiter, "newcomer")
+    assert error.status_code == 429 and error.code == "RATE_LIMITED"
+    assert error.headers == {"Retry-After": "40"}  # the oldest key frees the table at +60
+    assert "newcomer" not in limiter._events and len(limiter._events) == 10
+
+
+def test_flood_of_distinct_keys_cannot_release_an_already_blocked_key():
+    clock = FakeClock()
+    limiter = RateLimiter(1, 60, max_keys=50, clock=clock)
+    limiter.hit("attacker")
+    assert blocked(limiter, "attacker") is not None
+    for index in range(5000):
+        blocked(limiter, f"forged-{index}")
+    assert blocked(limiter, "attacker") is not None  # still blocked
+    clock.now += 59
+    assert blocked(limiter, "attacker") is not None
+    clock.now += 1
+    assert blocked(limiter, "attacker") is None  # only the window frees it
+
+
+def test_flood_cannot_reset_a_partly_used_budget():
+    clock = FakeClock()
+    limiter = RateLimiter(3, 60, max_keys=20, clock=clock)
     limiter.hit("victim")
-    for index in range(5):
-        limiter.hit(f"other-{index}")
-    assert blocked(limiter, "victim") is not None  # still tracked
+    limiter.hit("victim")
+    for index in range(2000):
+        blocked(limiter, f"forged-{index}")
+    assert blocked(limiter, "victim") is None  # third and last allowed hit
+    assert blocked(limiter, "victim") is not None  # budget was not reset by the flood
+
+
+def test_work_per_new_key_does_not_grow_with_the_table(monkeypatch):
+    clock = FakeClock()
+    calls = {"count": 0}
+    original = RateLimiter._live
+
+    def counting(self, key, now):
+        calls["count"] += 1
+        return original(self, key, now)
+
+    monkeypatch.setattr(RateLimiter, "_live", counting)
+    for size in (100, 10_000):
+        limiter = RateLimiter(5, 60, max_keys=size, clock=clock)
+        fill(limiter, size)
+        calls["count"] = 0
+        for index in range(500):
+            blocked(limiter, f"flood-{size}-{index}")
+        assert calls["count"] <= 3 * 500  # constant per refused key, whatever the table size
+
+
+def test_expiry_cleanup_is_amortized_constant():
+    clock = FakeClock()
+    calls = {"count": 0}
+    limiter = RateLimiter(5, 60, max_keys=2000, clock=clock)
+    fill(limiter, 2000)
+    clock.now += 61  # every key expired at once
+    original = RateLimiter._live
+
+    def counting(self, key, now):
+        calls["count"] += 1
+        return original(self, key, now)
+
+    RateLimiter._live = counting
+    try:
+        fill(limiter, 2000, prefix="new")
+    finally:
+        RateLimiter._live = original
+    assert calls["count"] <= 4 * 2000  # each expired key is examined about once overall
+    assert len(limiter._events) == 2000
+
+
+def test_pending_marks_of_dropped_expired_keys_are_cleaned():
+    clock = FakeClock()
+    limiter = RateLimiter(5, 60, max_keys=1, clock=clock)
+    limiter.reserve("a")
+    clock.now += 61
+    limiter.hit("b")
+    assert limiter._pending == set()
+
+
+def test_concurrent_flood_keeps_the_bound_and_the_blocked_key():
+    limiter = RateLimiter(1, 60, max_keys=200)
+    limiter.hit("attacker")
+
+    def flood(worker):
+        for index in range(1000):
+            blocked(limiter, f"w{worker}-{index}")
+            assert blocked(limiter, "attacker") is not None
+
+    threads = [threading.Thread(target=flood, args=(n,)) for n in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(limiter._events) <= 200
+    assert blocked(limiter, "attacker") is not None
 
 
 def test_concurrent_hits_never_exceed_the_limit():
