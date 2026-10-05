@@ -8643,13 +8643,17 @@ paths:
       tags:
       - 점주 대타 공고
       operationId: closeJobPosting
-      summary: 지원자 선정 없이/확정 후 모집 마감
+      summary: 지원자 선정 없이 / 확정 철회 후 모집 마감
       description: |-
         ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
 
-        expectedRevision으로 공고를 잠그고 RECRUITING→CLOSED로 전환합니다. 확정 근무가 있으면 확정·온보딩·캘린더·접근을 유지합니다. 확정되지 않은 지원은 NOT_SELECTED로 종료하고 미결 근무 요청은 취소합니다. 확정 후에도 Figma의 모집 마감 버튼을 지원하므로 자동 마감하지 않습니다. 새로운 지원/근무 요청/응답과 공고 잠금을 공유하여 첫 성공만 반영합니다. CLOSED에는 같은 최신 revision 요청으로 200 현재 결과(재마감)입니다.
+        사용자 확정 정책: 확정 후에는 확정 철회 → 마감 순서입니다. 근무 시작 전 현재 ACCEPTED 확정이 있으면 409 CONFIRMATION_WITHDRAWAL_REQUIRED로 거절하고 먼저 confirmation-withdrawal을 호출해야 합니다. 현재 유효 PENDING 요청이 있으면 409 WORK_REQUEST_WITHDRAWAL_REQUIRED로 먼저 요청 철회하기를 호출합니다. 기한에 도달한 요청은 배치 지연과 무관하게 EXPIRED로 간주하며 마감을 막지 않습니다.
 
-        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+        근무 진행 중(startAt <= now < endAt)인 확정은 409 JOB_IN_PROGRESS로 마감하지 않습니다. 근무 종료 후에는 요청 ACCEPTED/지원 COMPLETED/캘린더 과거 이력을 보존한 채 모집만 마감할 수 있습니다. 이는 확정 철회가 아니며 완료 이력을 삭제하거나 자료 접근을 복원하지 않습니다.
+
+        expectedRevision으로 공고를 잠그고 RECRUITING→CLOSED로 전환하며 현재 APPLIED/REQUESTED 지원만 NOT_SELECTED로 종료합니다. 만료된 요청은 EXPIRED 이력으로 정리하고 지원 WITHDRAWN·확정 철회 이력은 보존합니다. 수락·지원·철회·마감은 공고 잠금으로 직렬화하여 첫 성공만 반영하고 원자 처리합니다. 철회 후 최신 공고 revision을 다시 조회해 사용합니다. CLOSED에는 같은 최신 revision 요청으로 200 현재 결과(재마감), 동일 Idempotency-Key 재시도는 최초 결과입니다.
+
+        응답은 Cache-Control: no-store입니다.
 
         변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
       security:
@@ -8727,14 +8731,16 @@ paths:
                 requestId: req_chapter_100
                 fieldErrors: []
         '409':
-          description: 'JOB_REVISION_CONFLICT: revision 불일치. 마감과 지원·확정은 공고 잠금으로 직렬화합니다.'
+          description: 'CONFIRMATION_WITHDRAWAL_REQUIRED: 시작 전 확정 철회 필요. WORK_REQUEST_WITHDRAWAL_REQUIRED: 대기 요청 철회
+            필요. JOB_IN_PROGRESS: 근무 진행 중. JOB_REVISION_CONFLICT: 공고 revision 불일치.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
-                code: STATE_CONFLICT
-                message: 'JOB_REVISION_CONFLICT: revision 불일치. 마감과 지원·확정은 공고 잠금으로 직렬화합니다.'
+                code: CONFIRMATION_WITHDRAWAL_REQUIRED
+                message: 'CONFIRMATION_WITHDRAWAL_REQUIRED: 시작 전 확정 철회 필요. WORK_REQUEST_WITHDRAWAL_REQUIRED: 대기 요청
+                  철회 필요. JOB_'
                 requestId: req_chapter_100
                 fieldErrors: []
         '200':
@@ -8773,8 +8779,8 @@ paths:
                 closedAt: '2026-10-05T01:00:00Z'
                 revision: 2
       externalDocs:
-        description: 기준 Figma 화면
-        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=639-2895
+        description: '사용자가 첨부한 수정 화면: 미응답 / 지원자 선정 없이 모집 마감'
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=698-2765
       requestBody:
         required: true
         content:
@@ -10256,6 +10262,8 @@ paths:
         본인 요청만 조회합니다. 만료·취소·수락·거절 후에도 상태 확인이 가능하며 상세 근무 조건은 jobId로 공고 상세에서 조회합니다. deadline과 현재 revision을 내려줍니다.
 
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        CONFIRMATION_WITHDRAWN은 확정 철회 이력입니다. respondedAt(최초 수락)과 endedAt(철회), REVOKED 접근을 보존하고 현재 확정자로 표시하지 않습니다. 완료된 요청의 ACCEPTED 이력과 구분합니다.
       security:
       - SessionCookie: []
       parameters:
@@ -10349,6 +10357,8 @@ paths:
         알림의 근무 요청에서 진입할 수 있도록 본인 요청만 반환합니다. 최신 요청순, filter=PENDING은 기한 미만 요청만 포함하고 ALL은 종료 이력을 포함합니다. 응답 화면은 Figma에 없지만 확정 흐름에 필요한 보완 계약입니다.
 
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        CONFIRMATION_WITHDRAWN은 확정 철회 이력입니다. respondedAt(최초 수락)과 endedAt(철회), REVOKED 접근을 보존하고 현재 확정자로 표시하지 않습니다. 완료된 요청의 ACCEPTED 이력과 구분합니다.
       security:
       - SessionCookie: []
       parameters:
@@ -10469,6 +10479,8 @@ paths:
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
 
         점주 요청 철회는 CANCELLED 이력으로 표시하고 지원서는 APPLIED로 돌아갑니다. 과거 종료 요청은 다시 활성화하지 않습니다.
+
+        CONFIRMATION_WITHDRAWN은 확정 철회 이력입니다. respondedAt(최초 수락)과 endedAt(철회), REVOKED 접근을 보존하고 현재 확정자로 표시하지 않습니다. 완료된 요청의 ACCEPTED 이력과 구분합니다.
       security:
       - SessionCookie: []
       parameters:
@@ -10591,6 +10603,8 @@ paths:
         확정 근무자가 없으면 404 ONBOARDING_NOT_FOUND입니다. 근무자와 현재 자료 접근·게시본 존재를 반환합니다. PUBLISHED이면 기존 게시 매뉴얼 API로 진입합니다. 미게시에는 준비 중 안내, 접근 종료에는 종료 안내를 표시합니다. 화면에 없는 매뉴얼 읽음률이나 교육 완료 상태를 만들지 않습니다. 점주는 자신의 게시본을 열람할 수 있으나 근무자의 종료 접근을 복구하지 않습니다.
 
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        현재 유효 ACCEPTED 확정만 연결합니다. 확정 철회 후에는 404 ONBOARDING_NOT_FOUND이며 과거 requestId의 자료 접근을 복원하지 않습니다. 다른 지원자가 새로 확정되면 그 현재 확정을 반환합니다.
       security:
       - SessionCookie: []
       parameters:
@@ -10623,14 +10637,14 @@ paths:
                 requestId: req_chapter_100
                 fieldErrors: []
         '404':
-          description: 리소스를 찾을 수 없습니다.
+          description: 현재 유효한 확정 근무/온보딩 연결이 없습니다.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
-                code: RESOURCE_NOT_FOUND
-                message: 리소스를 찾을 수 없습니다.
+                code: ONBOARDING_NOT_FOUND
+                message: 현재 유효한 확정 근무/온보딩 연결이 없습니다.
                 requestId: req_chapter_100
                 fieldErrors: []
         '422':
@@ -10689,6 +10703,8 @@ paths:
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
 
         변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+
+        확정 철회 복구를 위해 수락으로 NOT_SELECTED가 된 지원의 원인 requestId와 직전 상태/ID를 저장합니다. 취소된 과거 요청(CANCELLED/CONFIRMATION_WITHDRAWN)은 재수락할 수 없습니다. 점주 확정 철회는 근무 시작 전 별도 API입니다.
       security:
       - SessionCookie: []
         CsrfToken: []
@@ -10827,6 +10843,8 @@ paths:
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
 
         변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+
+        사용자 확정 기한: expiresAt=min(requestedAt+1시간, job.startAt). 예: 서울 08:30 요청/09:00 근무이면 09:00 만료입니다. 정확히 expiresAt부터 수락·거절·요청 철회 불가이며 요청 조회는 EXPIRED로 투영합니다. 배치 지연이 기한을 연장하지 않습니다.
       security:
       - SessionCookie: []
         CsrfToken: []
@@ -14726,6 +14744,156 @@ paths:
               $ref: '#/components/schemas/WorkRequestWithdrawal'
             example:
               expectedRevision: 1
+  /api/stores/{storeId}/job-postings/{jobId}/work-requests/{requestId}/confirmation-withdrawal:
+    post:
+      tags:
+      - 대타 근무 요청
+      operationId: withdrawWorkConfirmation
+      summary: 점주 근무 확정 철회 (근무 시작 전)
+      description: |-
+        ACTIVE OWNER 세션, 해당 매장의 소유권과 APPROVED를 매 요청 확인합니다. 소유권 없는/없는 매장은 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        첨부 수정 디자인의 확정 철회하기입니다. 사용자 확정 정책: 근무 시작 전까지만 허용하며 now < job.startAt을 공고 잠금 안에서 검증합니다. startAt과 같은 시각부터는 409 JOB_ALREADY_STARTED입니다. 해당 공고의 현재 ACCEPTED 확정 요청과 expectedRevision 일치가 필요하며 다른 매장·공고 귀속/타인 요청은 404입니다.
+
+        ACCEPTED→CONFIRMATION_WITHDRAWN으로 변경하고 수락 시각 respondedAt은 보존, endedAt은 철회 시각으로 갱신합니다. 이 요청이 생성한 TEMPORARY 접근만 REVOKED/revokedAt=철회 시각/permissions=[]로 종료합니다. 캘린더 연결을 해제하여 활성 캘린더 응답에서 제외하되 확정·접근·일정 감사 이력은 삭제하지 않습니다. 다른 REGULAR 접근이나 다른 공고의 TEMPORARY 접근은 변경하지 않습니다.
+
+        해당 공고의 확정 슬롯을 해제하고 지원 CONFIRMED→APPLIED로 복구합니다. 수락 시 그 확정 requestId 때문에 NOT_SELECTED가 된 지원만 원인 이력으로 식별해 APPLIED로 복구합니다. WITHDRAWN/개별 종료/다른 확정에 따른 이력은 되살리지 않습니다. 수락 당시의 변경 원인·이전 상태·대상 지원 ID를 저장하여 정확히 복구해야 합니다. 이후 점주는 다른 지원자를 선택하거나 별도 모집 마감 API를 호출합니다. 자동 마감하지 않습니다.
+
+        공고→요청→지원→접근·캘린더 잠금으로 수락·확정 철회·마감을 직렬화하고 모든 변경과 근무자 알림 outbox를 원자 처리합니다. 요청/지원/공고 revision을 증가시킵니다. 새로운 근무 요청은 새 requestId와 key가 필요하며 철회된 기존 요청은 재수락 불가입니다. 같은 key 재시도는 최초 200 결과, 다른 key 재철회는 409 WORK_CONFIRMATION_NOT_ACTIVE입니다. 완료된 근무 이력은 이 API로 변경할 수 없습니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: jobId
+        in: path
+        required: true
+        description: 'jobId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: requestId
+        in: path
+        required: true
+        description: 'requestId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: JOB_ALREADY_STARTED, WORK_CONFIRMATION_NOT_ACTIVE, WORK_REQUEST_REVISION_CONFLICT, IDEMPOTENCY_KEY_REUSED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: JOB_ALREADY_STARTED, WORK_CONFIRMATION_NOT_ACTIVE, WORK_REQUEST_REVISION_CONFLICT, IDEMPOTENCY_KEY_R
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkRequest'
+              example:
+                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                workerName: 박지원
+                status: CONFIRMATION_WITHDRAWN
+                requestedAt: '2026-10-05T01:00:00Z'
+                expiresAt: '2026-10-05T02:00:00Z'
+                respondedAt: '2026-10-05T01:20:00Z'
+                endedAt: '2026-10-05T01:30:00Z'
+                revision: 3
+                accessGrant:
+                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                  type: TEMPORARY
+                  dutyLabel: 주말 오픈 대타
+                  startedAt: '2026-10-05T01:20:00Z'
+                  validUntil: '2026-10-10T05:00:00Z'
+                  revokedAt: '2026-10-05T01:30:00Z'
+                  status: REVOKED
+                  permissions: []
+      externalDocs:
+        description: '사용자가 첨부한 수정 화면: 근무 확정 / 확정 철회하기'
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=698-2821
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkRequestWithdrawal'
+            example:
+              expectedRevision: 2
 components:
   securitySchemes:
     SessionCookie:
@@ -19523,6 +19691,7 @@ components:
           - DECLINED
           - EXPIRED
           - CANCELLED
+          - CONFIRMATION_WITHDRAWN
         requestedAt:
           type: string
           format: date-time
@@ -19634,6 +19803,32 @@ components:
         - respondedAt
         - endedAt
         - accessGrant
+      - properties:
+          status:
+            const: CONFIRMATION_WITHDRAWN
+          respondedAt:
+            type: string
+            format: date-time
+          endedAt:
+            type: string
+            format: date-time
+          accessGrant:
+            $ref: '#/components/schemas/StoreAccessGrant'
+            properties:
+              type:
+                const: TEMPORARY
+              status:
+                const: REVOKED
+            required:
+            - type
+            - status
+        required:
+        - status
+        - respondedAt
+        - endedAt
+        - accessGrant
+      description: PENDING 요청과 ACCEPTED 확정을 구분합니다. CONFIRMATION_WITHDRAWN은 점주가 근무 시작 전에 확정을 철회한 이력이며 수락 시각 respondedAt과
+        철회 시각 endedAt, REVOKED TEMPORARY 접근을 보존합니다. 근무 완료 후에도 요청 자체는 ACCEPTED 이력이고 지원은 COMPLETED입니다.
     WorkRequestPage:
       type: object
       additionalProperties: false
