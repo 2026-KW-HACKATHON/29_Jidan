@@ -1,3 +1,5 @@
 fastapi
 uvicorn
 pymysql[rsa]
+sqlalchemy>=2,<3
+alembic
