@@ -174,11 +174,18 @@ def callback(request: Request, db: SessionDep) -> Response:
                 response = RedirectResponse(origin + "/__auth/session", status_code=302)
                 auth.set_session_cookie(response, issued)
                 auth.clear_registration_cookie(response)
-    except ApiError as exc:
+    except Exception as exc:  # noqa: BLE001 - callback must clear browser bindings on all failures
         db.rollback()
-        revoke_oauth(db, token)
-        db.commit()
-        response = error_response(exc.status_code, exc.code, exc.message, headers=exc.headers)
+        if isinstance(exc, ApiError):
+            response = error_response(exc.status_code, exc.code, exc.message, headers=exc.headers)
+        else:
+            response = error_response(500, ErrorCode.INTERNAL_ERROR, "처리에 실패했습니다.")
+        try:
+            revoke_oauth(db, token)
+            db.commit()
+        except Exception:  # noqa: BLE001 - DB outage must still return cleared cookies
+            db.rollback()
+            response = error_response(500, ErrorCode.INTERNAL_ERROR, "처리에 실패했습니다.")
     clear_oauth_cookies(response)
     return response
 

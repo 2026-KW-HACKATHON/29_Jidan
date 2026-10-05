@@ -162,3 +162,29 @@ def test_real_signed_id_token(auth_api, monkeypatch, change, valid):
         with pytest.raises(oauth.ApiError) as exc:
             oauth.google_identity("code", auth.hash_token("nonce"))
         assert exc.value.code == "GOOGLE_IDENTITY_INVALID"
+
+
+def test_unexpected_callback_error_clears_login_cookies(auth_api, engine, monkeypatch):
+    params = begin(auth_api)
+    def fail(*args): raise RuntimeError("provider-secret")
+    monkeypatch.setattr(oauth, "google_identity", fail)
+    r = auth_api.get("/api/auth/google/callback", params={"state": params["state"], "code": "CODE"})
+    assert r.status_code == 500 and "provider-secret" not in r.text
+    assert oauth.OAUTH_COOKIE not in auth_api.cookies
+    assert oauth.OAUTH_LOGOUT_COOKIE not in auth_api.cookies
+    with Session(engine) as db:
+        assert db.scalar(select(OAuthTransaction)).consumed_at
+
+
+def test_suspended_google_account_cannot_login(auth_api, engine, monkeypatch):
+    with Session(engine) as db:
+        user = make_user(db, "WORKER", google_sub="suspended", status="SUSPENDED")
+        auth.create_session(user.id, db=db)
+        db.commit()
+    params = begin(auth_api)
+    monkeypatch.setattr(oauth, "google_identity", lambda *args: {"sub": "suspended", "email": "s@test.org"})
+    r = auth_api.get("/api/auth/google/callback", params={"state": params["state"], "code": "CODE"})
+    assert r.status_code == 403 and r.json()["code"] == "ACCOUNT_SUSPENDED"
+    assert auth.SESSION_COOKIE_NAME not in auth_api.cookies
+    with Session(engine) as db:
+        assert db.scalar(select(AuthSession)).revoked_at
