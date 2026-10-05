@@ -5,6 +5,7 @@ import yaml
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator, FormatChecker
 
+
 class OpenApiLoader(yaml.SafeLoader):
     def compose_node(self, parent, index):
         # YAML allows an anchor to be redefined; aliases refer to its most recent definition.
