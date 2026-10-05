@@ -12,7 +12,7 @@ it('요약 실패와 검수중은 질문을 막지 않고 확인 없이 재진�
  const {call}=await setup('review-error');await screen.findByRole('button',{name:/정리한 내용 확인/});expect(screen.getByRole('button',{name:'테스트 음성 제출'})).toBeEnabled();fireEvent.click(screen.getByRole('button',{name:/정리한 내용 확인/}));await screen.findByRole('button',{name:'요약 다시 시도'});fireEvent.click(screen.getByRole('button',{name:'나중에 확인하기'}));expect(screen.getByRole('button',{name:'테스트 음성 제출'})).toBeEnabled();expect(call.mock.calls.some(([n])=>n==='confirmManualInterviewUnderstanding')).toBe(false)
 })
 it('요약 음성 정정은 선택 intent의 review revision을 쓰고 질문 답변을 덮어쓰지 않는다',async()=>{
- const {call,initial}=await setup();fireEvent.click(await screen.findByRole('button',{name:/정리한 내용 확인/}));fireEvent.click(screen.getByRole('button',{name:'수정할게요'}));fireEvent.click(screen.getByRole('button',{name:'테스트 음성 제출'}));await screen.findByText(/수정한 내용을 반영했어요/)
+ const {call,initial}=await setup();fireEvent.click(await screen.findByRole('button',{name:/정리한 내용 확인/}));fireEvent.click(screen.getByRole('button',{name:'수정할게요'}));fireEvent.click(screen.getByRole('button',{name:'테스트 음성 제출'}));await screen.findByText(/수정한 내용을 반영했어요/);expect(screen.getByText(/22:00.*06:00/)).toBeInTheDocument()
  const correction=call.mock.calls.find(([n])=>n==='correctManualInterviewUnderstanding')!;expect(correction[1]).toEqual({sessionId:initial.id,intentId:initial.intents[0].id});expect(correction[2]).toMatchObject({expectedRevision:3,input:{method:'VOICE'}});expect(call.mock.calls.some(([n])=>n==='answerManualInterviewQuestion')).toBe(false);expect(screen.queryByText('샘플 음성 답변')).not.toBeInTheDocument()
 })
 it('기본 질문과 추가 질문은 각 서버 questionId에 답하고 다음 흐름을 조회한다',async()=>{
