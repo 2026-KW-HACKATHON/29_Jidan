@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth import validate_cookie_settings
+from app.auth_views import router as auth_views_router
 from app.database import database_status
 from app.design_docs import install_design_docs
 from app.errors import UnstructuredHTTPException, install_error_handlers
@@ -14,6 +15,7 @@ validate_cookie_settings()  # a bad COOKIE_SECURE stops the process before it se
 app = FastAPI(title="Jidan API", version="0.1.0")
 install_error_handlers(app)
 install_middleware(app)
+app.include_router(auth_views_router)
 
 
 @app.get("/api/health")
