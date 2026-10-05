@@ -86,6 +86,8 @@ tags:
   description: 홈 관심 매장 건수와 본인 목록 관리
 - name: 홈 요약
   description: 역할별 홈 활동·관리 매장·추천과 공고 요약
+- name: AI 질문 미디어
+  description: 근무자 AI 질문의 비공개 사진·음성과 전사
 security:
 - SessionCookie: []
 externalDocs:
@@ -12962,6 +12964,744 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=223-5461
+  /api/stores/{storeId}/manual/qa/transcriptions/{transcriptionId}/retries:
+    post:
+      tags:
+      - AI 질문 미디어
+      operationId: retryQAQuestionTranscription
+      summary: 질문 음성 전사 실패 재시도
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다. 선택 매장의 현재 유효 USE_AI_QA 자료 접근과 APPROVED를 매 요청 검증합니다. 소유 대화·업로드 파일은 본인+매장에 귀속되며 접근 종료/수동 종료/다른 매장은 동일 404입니다. 초안·인터뷰 대화·점주 음성에는 접근할 수 없습니다.
+
+        ERROR 작업만 같은 transcriptionId로 RUNNING에 전환합니다. 입력 음성이 아직 본인 소유·유효해야 하며 만료면 410입니다. 같은 key는 같은 작업 결과, 진행/완료는 409 TRANSCRIPTION_NOT_RETRYABLE입니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: transcriptionId
+        in: path
+        required: true
+        description: 'transcriptionId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '202':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualTranscription'
+              example:
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                mediaId: 15a9721b-2e65-4d03-8fd0-a5999e19d27a
+                status: RUNNING
+                text: null
+                error: null
+                createdAt: '2026-10-05T01:00:00Z'
+                completedAt: null
+        '410':
+          description: 음성 보관 기한이 끝났습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: QA_MEDIA_EXPIRED
+                message: 음성 보관 기한이 끝났습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2914
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QAProcessingRetry'
+            example: {}
+  /api/stores/{storeId}/manual/qa/media/{mediaId}:
+    delete:
+      tags:
+      - AI 질문 미디어
+      operationId: deleteQAUnattachedMedia
+      summary: 전송 전 본인 질문 미디어 삭제
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다. 선택 매장의 현재 유효 USE_AI_QA 자료 접근과 APPROVED를 매 요청 검증합니다. 소유 대화·업로드 파일은 본인+매장에 귀속되며 접근 종료/수동 종료/다른 매장은 동일 404입니다. 초안·인터뷰 대화·점주 음성에는 접근할 수 없습니다.
+
+        본인 미연결 미디어만 삭제합니다. 질문에 연결되었거나 전사 실행 중이면 409 MEDIA_IN_USE이며 원문 기록을 임의 변경하지 않습니다. 동일 key 재시도는 204이고 다른 key로 없는 미디어는 404입니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: mediaId
+        in: path
+        required: true
+        description: 'mediaId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '204':
+          description: 처리 완료. 본문 없음.
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2914
+  /api/stores/{storeId}/manual/qa/media:
+    post:
+      tags:
+      - AI 질문 미디어
+      operationId: uploadQAQuestionMedia
+      summary: AI 질문 사진·음성 업로드
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다. 선택 매장의 현재 유효 USE_AI_QA 자료 접근과 APPROVED를 매 요청 검증합니다. 소유 대화·업로드 파일은 본인+매장에 귀속되며 접근 종료/수동 종료/다른 매장은 동일 404입니다. 초안·인터뷰 대화·점주 음성에는 접근할 수 없습니다.
+
+        카메라/마이크 입력에 사용하는 multipart 업로드입니다. 사진 최대 10MiB JPEG/PNG/WebP, 음성 최대 20MiB MPEG/MP4/WebM/WAV·2분입니다. 확장자가 아닌 파일 magic bytes/실제 길이/디코딩 결과를 검증합니다. 질문 사진은 업로드 후 7일, 음성은 24시간 보관(제안 정책)하며 만료 후 410 QA_MEDIA_EXPIRED입니다. 미리 서명된 URL/object key/공개 URL은 반환하지 않습니다. 파일은 대화 본인이 동일 매장에만 연결할 수 있습니다. 실패 시 파일/메타데이터를 함께 제거하고 해시·purpose를 Idempotency-Key 본문 비교에 포함합니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QAMedia'
+              examples:
+                image:
+                  value:
+                    id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    purpose: QUESTION_IMAGE
+                    mimeType: image/jpeg
+                    sizeBytes: 12000
+                    createdAt: '2026-10-05T01:00:00Z'
+                    expiresAt: '2026-10-12T01:00:00Z'
+                audio:
+                  value:
+                    id: 15a9721b-2e65-4d03-8fd0-a5999e19d27a
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    purpose: QUESTION_AUDIO
+                    mimeType: audio/webm
+                    sizeBytes: 12000
+                    createdAt: '2026-10-05T01:00:00Z'
+                    expiresAt: '2026-10-06T01:00:00Z'
+        '413':
+          description: 파일 크기/음성 길이 제한 초과.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MEDIA_TOO_LARGE
+                message: 파일 크기/음성 길이 제한 초과.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '415':
+          description: 실제 파일 형식이 지원되지 않습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: MEDIA_TYPE_UNSUPPORTED
+                message: 실제 파일 형식이 지원되지 않습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2914
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/QAMediaUpload'
+  /api/stores/{storeId}/manual/qa/transcriptions:
+    post:
+      tags:
+      - AI 질문 미디어
+      operationId: transcribeQAQuestionAudio
+      summary: 근무자 질문 음성 비동기 전사
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다. 선택 매장의 현재 유효 USE_AI_QA 자료 접근과 APPROVED를 매 요청 검증합니다. 소유 대화·업로드 파일은 본인+매장에 귀속되며 접근 종료/수동 종료/다른 매장은 동일 404입니다. 초안·인터뷰 대화·점주 음성에는 접근할 수 없습니다.
+
+        본인 동일 매장의 유효 QUESTION_AUDIO만 허용합니다. 이미지/다른 주체/만료 음성은 422/404/410입니다. RUNNING으로 작업을 생성하고 전사 text는 근무자가 확인·수정 후 TEXT 질문으로 보내거나 READY transcriptionId로 VOICE 질문을 보낼 수 있습니다. 같은 미디어에 진행/완료 작업이 있으면 기존 작업을 재사용하고 실패 작업은 retry endpoint로 재시도합니다. 비공개 음성은 답변 근거로 쓰지 않습니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '202':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualTranscription'
+              example:
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                mediaId: 15a9721b-2e65-4d03-8fd0-a5999e19d27a
+                status: RUNNING
+                text: null
+                error: null
+                createdAt: '2026-10-05T01:00:00Z'
+                completedAt: null
+        '410':
+          description: 음성 보관 기한이 끝났습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: QA_MEDIA_EXPIRED
+                message: 음성 보관 기한이 끝났습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2914
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QATranscriptionCreate'
+            example:
+              mediaId: 15a9721b-2e65-4d03-8fd0-a5999e19d27a
+  /api/stores/{storeId}/manual/qa/media/{mediaId}/content:
+    get:
+      tags:
+      - AI 질문 미디어
+      operationId: getQAQuestionMediaContent
+      summary: 본인 AI 질문 미디어 보호 조회
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다. 선택 매장의 현재 유효 USE_AI_QA 자료 접근과 APPROVED를 매 요청 검증합니다. 소유 대화·업로드 파일은 본인+매장에 귀속되며 접근 종료/수동 종료/다른 매장은 동일 404입니다. 초안·인터뷰 대화·점주 음성에는 접근할 수 없습니다.
+
+        같은 매장·본인 업로드만 프록시로 반환합니다. 현재 매장 접근과 파일 만료를 다시 확인하며 음성/사진을 다른 근무자에게 공유하지 않습니다. 만료는 410, 없는/다른 주체 파일은 404입니다. 응답은 nosniff이며 파일명/실제 저장 경로를 노출하지 않습니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: mediaId
+        in: path
+        required: true
+        description: 'mediaId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 실제 MIME에 해당하는 비공개 파일 바이트
+          headers:
+            X-Content-Type-Options:
+              schema:
+                type: string
+                const: nosniff
+              description: 콘텐츠 타입 추측 금지
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/mp4:
+              schema:
+                type: string
+                format: binary
+            audio/webm:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        '410':
+          description: 질문 미디어 보관 기한이 끝났습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: QA_MEDIA_EXPIRED
+                message: 질문 미디어 보관 기한이 끝났습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2914
+  /api/stores/{storeId}/manual/qa/transcriptions/{transcriptionId}:
+    get:
+      tags:
+      - AI 질문 미디어
+      operationId: getQAQuestionTranscription
+      summary: 본인 질문 전사 상태·텍스트 조회
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다. 선택 매장의 현재 유효 USE_AI_QA 자료 접근과 APPROVED를 매 요청 검증합니다. 소유 대화·업로드 파일은 본인+매장에 귀속되며 접근 종료/수동 종료/다른 매장은 동일 404입니다. 초안·인터뷰 대화·점주 음성에는 접근할 수 없습니다.
+
+        RUNNING/READY/ERROR와 공개 오류만 반환합니다. 본인+매장 작업만 조회하고 접근 종료 시 결과도 404로 차단합니다. 2초 이상 간격으로 조회하고 429에는 Retry-After를 따릅니다. 작업 provider 오류·음성 URL은 반환하지 않습니다. 음성이 TTL로 삭제된 뒤에도 이미 생성된 text는 본인의 대화에 사용할 수 있습니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        description: 'storeId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: transcriptionId
+        in: path
+        required: true
+        description: 'transcriptionId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualTranscription'
+              example:
+                id: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                mediaId: 15a9721b-2e65-4d03-8fd0-a5999e19d27a
+                status: RUNNING
+                text: null
+                error: null
+                createdAt: '2026-10-05T01:00:00Z'
+                completedAt: null
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2914
 components:
   securitySchemes:
     SessionCookie:
@@ -18495,6 +19235,109 @@ components:
       - unreadNotificationCount
       - recommendedJobs
       - asOf
+    QAMedia:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        storeId:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+          enum:
+          - QUESTION_IMAGE
+          - QUESTION_AUDIO
+        mimeType:
+          type: string
+          enum:
+          - image/jpeg
+          - image/png
+          - image/webp
+          - audio/mpeg
+          - audio/mp4
+          - audio/webm
+          - audio/wav
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 20971520
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+      required:
+      - id
+      - storeId
+      - purpose
+      - mimeType
+      - sizeBytes
+      - createdAt
+      - expiresAt
+      oneOf:
+      - properties:
+          purpose:
+            const: QUESTION_IMAGE
+          mimeType:
+            type: string
+            enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+          sizeBytes:
+            type: integer
+            minimum: 1
+            maximum: 10485760
+        required:
+        - purpose
+        - mimeType
+        - sizeBytes
+      - properties:
+          purpose:
+            const: QUESTION_AUDIO
+          mimeType:
+            type: string
+            enum:
+            - audio/mpeg
+            - audio/mp4
+            - audio/webm
+            - audio/wav
+        required:
+        - purpose
+        - mimeType
+    QATranscriptionCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        mediaId:
+          type: string
+          format: uuid
+      required:
+      - mediaId
+    QAMediaUpload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          type: string
+          enum:
+          - QUESTION_IMAGE
+          - QUESTION_AUDIO
+        file:
+          type: string
+          format: binary
+      required:
+      - purpose
+      - file
+    QAProcessingRetry:
+      type: object
+      additionalProperties: false
+      properties: {}
+      required: []
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
