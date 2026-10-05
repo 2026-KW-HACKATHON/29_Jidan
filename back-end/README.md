@@ -154,6 +154,23 @@ def create_store(body: StoreIn, owner: CsrfOwner, db: DbSession, key: Idempotenc
 | 재현 | 같은 key·같은 body: 회원 세션이든 (같은 Google 계정으로 다시 로그인해 얻은) 가입 세션이든 최초 201을 재현. 다른 body·다른 endpoint: 409 `IDEMPOTENCY_KEY_REUSED`. 재현 직전에 `revalidate`가 양쪽 세션에서 호출됩니다 |
 | 쿠키까지 잃은 경우 | 가입이 이미 끝났다면 Google 재로그인은 회원 세션을 발급하므로 같은 key로 가입 endpoint를 재시도할 수 있습니다 |
 
+### commit과 응답 순서
+
+원칙(#103 공통 규칙과 동일): **commit이 끝나기 전에 2xx와 `Set-Cookie`를 보내지 않습니다.** commit이 실패하면 5xx이고 쿠키는 없습니다.
+
+| 경로 | 응답 전 commit 보장 |
+| --- | --- |
+| `run_idempotent` | 보장. 업무 변경과 응답 기록을 `db.commit()`한 뒤에만 반환합니다. 실패하면 롤백·key 해제 후 예외(5xx)이며 재시도할 수 있습니다 |
+| `create_session`·`revoke_session`·`create_registration_session`·`revoke_registration_session`·`revoke_user_sessions`를 `db=` 없이 호출 | 보장. 자체 트랜잭션이 반환 전에 commit됩니다 |
+| 위 함수들을 `db=db`로 호출 | **보장 아님**. 호출자의 commit을 기다립니다. `commit_then_set_session_cookie`·`commit_then_clear_session_cookie`·`commit_then_set_registration_cookie`·`commit_then_clear_registration_cookie`로 commit한 뒤에 쿠키를 설정하면 보장됩니다(예외 시 쿠키 없음) |
+| `set_session_cookie`·`clear_*_cookie`를 직접 호출 | 보장 아님. `get_session`이 응답 전에 commit하도록 #103이 고정될 때까지는 `commit_then_*`를 쓰세요 |
+| `consume_registration_session(db=db)` | commit하지 않음. 가입 handler(`run_idempotent` 안)에서 호출하면 응답 전 commit됩니다 |
+| 정지 계정 감지(`_resolve_member`) | 보장. 세션 폐기를 commit한 뒤 403을 냅니다 |
+| `last_seen_at` 갱신 | 요청 세션의 마지막 commit에 편승합니다. 실패해도 응답 의미가 바뀌지 않는 최적화입니다 |
+| 멱등성 예약·해제(`_reserve`·`_release`) | 자체 트랜잭션이 즉시 commit됩니다 |
+
+`tests/test_commit_before_cookie.py`에서 위 보장을 commit 실패 주입으로 검증합니다. 직접 쿠키 설정 후 요청 말미 commit이 실패하는 경우(`test_bare_cookie_setter_cannot_outrun_the_request_commit`)는 #103의 `get_session` 규칙에 의존하며 그 반영 전에는 strict xfail입니다.
+
 ### 페이지네이션과 레이트 리미터
 
 - `Pagination` 의존성은 `page`(0부터, 기본 0, 최대 1,000,000)와 `size`(1~100, 기본 20)를 검증합니다. 숫자가 아니거나 범위를 벗어나거나 중복되면 422 `VALIDATION_ERROR`이고, 끝 페이지를 넘기면 오류가 아니라 빈 `items`입니다. `page_response(items, total, params)`로 응답을 만듭니다.

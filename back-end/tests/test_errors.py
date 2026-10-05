@@ -150,3 +150,8 @@ def test_every_openapi_error_code_has_a_constant():
 
 def test_error_codes_are_unique_and_match_their_names():
     assert all(code.name == code.value for code in ErrorCode)
+
+
+def test_redirect_only_public_codes_of_the_contract_are_defined():
+    # Documented in prose (Google consent denied -> 302 with this code), not as an Error body.
+    assert ErrorCode.GOOGLE_ACCESS_DENIED == "GOOGLE_ACCESS_DENIED"
