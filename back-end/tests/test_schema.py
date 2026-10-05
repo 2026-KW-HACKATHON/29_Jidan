@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.db.models import (
+    ApplicationCareer,
     ApplicationSelectionEffect,
     AvailabilityDay,
     AvailabilityRule,
@@ -298,3 +299,60 @@ def test_dates_are_plain_calendar_values(session):
     job = make_job(session, work_date=date(2026, 12, 31))
     session.expire_all()
     assert session.get(type(job), job.id).work_date == date(2026, 12, 31)
+
+
+def career_values(owner_key, owner_id, **overrides):
+    return {owner_key: owner_id, "sort_order": 0, "industry": "CAFE", "duties": "서빙",
+            "start_month": "2024-01", "end_month": None, "is_current": True, **overrides}
+
+
+def test_worker_career_store_name_is_optional_and_normalized(session):
+    worker = make_worker(session)
+    omitted = WorkerCareer(**career_values("worker_id", worker.id, sort_order=0))
+    padded = WorkerCareer(**career_values("worker_id", worker.id, sort_order=1,
+                                          store_name="  월계 카페 "))
+    empty = WorkerCareer(**career_values("worker_id", worker.id, sort_order=2, store_name=""))
+    blank = WorkerCareer(**career_values("worker_id", worker.id, sort_order=3, store_name=" \t "))
+    session.add_all([omitted, padded, empty, blank])
+    session.flush()
+    session.expire_all()
+    assert [c.store_name for c in (omitted, padded, empty, blank)] == [None, "월계 카페", None, None]
+
+
+def test_application_career_snapshot_store_name_is_optional_and_normalized(session):
+    application = make_application(session, make_job(session, make_store(session)))
+    rows = [
+        ApplicationCareer(**career_values("application_id", application.id, sort_order=0)),
+        ApplicationCareer(**career_values("application_id", application.id, sort_order=1,
+                                          store_name=" 명랑핫도그 ")),
+        ApplicationCareer(**career_values("application_id", application.id, sort_order=2,
+                                          store_name="   ")),
+    ]
+    session.add_all(rows)
+    session.flush()
+    session.expire_all()
+    assert [r.store_name for r in rows] == [None, "명랑핫도그", None]
+
+
+@pytest.mark.parametrize("table", [WorkerCareer.__table__, ApplicationCareer.__table__])
+def test_blank_store_name_is_rejected_when_the_orm_is_bypassed(session, table):
+    """The CHECK is the last line of defense for writers that skip the ORM normalization."""
+    if table.name == "worker_careers":
+        owner = {"worker_id": make_worker(session).id}
+    else:
+        owner = {"application_id": make_application(session, make_job(session, make_store(session))).id}
+    values = {**owner, "id": "c-1", "sort_order": 0, "industry": "CAFE", "duties": "서빙",
+              "start_month": "2024-01", "end_month": None, "is_current": True}
+    rejected(session, lambda: session.execute(table.insert().values(**values, store_name="  ")))
+    rejected(session, lambda: session.execute(table.insert().values(**values, store_name="")))
+    session.execute(table.insert().values(**values, store_name=None))
+
+
+def test_normalize_optional_text():
+    from app.db.types import normalize_optional_text
+
+    assert normalize_optional_text(None) is None
+    assert normalize_optional_text("") is None
+    assert normalize_optional_text("  ") is None
+    assert normalize_optional_text("\u3000") is None  # full-width space
+    assert normalize_optional_text(" a b ") == "a b"

@@ -10,6 +10,14 @@ def new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def normalize_optional_text(value: str | None) -> str | None:
+    """Trim optional free text; omitted, empty and whitespace-only values are stored as NULL."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 def utcnow() -> datetime:
     return datetime.now(UTC)
 

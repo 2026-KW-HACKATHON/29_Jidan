@@ -24,9 +24,9 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 
-from app.db.types import UtcDateTime, new_uuid, utcnow
+from app.db.types import UtcDateTime, new_uuid, normalize_optional_text, utcnow
 
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_N_name)s",
@@ -108,6 +108,7 @@ class WorkerCareer(Base):
     __table_args__ = (
         UniqueConstraint("worker_id", "sort_order"),
         CheckConstraint("sort_order >= 0", name="sort_order"),
+        CheckConstraint("store_name IS NULL OR TRIM(store_name) <> ''", name="store_name_not_blank"),
         CheckConstraint(
             "(is_current = 1 AND end_month IS NULL) OR (is_current = 0 AND end_month IS NOT NULL)",
             name="current_end_month",
@@ -120,10 +121,14 @@ class WorkerCareer(Base):
     sort_order: Mapped[int] = mapped_column(Integer)
     industry: Mapped[str] = mapped_column(String(50))
     duties: Mapped[str] = mapped_column(String(500))
-    store_name: Mapped[str] = mapped_column(String(100))
+    store_name: Mapped[str | None] = mapped_column(String(100))  # optional in the API
     start_month: Mapped[str] = mapped_column(String(7))  # YYYY-MM
     end_month: Mapped[str | None] = mapped_column(String(7))
     is_current: Mapped[bool] = mapped_column(Boolean)
+
+    @validates("store_name")
+    def _normalize_store_name(self, _key: str, value: str | None) -> str | None:
+        return normalize_optional_text(value)
 
 
 class AvailabilityRule(Base):
@@ -283,6 +288,7 @@ class ApplicationCareer(Base):
     __table_args__ = (
         UniqueConstraint("application_id", "sort_order"),
         CheckConstraint("sort_order >= 0", name="sort_order"),
+        CheckConstraint("store_name IS NULL OR TRIM(store_name) <> ''", name="store_name_not_blank"),
         CheckConstraint(
             "(is_current = 1 AND end_month IS NULL) OR (is_current = 0 AND end_month IS NOT NULL)",
             name="current_end_month",
@@ -294,10 +300,14 @@ class ApplicationCareer(Base):
     sort_order: Mapped[int] = mapped_column(Integer)
     industry: Mapped[str] = mapped_column(String(50))
     duties: Mapped[str] = mapped_column(String(500))
-    store_name: Mapped[str] = mapped_column(String(100))
+    store_name: Mapped[str | None] = mapped_column(String(100))  # optional in the API
     start_month: Mapped[str] = mapped_column(String(7))
     end_month: Mapped[str | None] = mapped_column(String(7))
     is_current: Mapped[bool] = mapped_column(Boolean)
+
+    @validates("store_name")
+    def _normalize_store_name(self, _key: str, value: str | None) -> str | None:
+        return normalize_optional_text(value)
 
 
 class WorkRequest(Base):

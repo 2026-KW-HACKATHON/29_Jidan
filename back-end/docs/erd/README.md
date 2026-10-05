@@ -80,13 +80,14 @@ Figma의 Design 화면을 주요 근거로 사용했고 Design System/Wireframe/
 
 | 항목 | 결정 |
 | --- | --- |
-| UUID | `CHAR(36)` 문자열(디버깅 용이성). 서비스에서 `uuid4`로 생성 |
+| UUID | `CHAR(36)` 문자열(디버깅 용이성). PK·FK·생성 컬럼 모두 `CHAR(36)`으로 통일하고 FK와 참조 PK의 charset·collation 일치를 테스트로 고정. 서비스에서 `uuid4`로 생성 |
 | 시각 | UTC `DATETIME(6)`, 애플리케이션에서는 timezone-aware UTC만 허용. 연결 시 `time_zone='+00:00'` |
 | 근무 날짜·시간 | `work_date`(DATE)·`start_time`·`end_time`은 `Asia/Seoul` 현지 값, 심야는 `ends_next_day` |
 | enum | `VARCHAR` + 이름 있는 `CHECK`. 이름 규칙은 `ck_/uq_/fk_/ix_/pk_` 접두사 |
 | 삭제 정책 | 모든 FK는 기본(RESTRICT). cascade 삭제 없음 |
 | 활성 유일성 | 활성 지원·확정·대기 요청은 생성 컬럼(`active_worker_id` 등)에 UNIQUE를 걸어 DB에서 중복을 막음. 공고당 유효 PENDING 요청의 직렬화는 공고 잠금과 서비스 검증으로 보완 |
 | `users.name`·`phone_number` | NOT NULL. 가입 최종 확인에서 한 번에 저장하므로 부분 가입 행을 만들지 않는다는 해석 |
+| 경력 `store_name` | `worker_careers`·`application_careers` 모두 NULL 허용. OpenAPI `Career.storeName`이 선택(required 아님, 있으면 `minLength 1`·`\S`)이고 [근무 정보 설계](../worker-profile-design.md)도 "지우려면 필드를 생략"이라 NOT NULL이면 저장할 수 없기 때문. 생략·빈 문자열·공백만 있는 값은 `NULL`, 값이 있으면 앞뒤 공백을 제거해 저장(ORM `normalize_optional_text`). DB `CHECK (store_name IS NULL OR TRIM(store_name) <> '')`가 우회 쓰기를 막는다. API는 빈 문자열을 422로 거절하므로 서비스까지 도달하는 값은 생략 또는 비공백이다. 지원서 경력 스냅샷도 동일하게 `NULL`을 그대로 복사 |
 | `stores.detail_address` | NULL 허용(ERD가 필수를 명시하지 않음) |
 | 사업자 번호 | 숫자 10자리만 저장(`LENGTH = 10`), 하이픈 제거는 서비스 책임 |
 | 서비스 검증으로 남긴 것 | `users.role`과 FK 대상 일치, 같은 매장 일치, 시간 중첩, 경력·가능 시간 개수 상한, 30분 단위, 미래 월 금지, 초대 이메일 소문자 정규화 |
