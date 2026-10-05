@@ -1,0 +1,11 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {spec,validator} from './helpers/owner-contract.mjs';
+const base='/api/stores/{storeId}/job-postings';
+const sample=spec.paths[base].post.requestBody.content['application/json'].example;
+const check=validator('JobPostingCreate');
+test('공고: 3단계 최종 입력과 심야 입력 허용',()=>{assert.ok(check(sample));assert.ok(check({...sample,startTime:'22:00',endTime:'07:00',endsNextDay:true,minimumExperience:'YEAR_1',paymentTiming:'NEGOTIABLE'}));});
+for(const [label,patch] of [['공백 업무명',{title:' '}],['빈 상세',{description:''}],['잘못된 날짜',{workDate:'2026-02-30'}],['24시',{endTime:'24:00'}],['0원',{hourlyPay:0}],['소수 시급',{hourlyPay:123.4}],['없는 경력 코드',{minimumExperience:'MONTHS_4'}],['없는 지급 코드',{paymentTiming:'WEEKLY'}],['인원 주입',{recruitmentCount:2}],['점주 주입',{ownerId:'x'}]])test(`공고: ${label} 거절`,()=>assert.equal(check({...sample,...patch}),false));
+test('공고: 모집 상태와 마감 시각의 일치',()=>{const v=validator('JobPosting');const x=spec.paths[base].post.responses['201'].content['application/json'].example;assert.ok(v(x));assert.equal(v({...x,status:'CLOSED'}),false);assert.equal(v({...x,closedAt:'2026-10-05T01:00:00Z'}),false);assert.equal(v({...x,recruitmentCount:2}),false);});
+test('공고: 시간 구간 예시는 실제 양수 구간·추정 보수와 일치',()=>{const x=spec.paths[base].post.responses['201'].content['application/json'].example;const minutes=(Date.parse(x.endAt)-Date.parse(x.startAt))/60000;assert.ok(minutes>0&&minutes<1440);assert.equal(x.estimatedPay,Math.floor(x.hourlyPay*minutes/60));assert.equal(new Date(x.startAt).toISOString().slice(0,10),sample.workDate);});
+test('마감: 확정 접근 유지와 동시 지원 직렬화 계약',()=>{const op=spec.paths[base+'/{jobId}/closure'].post;assert.match(op.description,/확정·온보딩·캘린더·접근을 유지/);assert.match(op.description,/첫 성공/);assert.equal(validator('JobClosure')({expectedRevision:0}),false);assert.equal(validator('JobClosure')({expectedRevision:1,workerId:'x'}),false);});
