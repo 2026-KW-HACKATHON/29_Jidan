@@ -13,3 +13,7 @@ stateDiagram-v2
   PENDING --> CANCELLED: 지원 철회 또는 모집 마감
   ACCEPTED --> [*]: 온보딩·캘린더·접근 연결
 ```
+
+## 점주 요청 철회
+
+수락 대기의 요청 철회하기는 POST `work-requests/{requestId}/withdrawal`입니다. PENDING·기한 전·revision 일치일 때 CANCELLED로 종료하고 지원서는 APPLIED로 돌아갑니다. 수락과 철회는 같은 잠금으로 직렬화하며 ACCEPTED 요청은 이 API로 취소할 수 없습니다. 새 요청에는 새 ID/key를 사용하고 기존 이력을 보존합니다.
