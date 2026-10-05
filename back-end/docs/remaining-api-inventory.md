@@ -162,4 +162,4 @@ OpenAPI lint와 JSON Schema/예시/상태 계약 테스트는 구현 계약을 �
 
 새로 확정한 요청 기한·확정 철회·재지원·캘린더 범위·추천 순서는 설계 제안으로 남겨두지 않습니다. 화면에 없는 관심 매장 등록/해제, 첫 매장 선택과 집계 상한, 파일 보관 상한 및 근무 중첩 차단은 기존 보완 설계로 유지합니다.
 
-0.7.0은 캘린더 편집/개별 상세 API 제거, TEMPORARY_WORK만 허용하는 이벤트, WORK_SCHEDULE target의 storeId/workDate 필수화, 추천 카드 matchesAvailability 필수화와 철회 상태 추가를 포함하는 계약 변경입니다. 실제 백엔드 구현 또는 데이터 마이그레이션을 수행한 것은 아닙니다.
+0.7.0은 캘린더 편집/개별 상세 API 제거, TEMPORARY_WORK만 허용하는 이벤트, WORK_SCHEDULE target의 storeId/workDate 필수화, 추천 카드 matchesAvailability 필수화와 철회 상태 추가를 포함하는 계약 변경입니다. 업무 API 구현 또는 데이터 마이그레이션을 수행한 것은 아닙니다. 설계 Swagger 제공 endpoint는 별도 문서 경로이며 [개발 CI/CD와 주소](README.md#개발-서버-cicd와-endpoint)에 정리했습니다.
