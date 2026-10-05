@@ -82,6 +82,84 @@ JIDAN_REQUIRE_MYSQL=1 DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=jidan_test DB_USER=
 
 Docker test 단계에는 MySQL이 없으므로 CI에서는 SQLite 테스트만 실행된다. 실제 MySQL 검증은 개발 서버에서 한다.
 
+## 공통 API 계층
+
+업무 endpoint가 공통으로 쓰는 모듈입니다. 계약은 [OpenAPI 명세](openapi.yaml)와 [인증 설계](docs/auth-design.md)를 따릅니다.
+
+| 모듈 | 제공 |
+| --- | --- |
+| `app/errors.py` | `ApiError(status, code, message)`, `ErrorCode`(명세의 code 전체), 전역 예외 핸들러 |
+| `app/middleware.py` | 모든 `/api` 응답에 `Cache-Control: no-store` |
+| `app/auth.py` | 세션 쿠키, `require_member`·`require_owner`·`require_worker`·`require_registration_session`, `create_session`·`revoke_session` |
+| `app/csrf.py` | Origin 정확 일치와 `X-CSRF-Token` 검증 (`CsrfMember` 등) |
+| `app/idempotency.py` | `Idempotency-Key` 재현·충돌·동시 처리 (`run_idempotent`) |
+| `app/pagination.py` | `page`/`size` 의존성(`Pagination`)과 목록 응답 형식 |
+| `app/ratelimit.py` | 로그인·관리자 비밀번호용 429 제한 |
+
+### 오류 응답
+
+모든 실패는 `{"code", "message", "requestId", "fieldErrors"}`입니다. 업무 코드는 `raise ApiError(409, ErrorCode.STATE_CONFLICT)`처럼 발생시키며 `message`를 생략하면 기본 안내 문구를 씁니다. 형식이 잘못된 JSON은 400 `INVALID_REQUEST`, 필드 검증 실패는 입력값을 되풀이하지 않는 422 `VALIDATION_ERROR`(`fieldErrors`), 처리되지 않은 예외는 내부 정보 없는 500 `INTERNAL_ERROR`입니다. `/api/health`의 `{"detail": ...}` 응답만 배포 점검 계약이라 그대로 유지합니다(`UnstructuredHTTPException`).
+
+### 세션과 인가
+
+```python
+from app.auth import CurrentOwner, CurrentWorker, DbSession
+
+@router.get("/api/stores")
+def list_stores(owner: CurrentOwner, db: DbSession): ...
+```
+
+- 쿠키: 회원 `jidan_session`(HttpOnly, SameSite=Lax, Path=`/`, 유휴 24시간·절대 7일), 가입 `jidan_registration`(HttpOnly, SameSite=Lax, Path=`/api/auth`, 고정 10분). Domain은 설정하지 않습니다. `Secure`는 `APP_ENV`가 `local`이 아니면 항상 켜지며 `COOKIE_SECURE=true|false`로 덮어쓸 수 있습니다(HTTP 개발 서버용).
+- 서버에는 토큰 원문이 아니라 SHA-256 해시만 저장합니다(`auth_sessions`, `registration_sessions`). 역할·계정 상태는 매 요청 DB에서 확인합니다.
+- 오류: 세션 없음·만료·폐기 401 `SESSION_EXPIRED`, 가입 세션만 있음 401 `REGISTRATION_REQUIRED`, 역할 불일치 403 `FORBIDDEN`, 정지 계정 403 `ACCOUNT_SUSPENDED`(세션도 폐기). `require_owner`는 역할만 보므로 매장 소유·승인(APPROVED) 확인은 endpoint에서 합니다.
+- `create_session(user_id)`로 만든 `IssuedSession`을 `set_session_cookie(response, issued)`로 내려보냅니다. 가입 세션은 `create_registration_session(sub, email)`와 `set_registration_cookie`, 가입 완료 시 `consume_registration_session(id, db=db)`(한 번만 성공)를 씁니다. `db=`를 넘기면 호출자의 트랜잭션에 참여하고 생략하면 자체 트랜잭션으로 커밋합니다.
+- 토큰을 받는 `GET /api/auth/csrf`는 `principal.csrf_token`과 `principal.expires_at`을 응답하면 됩니다.
+
+### CSRF와 Origin
+
+변경 요청(GET·HEAD·OPTIONS 제외)은 `Origin`이 `ALLOWED_ORIGINS`(쉼표 구분, 예: `https://jidan.example.com,http://localhost:5173`)의 scheme/host/port와 정확히 같고 `X-CSRF-Token`이 세션에 바인딩된 값과 같아야 하며, 아니면 403 `CSRF_INVALID`입니다. 쓰기 endpoint는 `CsrfMember`·`CsrfOwner`·`CsrfWorker`·`CsrfRegistration`을 쓰고, 세션이 없는 endpoint(로그인·관리자 비밀번호)는 `Depends(require_allowed_origin)`만 씁니다. `ALLOWED_ORIGINS`가 비어 있으면 모든 변경 요청이 거절됩니다. 와일드카드는 지원하지 않습니다.
+
+### 멱등성
+
+```python
+@router.post("/api/stores", status_code=201)
+def create_store(body: StoreIn, owner: CsrfOwner, db: DbSession, key: IdempotencyKey):
+    def work() -> IdempotentResult:
+        store = ...  # db에 업무 변경을 쓴다. commit은 하지 않는다.
+        return IdempotentResult(201, {"id": store.id})
+
+    return run_idempotent(
+        db=db, principal_id=owner.user_id, key=key, method="POST",
+        path="/api/stores", body=body, handler=work,
+        revalidate=lambda: ensure_still_owner(db, owner),  # 재현 직전 권한 재확인
+    )
+```
+
+- 같은 key·endpoint·정규화 body는 24시간 동안 최초 응답을 재현하며 `Idempotent-Replayed: true`를 붙입니다. 다른 body·endpoint는 409 `IDEMPOTENCY_KEY_REUSED`입니다. key는 UUID(대소문자 무관)여야 하며 누락·형식 오류는 422입니다.
+- 동시 같은 key는 DB 유니크 제약과 60초 임대(PROCESSING)로 한 번만 처리하고, 나머지는 최대 5초 기다렸다가 최초 응답을 재현합니다. 그래도 끝나지 않으면 409 `STATE_CONFLICT`와 `Retry-After`입니다(명세에 처리 중 전용 코드가 없어 재사용).
+- 업무 변경과 응답 저장은 한 트랜잭션으로 커밋되므로 핸들러가 직접 commit하면 안 됩니다. 핸들러가 예외를 내면 롤백하고 key를 풀어 재시도할 수 있습니다. 성공 결과만 저장합니다.
+- 만료 행은 같은 key가 다시 오면 교체되며, `purge_expired()`로 주기적으로 정리할 수 있습니다.
+
+### 페이지네이션과 레이트 리미터
+
+- `Pagination` 의존성은 `page`(0부터, 기본 0, 최대 1,000,000)와 `size`(1~100, 기본 20)를 검증합니다. 숫자가 아니거나 범위를 벗어나거나 중복되면 422 `VALIDATION_ERROR`이고, 끝 페이지를 넘기면 오류가 아니라 빈 `items`입니다. `page_response(items, total, params)`로 응답을 만듭니다.
+- `enforce_login_rate_limit`(분당 20회/IP), `enforce_admin_password_rate_limit`과 `record_admin_password_failure`·`record_admin_password_success`(실패만 집계, 10분에 IP당 5회·전체 50회)는 초과 시 `Retry-After`와 429 `RATE_LIMITED`를 반환합니다.
+
+### 환경변수
+
+| 이름 | 용도 |
+| --- | --- |
+| `ALLOWED_ORIGINS` | 변경 요청을 허용할 Origin 목록. 비우면 모두 거절 |
+| `COOKIE_SECURE` | `true`/`false`로 쿠키 Secure 속성 강제. 생략 시 `APP_ENV != local`이면 켬 |
+| `TRUST_FORWARDED_FOR` | `true`면 프록시가 덧붙인 `X-Forwarded-For` 마지막 항목을 클라이언트 IP로 사용 |
+
+### 한계
+
+- 레이트 리미터는 프로세스 메모리에만 있어 워커·서버가 여럿이면 카운터가 공유되지 않고(실제 한도 = 한도 × 프로세스 수) 재시작하면 초기화됩니다. 정확한 제한이 필요하면 DB나 캐시로 옮겨야 합니다.
+- 세션 만료 시각 갱신은 최대 1분 간격으로만 기록하며, 만료된 세션·멱등성 행의 정기 삭제 작업은 아직 없습니다.
+- 가입 세션 쿠키는 Path가 `/api/auth`라 그 아래 endpoint에서만 전송됩니다.
+- 관리자 비밀번호 API는 비밀번호가 body에 있어 `page`/`size`를 body에서 받습니다. `Pagination`은 query 전용이므로 body 검증은 해당 endpoint 모델에서 같은 범위(0 이상, 1~100)로 맞춥니다.
+
 ## API 설계
 
 [Figma 기반 OpenAPI 명세](openapi.yaml)를 제공합니다.
