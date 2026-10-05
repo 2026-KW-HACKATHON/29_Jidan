@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app import idempotency
@@ -74,6 +74,23 @@ def build_app() -> FastAPI:
         return run_idempotent(
             db=db, principal=owner, key=key, method="POST",
             path="/api/t/things", body=body, handler=work, revalidate=revalidate,
+        )
+
+    @app.post("/api/t/savepoint")
+    def savepoint(body: ThingIn, owner: CsrfOwner, db: DbSession, key: IdempotencyKey):
+        def work() -> IdempotentResult:
+            with db.begin_nested():  # released savepoint: its write must reach the final commit
+                kept = make_user(db, "WORKER", name=body.name)
+            try:
+                with db.begin_nested():  # rolled back: duplicate google_sub
+                    make_user(db, "WORKER", google_sub=kept.google_sub)
+            except IntegrityError:
+                pass
+            return IdempotentResult(201, {"id": kept.id})
+
+        return run_idempotent(
+            db=db, principal=owner, key=key, method="POST", path="/api/t/savepoint",
+            body=body, handler=work,
         )
 
     @app.post("/api/t/other")
@@ -149,6 +166,10 @@ def new_key() -> str:
     return str(uuid.uuid4())
 
 
+def calls_made() -> int:
+    return hooks.calls
+
+
 def count_users(engine) -> int:
     with Session(engine) as session:
         return session.scalar(select(func.count()).select_from(User))
@@ -188,13 +209,29 @@ def test_malformed_keys_are_rejected(api, caller, db_engine, value):
     assert count_users(db_engine) == 1  # only the owner exists; nothing was created
 
 
-def test_uppercase_and_lowercase_keys_are_the_same_key(api, caller):
+def test_uppercase_and_lowercase_keys_are_the_same_key(api, caller, db_engine):
     key = new_key()
     first = post(api, caller, key.upper())
     second = post(api, caller, key.lower())
     assert first.status_code == 201
     assert second.json() == first.json()
     assert second.headers["Idempotent-Replayed"] == "true"
+    # Policy: the app lower-cases the key before it is stored or compared (the column is also
+    # case-sensitive on MySQL, so nothing depends on the database folding case).
+    (record,) = records(db_engine)
+    assert record.idempotency_key == key.lower() and calls_made() == 1
+
+
+def test_handler_savepoints_commit_with_the_response_and_never_trip_the_write_guard(
+    api, caller, db_engine,
+):
+    key = new_key()
+    first = post(api, caller, key, path="/api/t/savepoint")
+    assert first.status_code == 201  # no UncommittedWriteError (500) from the released savepoint
+    assert count_users(db_engine) == 2  # owner + the savepoint user; the undone insert is gone
+    second = post(api, caller, key, path="/api/t/savepoint")
+    assert second.json() == first.json() and second.headers["Idempotent-Replayed"] == "true"
+    assert count_users(db_engine) == 2
 
 
 # --- replay, conflict ------------------------------------------------------------------------
