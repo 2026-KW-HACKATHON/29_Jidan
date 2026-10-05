@@ -1,13 +1,19 @@
 import os
 
 import pymysql
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.auth import validate_cookie_settings
 from app.database import database_status
 from app.design_docs import install_design_docs
+from app.errors import UnstructuredHTTPException, install_error_handlers
+from app.middleware import install_middleware
 
+validate_cookie_settings()  # a bad COOKIE_SECURE stops the process before it serves anything
 app = FastAPI(title="Jidan API", version="0.1.0")
+install_error_handlers(app)
+install_middleware(app)
 
 
 @app.get("/api/health")
@@ -19,7 +25,8 @@ def health() -> dict[str, str]:
         database = database_status(environment)
     except (pymysql.MySQLError, SQLAlchemyError, OSError, ValueError):
         # Keep connection details and credentials out of public health responses.
-        raise HTTPException(status_code=503, detail="Service unavailable") from None
+        # /api/health keeps its {"detail": ...} body; deploy checks depend on it.
+        raise UnstructuredHTTPException(status_code=503, detail="Service unavailable") from None
     return {"status": "ok", "environment": environment, "database": database}
 
 

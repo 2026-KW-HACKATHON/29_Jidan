@@ -8,12 +8,15 @@ from sqlalchemy import inspect
 from app.db.models import Base
 from tests.conftest import alembic_config, migrated_sqlite_engine
 
-EXPECTED_TABLES = {
+BASELINE_TABLES = {
     "users", "worker_profiles", "worker_careers", "availability_rules", "availability_days",
     "stores", "store_approval_requests", "store_invitations", "store_access_grants",
     "job_postings", "job_applications", "application_careers", "work_requests",
     "shift_assignments", "application_selection_effects",
 }
+SESSION_TABLES = {"auth_sessions", "registration_sessions"}
+IDEMPOTENCY_TABLES = {"idempotency_records"}
+EXPECTED_TABLES = BASELINE_TABLES | SESSION_TABLES | IDEMPOTENCY_TABLES
 
 
 def test_history_is_linear_with_a_single_head():
@@ -23,6 +26,14 @@ def test_history_is_linear_with_a_single_head():
     revisions = list(script.walk_revisions())
     assert all(len(revision.nextrev) <= 1 for revision in revisions)
     assert all(not isinstance(revision.down_revision, tuple) for revision in revisions)
+
+
+def test_revisions_form_a_chain_on_top_of_the_untouched_baseline():
+    script = ScriptDirectory.from_config(alembic_config())
+    assert script.get_revision("0001").down_revision is None
+    assert script.get_revision("0002").down_revision == "0001"
+    assert script.get_revision("0003").down_revision == "0002"
+    assert script.get_revision("0004").down_revision == "0003"
 
 
 def test_upgrade_creates_every_baseline_table(engine):
@@ -40,10 +51,23 @@ def test_downgrade_one_step_then_upgrade_again(engine):
         config = alembic_config(connection)
         command.downgrade(config, "-1")
         connection.commit()
-        assert set(inspect(connection).get_table_names()) <= {"alembic_version"}
+        columns = {c["name"] for c in inspect(connection).get_columns("idempotency_records")}
+        assert "response_headers" not in columns and "response_body" in columns
         command.upgrade(config, "head")
         connection.commit()
         assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
+        columns = {c["name"] for c in inspect(connection).get_columns("idempotency_records")}
+        assert "response_headers" in columns
+
+
+def test_downgrade_to_0002_drops_the_idempotency_table(engine):
+    with engine.connect() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, "0002")
+        connection.commit()
+        assert set(inspect(connection).get_table_names()) == BASELINE_TABLES | SESSION_TABLES | {"alembic_version"}
+        command.upgrade(config, "head")
+        connection.commit()
 
 
 def test_upgrade_is_idempotent_at_head(engine):

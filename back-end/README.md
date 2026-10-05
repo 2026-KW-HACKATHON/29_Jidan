@@ -82,6 +82,120 @@ JIDAN_REQUIRE_MYSQL=1 DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=jidan_test DB_USER=
 
 Docker test 단계에는 MySQL이 없으므로 CI에서는 SQLite 테스트만 실행된다. 실제 MySQL 검증은 개발 서버에서 한다.
 
+## 공통 API 계층
+
+업무 endpoint가 공통으로 쓰는 모듈입니다. 계약은 [OpenAPI 명세](openapi.yaml)와 [인증 설계](docs/auth-design.md)를 따릅니다.
+
+| 모듈 | 제공 |
+| --- | --- |
+| `app/errors.py` | `ApiError(status, code, message)`, `ErrorCode`(명세의 code 전체), 전역 예외 핸들러 |
+| `app/middleware.py` | 모든 `/api` 응답에 `Cache-Control: no-store` |
+| `app/auth.py` | 세션 쿠키, `require_member`·`require_owner`·`require_worker`·`require_registration_session`, `create_session`·`revoke_session` |
+| `app/csrf.py` | Origin 정확 일치와 `X-CSRF-Token` 검증 (`CsrfMember` 등) |
+| `app/idempotency.py` | `Idempotency-Key` 재현·충돌·동시 처리 (`run_idempotent`) |
+| `app/pagination.py` | `page`/`size` 의존성(`Pagination`)과 목록 응답 형식 |
+| `app/ratelimit.py` | 로그인·관리자 비밀번호용 429 제한 |
+
+### 오류 응답
+
+모든 실패는 `{"code", "message", "requestId", "fieldErrors"}`입니다. 업무 코드는 `raise ApiError(409, ErrorCode.STATE_CONFLICT)`처럼 발생시키며 `message`를 생략하면 기본 안내 문구를 씁니다. 형식이 잘못된 JSON은 400 `INVALID_REQUEST`, 필드 검증 실패는 입력값을 되풀이하지 않는 422 `VALIDATION_ERROR`(`fieldErrors`), 처리되지 않은 예외는 내부 정보 없는 500 `INTERNAL_ERROR`입니다. `/api/health`의 `{"detail": ...}` 응답만 배포 점검 계약이라 그대로 유지합니다(`UnstructuredHTTPException`).
+
+### 세션과 인가
+
+```python
+from app.auth import CurrentOwner, CurrentWorker, DbSession
+
+@router.get("/api/stores")
+def list_stores(owner: CurrentOwner, db: DbSession): ...
+```
+
+- 쿠키: 회원 `jidan_session`(HttpOnly, SameSite=Lax, Path=`/`, 유휴 24시간·절대 7일), 가입 `jidan_registration`(HttpOnly, SameSite=Lax, Path=`/api/auth`, 고정 10분). Domain은 설정하지 않습니다. `Secure`는 `production`(및 알 수 없는 `APP_ENV`)에서 항상 켜지며 `COOKIE_SECURE=false`이면 앱이 시작되지 않습니다(`ConfigurationError`). `dev`는 기본 Secure이고 HTTP로 접속하는 공용 개발 서버를 위해 `COOKIE_SECURE=false`만 허용하며, `local`은 기본 꺼짐입니다. `true`/`false` 외의 값(오타)은 조용히 무시하지 않고 시작을 거부합니다.
+- 서버에는 토큰 원문이 아니라 SHA-256 해시만 저장합니다(`auth_sessions`, `registration_sessions`). 역할·계정 상태는 매 요청 DB에서 확인합니다.
+- 오류: 세션 없음·만료·폐기 401 `SESSION_EXPIRED`, 가입 세션만 있음 401 `REGISTRATION_REQUIRED`, 역할 불일치 403 `FORBIDDEN`, 정지 계정 403 `ACCOUNT_SUSPENDED`(세션도 폐기). `require_owner`는 역할만 보므로 매장 소유·승인(APPROVED) 확인은 endpoint에서 합니다.
+- `create_session(user_id)`로 만든 `IssuedSession`을 `set_session_cookie(response, issued)`로 내려보냅니다. 가입 세션은 `create_registration_session(sub, email)`와 `set_registration_cookie`, 가입 완료 시 `consume_registration_session(id, db=db)`(한 번만 성공)를 씁니다. `db=`를 넘기면 호출자의 트랜잭션에 참여하고 생략하면 자체 트랜잭션으로 커밋합니다.
+- 토큰을 받는 `GET /api/auth/csrf`는 `principal.csrf_token`과 `principal.expires_at`을 응답하면 됩니다.
+
+### CSRF와 Origin
+
+변경 요청(GET·HEAD·OPTIONS 제외)은 `Origin`이 `ALLOWED_ORIGINS`(쉼표 구분, 예: `https://jidan.example.com,http://localhost:5173`)의 scheme/host/port와 정확히 같고 `X-CSRF-Token`이 세션에 바인딩된 값과 같아야 하며, 아니면 403 `CSRF_INVALID`입니다. 쓰기 endpoint는 `CsrfMember`·`CsrfOwner`·`CsrfWorker`·`CsrfRegistration`을 쓰고, 세션이 없는 endpoint(로그인·관리자 비밀번호)는 `Depends(require_allowed_origin)`만 씁니다. `ALLOWED_ORIGINS`가 비어 있으면 모든 변경 요청이 거절됩니다. 와일드카드는 지원하지 않습니다.
+
+### 멱등성
+
+```python
+@router.post("/api/stores", status_code=201)
+def create_store(body: StoreIn, owner: CsrfOwner, db: DbSession, key: IdempotencyKey):
+    def work() -> IdempotentResult:
+        store = ...  # db에 업무 변경을 쓴다. commit은 하지 않는다.
+        return IdempotentResult(201, {"id": store.id})
+
+    return run_idempotent(
+        db=db, principal=owner, key=key, method="POST",
+        path="/api/stores", body=body, handler=work,
+        revalidate=lambda: ensure_still_owner(db, owner),  # 재현 직전 권한 재확인
+    )
+```
+
+- 멱등성 주체(`subject_id`)는 회원 id가 아니라 **Google `sub`의 SHA-256**(`subject_id_for(principal)`)입니다. 회원 세션은 `users.google_sub`, 가입 세션은 검증된 Google `sub`를 쓰므로 같은 사람은 가입 전후에 같은 주체이고, 서로 다른 `sub`의 같은 key는 서로 무관합니다. 유일 키는 `(subject_id, idempotency_key)`이고 endpoint·body 해시가 다르면 409 `IDEMPOTENCY_KEY_REUSED`입니다.
+- 같은 key·endpoint·정규화 body는 24시간 동안 최초 응답을 재현하며 `Idempotent-Replayed: true`를 붙입니다. 다른 body·endpoint는 409 `IDEMPOTENCY_KEY_REUSED`입니다. key는 UUID(대소문자 무관)여야 하며 누락·형식 오류는 422입니다. **key 대소문자 정책**: 앱이 key를 소문자 UUID로 정규화해(`idempotency_key` 의존성) 저장·비교하므로 대문자 key와 소문자 key는 같은 key입니다(최초 요청을 재현, 저장 값은 소문자). 컬럼은 MySQL에서 `cs_char(36)`(`utf8mb4_0900_as_cs`)이라 정규화를 우회한 값이 DB에서 조용히 합쳐지지 않습니다. 같은 이유로 `subject_id`·`endpoint`(경로는 대소문자 구분)·`request_hash`·`state`와 세션 테이블의 `token_hash`·가입 세션 `google_sub`도 `cs_string`입니다. `google_email`은 이메일이므로 기본 collation을 유지합니다. 핸들러에서 `begin_nested()`를 써도 됩니다: 해제된 savepoint의 쓰기는 `run_idempotent`의 최종 commit에 포함되고 롤백된 savepoint는 미커밋 쓰기 감지(`UncommittedWriteError`)를 일으키지 않습니다(`tests/test_idempotency.py`).
+- 동시 같은 key는 DB 유니크 제약과 60초 임대(PROCESSING)로 한 번만 처리하고, 나머지는 최대 5초 기다렸다가 최초 응답을 재현합니다. 그래도 끝나지 않으면 409 `STATE_CONFLICT`와 `Retry-After`입니다(명세에 처리 중 전용 코드가 없어 재사용).
+- **재현되는 헤더**: `IdempotentResult(status, body, headers={...})`의 헤더는 허용 목록(`REPLAY_HEADERS`: `Location`, `Content-Location`, `ETag`)만 저장·재현합니다(`idempotency_records.response_headers`, 마이그레이션 0004). 목록 밖 헤더는 조용히 버리지 않고 `ValueError`로 거절하며, 재현 시에도 목록으로 다시 걸러냅니다. **`Set-Cookie`와 세션·토큰 비밀은 DB에 저장하지 않으며 재현되지 않습니다.** 쿠키는 결과가 아니라 호출자가 핸들러를 실제로 실행한 요청의 응답(`Idempotent-Replayed` 헤더 없음)에만 붙입니다. 재현 응답에는 항상 `Idempotent-Replayed: true`가 붙고 0004 이전 행은 헤더 없이 재현됩니다.
+- 예약 단계에서는 유니크 충돌과 락 대기 초과·데드락(MySQL 1205·1213, SQLite locked/busy)만 경합으로 보고 기다립니다. 연결 오류 등 그 밖의 DB 오류는 기다리지 않고 그대로 전파되어 500입니다(409 `STATE_CONFLICT` 아님).
+- 핸들러 호출과 재현 응답의 권한 재검사 직전에 `db.commit()`으로 읽기 스냅샷을 갱신하고 `db.expire_all()`로 기존 ORM 캐시도 만료합니다. 대기 중 계정 정지·접근 변경을 이전 상태로 판정하지 않도록 합니다. 그 전에 쓴 변경은 이때 함께 commit됩니다.
+- 업무 변경과 응답 저장은 한 트랜잭션으로 커밋되므로 핸들러가 직접 commit하면 안 됩니다. 핸들러가 예외를 내면 롤백하고 key를 풀어 재시도할 수 있습니다. 성공 결과만 저장합니다.
+- 만료 행은 같은 key가 다시 오면 교체되며, `purge_expired()`로 주기적으로 정리할 수 있습니다.
+
+#### #105 합의 사항: 가입 완료 endpoint의 멱등성
+
+| 항목 | 계약 |
+| --- | --- |
+| 주체 식별자 | `google_sub`(Google OIDC `sub`). `RegistrationPrincipal.google_sub`와 `MemberPrincipal.google_sub`(= `users.google_sub`)가 같은 값이어야 합니다. 저장은 `idempotency_records.subject_id = sha256(google_sub)` |
+| 주체 함수 | `app.idempotency.subject_id_for(principal) -> str`(64자 hex). `run_idempotent(db=, principal=, key=, method=, path=, body=, handler=, revalidate=)`가 내부에서 호출하므로 호출자가 직접 계산하지 않습니다 |
+| 의존성 | `CsrfMemberOrRegistration`(내부 `require_member_or_registration`): 회원 세션 우선, 없으면 가입 세션, 둘 다 없으면 401 `SESSION_EXPIRED`. 정지 계정은 403 `ACCOUNT_SUSPENDED` |
+| 연결 규칙 | 별도 연결 단계가 없습니다. 가입 전 기록은 `sha256(가입 세션의 google_sub)`로, 가입 후 회원 세션은 `sha256(users.google_sub)`로 조회하므로 같은 행을 찾습니다. 따라서 가입 트랜잭션은 **`users.google_sub`에 가입 세션의 `google_sub`를 그대로 저장**해야 합니다(정규화·소문자화 금지) |
+| 가입 트랜잭션(handler 안, `db`에 쓰고 commit 금지) | (1) 회원 세션 주체면 `ApiError(409, ALREADY_REGISTERED)`: 이미 기록이 있으면 handler까지 오지 않고 최초 응답이 재현되므로, handler에 들어온 회원 세션은 "동일 주체의 성공한 재시도"가 아닙니다. (2) `users`·프로필·(점주) 최초 매장 저장, (3) `consume_registration_session(registration_id, db=db)`가 False면 409 `STATE_CONFLICT`로 중단, (4) `create_session(user.id, db=db)`, (5) `IdempotentResult(201, 본문)` 반환 |
+| 응답 후 | `run_idempotent`가 업무 변경·응답 기록을 한 트랜잭션으로 commit한 뒤 반환하므로, 그 응답에 `set_session_cookie`로 새 회원 쿠키를 싣고 `clear_registration_cookie`로 가입 쿠키를 지웁니다. 재현 응답(`Idempotent-Replayed: true`)에는 새 세션을 만들지 않으므로 쿠키를 추가하지 않습니다(handler가 실행됐을 때만 발급). `Set-Cookie`는 DB에 저장되지 않으므로 재현되지 않습니다. 재현 요청은 이미 발급된 회원 세션 쿠키(또는 재로그인으로 얻은 세션)를 그대로 따르고, 가입 쿠키는 만료(10분)로 정리됩니다. 호출 규칙: `if "Idempotent-Replayed" not in response.headers:` 일 때만 쿠키를 설정하세요. `Location` 등은 `IdempotentResult(headers=)`로 넘기면 재현됩니다 |
+| 재현 | 같은 key·같은 body: 회원 세션이든 (같은 Google 계정으로 다시 로그인해 얻은) 가입 세션이든 최초 201을 재현. 다른 body·다른 endpoint: 409 `IDEMPOTENCY_KEY_REUSED`. 재현 직전에 `revalidate`가 양쪽 세션에서 호출됩니다 |
+| 쿠키까지 잃은 경우 | 가입이 이미 끝났다면 Google 재로그인은 회원 세션을 발급하므로 같은 key로 가입 endpoint를 재시도할 수 있습니다 |
+
+### commit과 응답 순서
+
+원칙(#103 공통 규칙과 동일): **commit이 끝나기 전에 2xx와 `Set-Cookie`를 보내지 않습니다.** commit이 실패하면 5xx이고 쿠키는 없습니다.
+
+| 경로 | 응답 전 commit 보장 |
+| --- | --- |
+| `run_idempotent` | 보장. 업무 변경과 응답 기록을 `db.commit()`한 뒤에만 반환합니다. 실패하면 롤백·key 해제 후 예외(5xx)이며 재시도할 수 있습니다 |
+| `create_session`·`revoke_session`·`create_registration_session`·`revoke_registration_session`·`revoke_user_sessions`를 `db=` 없이 호출 | 보장. 자체 트랜잭션이 반환 전에 commit됩니다 |
+| 위 함수들을 `db=db`로 호출 | **보장 아님**. 호출자의 commit을 기다립니다. `commit_then_set_session_cookie`·`commit_then_clear_session_cookie`·`commit_then_set_registration_cookie`·`commit_then_clear_registration_cookie`로 commit한 뒤에 쿠키를 설정하면 보장됩니다(예외 시 쿠키 없음) |
+| `set_session_cookie`·`clear_*_cookie`를 직접 호출 | 보장 아님. `get_session`이 응답 전에 commit하도록 #103이 고정될 때까지는 `commit_then_*`를 쓰세요 |
+| `consume_registration_session(db=db)` | commit하지 않음. 가입 handler(`run_idempotent` 안)에서 호출하면 응답 전 commit됩니다 |
+| 정지 계정 감지(`_resolve_member`) | 보장. 세션 폐기를 commit한 뒤 403을 냅니다 |
+| `last_seen_at` 갱신 | 요청 세션의 마지막 commit에 편승합니다. 실패해도 응답 의미가 바뀌지 않는 최적화입니다 |
+| 멱등성 예약·해제(`_reserve`·`_release`) | 자체 트랜잭션이 즉시 commit됩니다 |
+
+`tests/test_commit_before_cookie.py`에서 위 보장을 commit 실패 주입으로 검증합니다. 직접 쿠키 설정 후 요청 말미 commit이 실패하는 경우(`test_bare_cookie_setter_cannot_outrun_the_request_commit`)는 #103의 `get_session` 규칙에 의존하며 그 반영 전에는 strict xfail입니다.
+
+### 페이지네이션과 레이트 리미터
+
+- `Pagination` 의존성은 `page`(0부터, 기본 0, 최대 1,000,000)와 `size`(1~100, 기본 20)를 검증합니다. 숫자가 아니거나 범위를 벗어나거나 중복되면 422 `VALIDATION_ERROR`이고, 끝 페이지를 넘기면 오류가 아니라 빈 `items`입니다. `page_response(items, total, params)`로 응답을 만듭니다.
+- `enforce_login_rate_limit`(분당 20회/IP)는 확인과 기록을 한 번의 잠금(`hit`)으로 처리해 동시 요청이 한도를 넘지 못합니다.
+- 관리자 비밀번호는 `attempt: AdminAttempt`(= `enforce_admin_password_rate_limit`) 의존성이 요청 시작 시 IP별(10분 5회)·전체(10분 50회) 시도 횟수를 **원자적으로 확보(reserve)** 하고, 한도를 넘으면 `Retry-After`와 429 `RATE_LIMITED`입니다. endpoint는 비밀번호가 틀리면 `attempt.failed()`, 맞으면 `attempt.succeeded()`를 정확히 한 번 호출합니다. 성공하면 확보한 슬롯을 돌려주고(전체·IP 모두) 해당 IP의 끝난 실패 기록을 초기화하되, 아직 진행 중인 다른 시도의 슬롯은 유지합니다. 결과를 보고하지 않고 끝난 요청(예외·검증 실패)은 실패로 남습니다. 전체 한도는 성공해도 초기화되지 않습니다.
+
+### 환경변수
+
+| 이름 | 용도 |
+| --- | --- |
+| `ALLOWED_ORIGINS` | 변경 요청을 허용할 Origin 목록. 비우면 모두 거절 |
+| `COOKIE_SECURE` | 생략·빈 값·`true`·`false`만 허용(그 외는 시작 실패). `production`에서 `false`는 시작 실패, `dev`만 `false`로 끌 수 있음. 생략 시 `local`은 끔, 그 외는 켬 |
+| `TRUST_FORWARDED_FOR` | `true`면 프록시가 덧붙인 `X-Forwarded-For` 마지막 항목을 클라이언트 IP로 사용 |
+
+### 한계
+
+- 레이트 리미터는 프로세스 메모리에만 있어 워커·서버가 여럿이면 카운터가 공유되지 않고(실제 한도 = 한도 × 프로세스 수) 재시작하면 초기화됩니다. 정확한 제한이 필요하면 DB나 캐시로 옮겨야 합니다.
+- 레이트 리미터는 추적 키를 최대 10,000개로 제한합니다. 만료된 키만 앞에서 하나씩 제거하고(분할상환 O(1)), 아직 창 안에 있는 키는 한도 초기화를 막기 위해 절대 밀어내지 않습니다. 가득 차면 **새 키를 429(fail-closed)** 로 거절하므로 서로 다른 주소를 대량으로 보내면 새 클라이언트가 최대 한 창(로그인 60초·관리자 600초) 대기할 수 있습니다(DoS 특성). CPU 소모나 기존 한도 초기화는 불가능합니다. `TRUST_FORWARDED_FOR=true`는 클라이언트가 키를 위조할 수 없을 때(신뢰 프록시가 헤더를 덧붙일 때)만 켜세요.
+- 세션 만료 시각 갱신은 최대 1분 간격으로만 기록하며, 만료된 세션·멱등성 행의 정기 삭제 작업은 아직 없습니다.
+- 가입 세션 쿠키는 Path가 `/api/auth`라 그 아래 endpoint에서만 전송됩니다.
+- 관리자 비밀번호 API는 비밀번호가 body에 있어 `page`/`size`를 body에서 받습니다. `Pagination`은 query 전용이므로 body 검증은 해당 endpoint 모델에서 같은 범위(0 이상, 1~100)로 맞춥니다.
+
 ## API 설계
 
 [Figma 기반 OpenAPI 명세](openapi.yaml)를 제공합니다.

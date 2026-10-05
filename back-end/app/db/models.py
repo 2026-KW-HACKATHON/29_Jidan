@@ -10,9 +10,11 @@ which makes a CHECK on it ineffective.
 """
 
 from datetime import date, datetime, time
+from typing import Any
 
 from sqlalchemy import (
     CHAR,
+    JSON,
     Boolean,
     CheckConstraint,
     Computed,
@@ -29,7 +31,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 
 from app.db.checks import digits_only, not_blank
-from app.db.types import UtcDateTime, cs_string, new_uuid, normalize_optional_text, utcnow
+from app.db.types import UtcDateTime, cs_char, cs_string, new_uuid, normalize_optional_text, utcnow
 
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_N_name)s",
@@ -445,3 +447,77 @@ class StoreAccessGrant(Base):
     granted_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     valid_until: Mapped[datetime | None] = mapped_column(UtcDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class AuthSession(Base):
+    """Server-side member session. Only the SHA-256 of the cookie token is stored."""
+
+    __tablename__ = "auth_sessions"
+    __table_args__ = (Index("ix_auth_sessions_user_id", "user_id"),)
+
+    id: Mapped[str] = _id()
+    token_hash: Mapped[str] = mapped_column(cs_string(64), unique=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)  # absolute limit
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class RegistrationSession(Base):
+    """Google-verified identity that has not registered yet; fixed 10 minute lifetime."""
+
+    __tablename__ = "registration_sessions"
+    __table_args__ = (Index("ix_registration_sessions_expires_at", "expires_at"),)
+
+    id: Mapped[str] = _id()
+    token_hash: Mapped[str] = mapped_column(cs_string(64), unique=True)
+    google_sub: Mapped[str] = mapped_column(cs_string(255))
+    google_email: Mapped[str] = mapped_column(String(320))
+    email_verified: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+IDEMPOTENCY_STATES = ("PROCESSING", "COMPLETED")
+
+
+class IdempotencyRecord(Base):
+    """One `Idempotency-Key` per subject, kept 24 hours (app.idempotency).
+
+    The request body is stored only as a hash. A PROCESSING row is a short lease held by the
+    request that is doing the work; COMPLETED rows carry the response to replay.
+    """
+
+    __tablename__ = "idempotency_records"
+    __table_args__ = (
+        UniqueConstraint("subject_id", "idempotency_key"),
+        CheckConstraint(_in("state", IDEMPOTENCY_STATES), name="state"),
+        CheckConstraint(
+            "(state = 'PROCESSING' AND response_status IS NULL)"
+            " OR (state = 'COMPLETED' AND response_status IS NOT NULL)",
+            name="state_consistency",
+        ),
+        Index("ix_idempotency_records_expires_at", "expires_at"),
+    )
+
+    id: Mapped[str] = _id()
+    # SHA-256 hex of the Google `sub` (app.idempotency.subject_id_for): the same value before
+    # and after registration, so records follow the person from registration session to member.
+    subject_id: Mapped[str] = mapped_column(cs_string(64))
+    # Stored as a lower-case UUID (app.idempotency.idempotency_key normalizes); cs_char keeps
+    # MySQL from folding case if something bypasses that.
+    idempotency_key: Mapped[str] = mapped_column(cs_char(36))
+    endpoint: Mapped[str] = mapped_column(cs_string(255))  # "METHOD /path"; paths are case-sensitive
+    request_hash: Mapped[str] = mapped_column(cs_string(64))
+    state: Mapped[str] = mapped_column(cs_string(16))
+    lock_token: Mapped[str | None] = mapped_column(CHAR(36))
+    locked_until: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    response_status: Mapped[int | None] = mapped_column(Integer)
+    response_body: Mapped[Any | None] = mapped_column(JSON)
+    # Allow-listed headers only (app.idempotency.REPLAY_HEADERS); never cookies or secrets.
+    response_headers: Mapped[dict[str, str] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
