@@ -2,12 +2,13 @@ import type { ManualService,Operation,RequestOptions,Result } from '../manual/se
 import {schemas} from '../manual/contract.generated'
 import {matches} from '../manual/validation'
 import { ManualError } from '../manual/service'
-import type { Operations,ManualInterviewSession,ManualIntentReview,ManualInterviewAnswer,ManualInterviewCorrection } from '../manual/types'
+import type { Operations,ManualInterviewSession,ManualIntentReview,ManualInterviewAnswer,ManualInterviewCorrection,ManualInterviewPhotoUpdate } from '../manual/types'
 import { interviewFixture,manualStoreId,stateFixture,reviewFixture } from './manualFixtures'
 export function createManualPreviewService(resume=false,scenario=''):ManualService {
  const asSession=(value:unknown):ManualInterviewSession=>{if(!matches(schemas.ManualInterviewSession,value,schemas))throw new ManualError('INVALID_PREVIEW_SESSION');return value as ManualInterviewSession}
  let session:ManualInterviewSession=structuredClone(interviewFixture)
  let started=resume||!!scenario,count=0,sequence=0
+ const media=new Map<string,Blob>()
  const reviews=new Map<string,ManualIntentReview>(),results=new Map<string,unknown>(),transcriptions=new Map<string,string>(),turns:Operations['getManualInterviewTurns']['output']['items']=[]
  const stages=['WORK_STRUCTURE','COMMON_TASKS','SHIFT_TASKS','COMPLEMENTS'] as const
  session.intents=stages.map((stage,i)=>({...session.intents[0],id:i===0?session.intents[0].id:crypto.randomUUID(),stage,key:['근무조와 시간','공통 업무','근무별 업무','규정·설비'][i],depth:0,coverage:'PENDING',finishedAt:null}))
@@ -30,12 +31,14 @@ export function createManualPreviewService(resume=false,scenario=''):ManualServi
     }
     data=session;break
    }
-   case 'uploadManualMedia':data={id:crypto.randomUUID(),storeId:manualStoreId,purpose:(input as FormData).get('purpose'),mimeType:'audio/webm',sizeBytes:1000,createdAt:new Date().toISOString()};break
+   case 'uploadManualMedia':{const file=(input as FormData).get('file') as Blob,id=crypto.randomUUID();media.set(id,file);data={id,storeId:manualStoreId,purpose:(input as FormData).get('purpose'),mimeType:file.type,sizeBytes:file.size,createdAt:new Date().toISOString()};break}
+   case 'readManualPhoto':{const blob=media.get(params.mediaId);data=blob??new Blob([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j7XcAAAAASUVORK5CYII='),c=>c.charCodeAt(0))],{type:'image/png'});break}
    case 'createManualTranscription':{const id=crypto.randomUUID();transcriptions.set(id,(input as {mediaId:string}).mediaId);data={id,mediaId:(input as {mediaId:string}).mediaId,status:'RUNNING',text:null,error:null,createdAt:new Date().toISOString(),completedAt:null};break}
    case 'getManualTranscription':data={id:params.transcriptionId,mediaId:transcriptions.get(params.transcriptionId),status:'READY',text:'샘플 음성 답변',error:null,createdAt:new Date().toISOString(),completedAt:new Date().toISOString()};break
    case 'answerManualInterviewQuestion':{const answer=input as ManualInterviewAnswer;if(answer.expectedRevision!==session.revision||answer.questionId!==session.questions[0]?.id)throw new ManualError('REVISION_CONFLICT');count++;turns.push({id:crypto.randomUUID(),sequence:++sequence,intentId:session.currentIntentId!,kind:'ANSWER',speaker:'OWNER',questionKind:null,depth:session.questions[0].depth,batchId:null,replyToQuestionId:answer.questionId,inputMethod:'VOICE',content:'샘플 음성 답변',photoIds:[],createdAt:new Date().toISOString()});session=asSession({...session,revision:session.revision+1,status:'IN_PROGRESS',error:null,completedAt:null,phase:'PROCESSING',questions:[],processing:{taskId:crypto.randomUUID(),kind:'EVALUATION',attempt:1}});data=session;break}
    case 'listManualIntentReviews':data={sessionId:session.id,sessionRevision:session.revision,items:[...reviews.values()]};break
    case 'getManualIntentReview':data=reviews.get(params.intentId);break
+   case 'replaceManualInterviewReviewPhotos':{const r=reviews.get(params.intentId)!,update=input as ManualInterviewPhotoUpdate;if(update.expectedRevision!==r.revision)throw new ManualError('REVISION_CONFLICT');if(r.status!=='READY'||!r.content)throw new ManualError('MANUAL_STATE_CONFLICT');if(update.target==='SECTION'&&!r.content.sections.some(s=>s.id===update.sectionId))throw new ManualError('MANUAL_REFERENCE_CONFLICT');data={...r,revision:r.revision+1,confirmedAt:null,content:{...r.content,...(update.target==='WORK_STRUCTURE'?{structurePhotos:update.photos}:{sections:r.content.sections.map(section=>section.id===update.sectionId?{...section,photos:update.photos}:section)})}};reviews.set(params.intentId,data as ManualIntentReview);break}
    case 'correctManualInterviewUnderstanding':{const r=reviews.get(params.intentId)!,correction=input as ManualInterviewCorrection;if(correction.expectedRevision!==r.revision)throw new ManualError('REVISION_CONFLICT');data={...r,revision:r.revision+1,status:'READY',confirmedAt:null,content:{...r.content,summary:'수정한 내용을 반영했어요. 야간조는 오전 6시에 끝나요.'}};reviews.set(params.intentId,data as ManualIntentReview);break}
    case 'confirmManualInterviewUnderstanding':{const r=reviews.get(params.intentId)!;data={...r,revision:r.revision+1,confirmedAt:new Date().toISOString()};reviews.set(params.intentId,data as ManualIntentReview);break}
    case 'retryManualIntentReview':{const r=reviews.get(params.intentId)!;data={...r,revision:r.revision+1,status:'READY',error:null,processing:null};reviews.set(params.intentId,data as ManualIntentReview);break}
