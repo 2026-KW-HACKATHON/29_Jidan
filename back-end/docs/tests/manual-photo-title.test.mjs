@@ -9,3 +9,10 @@ test('사진 이름과 설명을 독립적으로 보존하며 설명 없이도 �
  for(const title of [undefined,null,'','   ','가'.repeat(101)]) assert.equal(validate({...photo,title}),false);
  assert.equal(validate({...photo,caption:'가'.repeat(301)}),false);
 });
+
+// 기본 이름의 생성·유지는 프론트 구현에서 검증하며 여기서는 전송 계약을 확인합니다.
+test('MVP 사진 연결은 기본 이름과 null 설명으로 사용자 입력 없이 가능',()=>{
+ assert.ok(validate({mediaId:photo.mediaId,title:'사진 1',caption:null}));
+ assert.ok(validate({mediaId:photo.mediaId,title:'사진 12',caption:null}));
+ assert.equal(validate({mediaId:photo.mediaId,caption:null}),false);
+});

@@ -17440,7 +17440,7 @@ components:
           minLength: 1
           maxLength: 100
           pattern: \S
-          description: '사진 이름. 예: 재고 배치, 열쇠 위치. caption은 별도의 선택 설명입니다.'
+          description: '사진 이름. 예: 재고 배치, 열쇠 위치. caption은 별도의 선택 설명입니다. MVP는 이름 입력 없이 앱이 최초 연결 시 사진 1 같은 기본 이름을 부여하고 caption=null을 보냅니다. 재조회·재시도·순서 변경 시 저장한 이름을 유지합니다.'
       required:
       - mediaId
       - caption
