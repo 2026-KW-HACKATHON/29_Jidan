@@ -11,7 +11,9 @@ Two kinds of session exist (docs/auth-design.md):
   proves a Google identity that has not registered yet and never opens member APIs.
 """
 
+import base64
 import hashlib
+import hmac
 import os
 import secrets
 from collections.abc import Iterator
@@ -59,12 +61,18 @@ class IssuedSession:
     def max_age(self) -> int:
         return max(0, int((self.expires_at - utcnow()).total_seconds()))
 
+    @property
+    def csrf_token(self) -> str:
+        return csrf_token_for(self.token)
+
 
 @dataclass(frozen=True)
 class MemberPrincipal:
     user_id: str
     role: str
     session_id: str
+    csrf_token: str = field(repr=False)  # the synchronizer token bound to this session
+    expires_at: datetime  # absolute session limit
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,8 @@ class RegistrationPrincipal:
     google_sub: str
     google_email: str
     email_verified: bool
+    csrf_token: str = field(repr=False)
+    expires_at: datetime
 
 
 def generate_token() -> str:
@@ -81,6 +91,16 @@ def generate_token() -> str:
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def csrf_token_for(session_token: str) -> str:
+    """The CSRF synchronizer token of a session, derived from its secret cookie token.
+
+    A page can read it through GET /api/auth/csrf, but a cross-site attacker cannot: it does
+    not know the HttpOnly cookie. Nothing extra is stored, and a new session means a new token.
+    """
+    digest = hmac.new(session_token.encode("utf-8"), b"jidan-csrf-v1", hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 def cookie_secure() -> bool:
@@ -236,7 +256,10 @@ def _find_registration(db: Session, token: str | None) -> RegistrationPrincipal 
     ).scalar_one_or_none()
     if row is None or row.consumed_at is not None or row.expires_at <= utcnow():
         return None
-    return RegistrationPrincipal(row.id, row.google_sub, row.google_email, row.email_verified)
+    return RegistrationPrincipal(
+        row.id, row.google_sub, row.google_email, row.email_verified, csrf_token_for(token),
+        row.expires_at,
+    )
 
 
 def _session_missing(db: Session, request: Request) -> ApiError:
@@ -275,7 +298,9 @@ def _resolve_member(request: Request, db: Session) -> MemberPrincipal | None:
         raise ApiError(403, ErrorCode.ACCOUNT_SUSPENDED)
     if now - auth_session.last_seen_at >= LAST_SEEN_REFRESH_INTERVAL:
         auth_session.last_seen_at = now
-    return MemberPrincipal(user.id, user.role, auth_session.id)
+    return MemberPrincipal(
+        user.id, user.role, auth_session.id, csrf_token_for(token), auth_session.expires_at,
+    )
 
 
 def optional_member(
