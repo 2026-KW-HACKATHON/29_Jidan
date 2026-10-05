@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -702,3 +702,52 @@ def test_unrelated_sqlite_operational_errors_propagate(db_engine, monkeypatch):
             db=db, principal=caller.principal, key=new_key(), method="POST", path="/p",
             body={"a": 1}, handler=lambda: IdempotentResult(201),
         )
+
+
+# --- the handler reads a fresh snapshot after waiting ----------------------------------------
+
+@pytest.fixture
+def mysql_caller_env(mysql_engine, monkeypatch):
+    from app.db.models import Base
+
+    yield mysql_engine
+    with mysql_engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
+
+
+@pytest.mark.mysql
+def test_handler_sees_data_committed_while_it_waited_for_the_key(mysql_caller_env):
+    """MySQL REPEATABLE READ: the snapshot opened when the request authenticated must not
+    leak into the handler that runs after waiting for another request's lease."""
+    engine = mysql_caller_env
+    caller = Caller(engine)
+    key = new_key()
+    body = {"a": 1}
+    processing_record(engine, caller, key, body, lease=timedelta(minutes=1), path="/p")
+    seen = {}
+
+    def late_request():
+        with session_scope() as db:
+            db.execute(select(func.count()).select_from(User))  # authentication's read
+            def work():
+                seen["late"] = db.scalar(
+                    select(func.count()).select_from(User).where(User.name == "from-the-first")
+                )
+                return IdempotentResult(201, {"ok": True})
+
+            run_idempotent(
+                db=db, principal=caller.principal, key=key, method="POST", path="/p",
+                body=body, handler=work,
+            )
+
+    worker = threading.Thread(target=late_request)
+    worker.start()
+    time.sleep(0.5)  # the late request is now polling behind the first one
+    with Session(engine) as first:
+        make_user(first, "WORKER", name="from-the-first")
+        first.execute(update(IdempotencyRecord).values(locked_until=utcnow() - timedelta(seconds=1)))
+        first.commit()  # the first request commits its data, then its lease lapses
+    worker.join(timeout=30)
+    assert not worker.is_alive()
+    assert seen["late"] == 1

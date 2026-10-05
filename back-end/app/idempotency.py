@@ -285,6 +285,12 @@ def run_idempotent(
         time.sleep(POLL_INTERVAL_SECONDS)
 
     try:
+        # The request's transaction was opened by authentication, possibly seconds ago (we may
+        # have waited above). Under MySQL REPEATABLE READ the handler would read that old
+        # snapshot and miss what the earlier request committed meanwhile. End it explicitly so
+        # the handler's first read opens a fresh one. Anything written before this call is
+        # committed (never silently dropped); the handler's own writes commit below.
+        db.commit()
         result = handler()
         _complete(db, outcome, result)
         db.commit()
