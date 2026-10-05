@@ -9375,7 +9375,7 @@ paths:
       description: |-
         ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
 
-        본인의 지원서와 공고 조건, 현재 상태를 반환합니다. 공고가 마감되어도 본인 이력은 유지합니다. APPLIED/REQUESTED일 때만 철회할 수 있으며 확정된 근무의 취소는 별도 제품 정책입니다.
+        본인의 지원서와 공고 조건, 현재 상태를 반환합니다. 공고가 마감되어도 본인 이력은 유지합니다. APPLIED/REQUESTED일 때만 철회할 수 있으며 근무자의 확정 철회 API는 이번 범위에 없습니다. 점주는 근무 시작 전 별도 confirmation-withdrawal API로 확정을 철회하며 이 지원은 APPLIED로 복구됩니다.
 
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
       security:
@@ -14366,7 +14366,7 @@ paths:
 
         첨부 수정 디자인의 확정 철회하기입니다. 사용자 확정 정책: 근무 시작 전까지만 허용하며 now < job.startAt을 공고 잠금 안에서 검증합니다. startAt과 같은 시각부터는 409 JOB_ALREADY_STARTED입니다. 해당 공고의 현재 ACCEPTED 확정 요청과 expectedRevision 일치가 필요하며 다른 매장·공고 귀속/타인 요청은 404입니다.
 
-        ACCEPTED→CONFIRMATION_WITHDRAWN으로 변경하고 수락 시각 respondedAt은 보존, endedAt은 철회 시각으로 갱신합니다. 이 요청이 생성한 TEMPORARY 접근만 REVOKED/revokedAt=철회 시각/permissions=[]로 종료합니다. 캘린더 연결을 해제하여 활성 캘린더 응답에서 제외하되 확정·접근·일정 감사 이력은 삭제하지 않습니다. 다른 REGULAR 접근이나 다른 공고의 TEMPORARY 접근은 변경하지 않습니다.
+        ACCEPTED→CONFIRMATION_WITHDRAWN으로 변경하고 수락 시각 respondedAt은 보존, endedAt은 철회 시각으로 갱신합니다. 이 요청이 생성한 TEMPORARY 접근만 REVOKED/permissions=[]로 종료합니다. 신규 종료이면 revokedAt=철회 시각이고, 이미 REVOKED이면 최초 revokedAt을 유지하여 기존 수동 종료 이력을 덮어쓰지 않습니다. 캘린더 연결을 해제하여 활성 캘린더 응답에서 제외하되 확정·접근·일정 감사 이력은 삭제하지 않습니다. 다른 REGULAR 접근이나 다른 공고의 TEMPORARY 접근은 변경하지 않습니다.
 
         해당 공고의 확정 슬롯을 해제하고 지원 CONFIRMED→APPLIED로 복구합니다. 수락 시 그 확정 requestId 때문에 NOT_SELECTED가 된 지원만 원인 이력으로 식별해 APPLIED로 복구합니다. WITHDRAWN/개별 종료/다른 확정에 따른 이력은 되살리지 않습니다. 수락 당시의 변경 원인·이전 상태·대상 지원 ID를 저장하여 정확히 복구해야 합니다. 이후 점주는 다른 지원자를 선택하거나 별도 모집 마감 API를 호출합니다. 자동 마감하지 않습니다.
 
@@ -14473,27 +14473,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkRequest'
-              example:
-                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
-                jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
-                workerName: 박지원
-                status: CONFIRMATION_WITHDRAWN
-                requestedAt: '2026-10-05T01:00:00Z'
-                expiresAt: '2026-10-05T02:00:00Z'
-                respondedAt: '2026-10-05T01:20:00Z'
-                endedAt: '2026-10-05T01:30:00Z'
-                revision: 3
-                accessGrant:
-                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
-                  type: TEMPORARY
-                  dutyLabel: 주말 오픈 대타
-                  startedAt: '2026-10-05T01:20:00Z'
-                  validUntil: '2026-10-10T05:00:00Z'
-                  revokedAt: '2026-10-05T01:30:00Z'
-                  status: REVOKED
-                  permissions: []
+              examples:
+                activeGrant:
+                  value:
+                    id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                    jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                    applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    workerName: 박지원
+                    status: CONFIRMATION_WITHDRAWN
+                    requestedAt: '2026-10-05T01:00:00Z'
+                    expiresAt: '2026-10-05T02:00:00Z'
+                    respondedAt: '2026-10-05T01:20:00Z'
+                    endedAt: '2026-10-05T01:30:00Z'
+                    revision: 3
+                    accessGrant:
+                      id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                      type: TEMPORARY
+                      dutyLabel: 주말 오픈 대타
+                      startedAt: '2026-10-05T01:20:00Z'
+                      validUntil: '2026-10-10T05:00:00Z'
+                      revokedAt: '2026-10-05T01:30:00Z'
+                      status: REVOKED
+                      permissions: []
+                alreadyRevokedGrant:
+                  value:
+                    id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                    jobId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                    applicationId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    workerId: 7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6
+                    workerName: 박지원
+                    status: CONFIRMATION_WITHDRAWN
+                    requestedAt: '2026-10-05T01:00:00Z'
+                    expiresAt: '2026-10-05T02:00:00Z'
+                    respondedAt: '2026-10-05T01:20:00Z'
+                    endedAt: '2026-10-05T01:30:00Z'
+                    revision: 3
+                    accessGrant:
+                      id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                      type: TEMPORARY
+                      dutyLabel: 주말 오픈 대타
+                      startedAt: '2026-10-05T01:20:00Z'
+                      validUntil: '2026-10-10T05:00:00Z'
+                      revokedAt: '2026-10-05T01:25:00Z'
+                      status: REVOKED
+                      permissions: []
       externalDocs:
         description: '사용자가 첨부한 수정 화면: 근무 확정 / 확정 철회하기'
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=698-2821

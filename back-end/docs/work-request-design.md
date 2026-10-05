@@ -25,3 +25,5 @@ flowchart TD
 확정 철회와 모집 마감은 별도 트랜잭션입니다. 시작 전 확정이 남아 있으면 마감은 CONFIRMATION_WITHDRAWAL_REQUIRED, 유효 대기 요청은 WORK_REQUEST_WITHDRAWAL_REQUIRED입니다. 근무 진행 중에는 JOB_IN_PROGRESS입니다. 완료 후 마감은 과거 확정/일정 이력을 보존합니다. 각 변경은 공고 잠금과 revision으로 경합을 직렬화하고 접근·일정·알림 outbox까지 원자 처리하는 구현 계약입니다.
 
 요청 생성 201 예시는 정상 1시간 기한과 시작 30분 전 요청(근무 시작 시 만료)을 구분합니다. 요청 상세의 실제 필드명은 expiresAt입니다.
+
+확정 철회 시 해당 접근이 이미 수동 종료(REVOKED)되어 있었다면 최초 revokedAt을 보존합니다. 확정 철회 시각은 요청 endedAt에 별도로 저장하여 기존 접근 종료 이력을 덮어쓰지 않습니다. 근무자 본인의 신청 철회는 APPLIED/REQUESTED에만 적용하며 확정 철회는 점주 API입니다.
