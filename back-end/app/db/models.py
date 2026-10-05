@@ -536,3 +536,6 @@ class OAuthTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     consumed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    cancelled_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    issued_session_id: Mapped[str | None] = mapped_column(CHAR(36))
+    issued_registration_id: Mapped[str | None] = mapped_column(CHAR(36))

@@ -35,6 +35,7 @@ def test_revisions_form_a_chain_on_top_of_the_untouched_baseline():
     assert script.get_revision("0003").down_revision == "0002"
     assert script.get_revision("0004").down_revision == "0003"
     assert script.get_revision("0005").down_revision == "0004"
+    assert script.get_revision("0006").down_revision == "0005"
 
 
 def test_upgrade_creates_every_baseline_table(engine):
@@ -54,7 +55,7 @@ def test_downgrade_one_step_then_upgrade_again(engine):
         connection.commit()
         columns = {c["name"] for c in inspect(connection).get_columns("idempotency_records")}
         assert "response_headers" in columns and "response_body" in columns
-        assert "oauth_transactions" not in inspect(connection).get_table_names()
+        assert "cancelled_at" not in {c["name"] for c in inspect(connection).get_columns("oauth_transactions")}
         command.upgrade(config, "head")
         connection.commit()
         assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())

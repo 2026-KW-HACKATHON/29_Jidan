@@ -15,7 +15,7 @@ from sqlalchemy import select, update
 from app import auth
 from app.auth_views import identity
 from app.db import SessionDep, utcnow
-from app.db.models import OAuthTransaction, User
+from app.db.models import AuthSession, OAuthTransaction, RegistrationSession, User
 from app.errors import ApiError, ErrorCode, error_response
 from app.ratelimit import enforce_login_rate_limit
 
@@ -51,10 +51,22 @@ def clear_oauth_cookies(response: Response) -> None:
 
 
 def revoke_oauth(db, token: str | None) -> None:
-    if token and len(token) <= auth.MAX_TOKEN_LENGTH:
-        db.execute(update(OAuthTransaction).where(
-            OAuthTransaction.token_hash == auth.hash_token(token), OAuthTransaction.consumed_at.is_(None),
-        ).values(consumed_at=utcnow()))
+    if not token or len(token) > auth.MAX_TOKEN_LENGTH:
+        return
+    row = db.scalar(select(OAuthTransaction).where(
+        OAuthTransaction.token_hash == auth.hash_token(token),
+    ).with_for_update().execution_options(populate_existing=True))
+    if row is None:
+        return
+    row.cancelled_at = utcnow()
+    # A callback may have committed while its Set-Cookie response is still in flight.
+    # Revoke by the recorded IDs, even when the browser has not received those cookies.
+    if row.issued_session_id:
+        db.execute(update(AuthSession).where(AuthSession.id == row.issued_session_id,
+                                            AuthSession.revoked_at.is_(None)).values(revoked_at=utcnow()))
+    if row.issued_registration_id:
+        db.execute(update(RegistrationSession).where(RegistrationSession.id == row.issued_registration_id,
+                   RegistrationSession.consumed_at.is_(None)).values(consumed_at=utcnow()))
 
 
 @router.get("/google")
@@ -122,13 +134,14 @@ def google_identity(code: str, nonce_hash: str) -> dict:
 @router.get("/google/callback")
 def callback(request: Request, db: SessionDep) -> Response:
     token = request.cookies.get(OAUTH_COOKIE)
+    claimed = False
     try:
         enforce_login_rate_limit(request)
         state = request.query_params.get("state", "")
         row = db.scalar(select(OAuthTransaction).where(
             OAuthTransaction.token_hash == auth.hash_token(token or ""),
         )) if token and len(token) <= auth.MAX_TOKEN_LENGTH else None
-        valid = (row is not None and row.consumed_at is None and row.expires_at > utcnow()
+        valid = (row is not None and row.consumed_at is None and row.cancelled_at is None and row.expires_at > utcnow()
                  and len(request.query_params.getlist("state")) == 1 and 32 <= len(state) <= 512
                  and hmac.compare_digest(row.state_hash, auth.hash_token(state)))
         nonce_hash = row.nonce_hash if valid else ""
@@ -136,9 +149,11 @@ def callback(request: Request, db: SessionDep) -> Response:
         if row is not None:
             spent = db.execute(update(OAuthTransaction).where(
                 OAuthTransaction.id == row.id, OAuthTransaction.consumed_at.is_(None),
+                OAuthTransaction.cancelled_at.is_(None),
             ).values(consumed_at=utcnow())).rowcount
             db.commit()
             valid = valid and spent == 1
+            claimed = valid
         if not valid:
             raise ApiError(400, ErrorCode.OAUTH_STATE_INVALID)
         code, error = request.query_params.get("code"), request.query_params.get("error")
@@ -154,6 +169,13 @@ def callback(request: Request, db: SessionDep) -> Response:
             response = RedirectResponse(origin + "/login?error=GOOGLE_ACCESS_DENIED", status_code=302)
         else:
             verified = google_identity(code, nonce_hash)
+            # Lock the same row as logout and re-read after provider I/O. This check and
+            # the new session/link commit form one transaction under MySQL as well.
+            row = db.scalar(select(OAuthTransaction).where(
+                OAuthTransaction.id == row.id,
+            ).with_for_update().execution_options(populate_existing=True))
+            if row is None or row.cancelled_at is not None or row.expires_at <= utcnow():
+                raise ApiError(400, ErrorCode.OAUTH_STATE_INVALID)
             user = db.scalar(select(User).where(User.google_sub == verified["sub"]))
             if user is not None and user.status != "ACTIVE":
                 auth.revoke_user_sessions(user.id, db=db)
@@ -163,6 +185,9 @@ def callback(request: Request, db: SessionDep) -> Response:
             auth.revoke_registration_session(request.cookies.get(auth.REGISTRATION_COOKIE_NAME, ""), db=db)
             if user is None:
                 issued = auth.create_registration_session(verified["sub"], verified["email"], db=db)
+                row.issued_registration_id = db.scalar(select(RegistrationSession.id).where(
+                    RegistrationSession.token_hash == auth.hash_token(issued.token),
+                ))
                 db.commit()
                 response = RedirectResponse(origin + "/__auth/signup", status_code=302)
                 auth.set_registration_cookie(response, issued)
@@ -170,6 +195,9 @@ def callback(request: Request, db: SessionDep) -> Response:
             else:
                 user.google_email, user.email_verified = verified["email"], True
                 issued = auth.create_session(user.id, db=db)
+                row.issued_session_id = db.scalar(select(AuthSession.id).where(
+                    AuthSession.token_hash == auth.hash_token(issued.token),
+                ))
                 db.commit()
                 response = RedirectResponse(origin + "/__auth/session", status_code=302)
                 auth.set_session_cookie(response, issued)
@@ -181,8 +209,9 @@ def callback(request: Request, db: SessionDep) -> Response:
         else:
             response = error_response(500, ErrorCode.INTERNAL_ERROR, "처리에 실패했습니다.")
         try:
-            revoke_oauth(db, token)
-            db.commit()
+            if claimed:
+                revoke_oauth(db, token)
+                db.commit()
         except Exception:  # noqa: BLE001 - DB outage must still return cleared cookies
             db.rollback()
             response = error_response(500, ErrorCode.INTERNAL_ERROR, "처리에 실패했습니다.")
