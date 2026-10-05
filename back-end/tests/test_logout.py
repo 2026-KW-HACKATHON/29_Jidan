@@ -43,7 +43,7 @@ def test_logout_all_browser_sessions_and_repeat(logout_api, db_engine):
         assert db.scalar(select(AuthSession).where(AuthSession.token_hash == auth.hash_token(member.token))).revoked_at
         assert db.scalar(select(AuthSession).where(AuthSession.token_hash == auth.hash_token(other_browser.token))).revoked_at is None
         assert db.scalar(select(RegistrationSession)).consumed_at
-        assert db.scalar(select(OAuthTransaction)).consumed_at
+        assert db.scalar(select(OAuthTransaction)).cancelled_at
     assert logout_api.post("/api/auth/logout", headers={"Origin": "http://frontend.test"}).status_code == 204
 
 
