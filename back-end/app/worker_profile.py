@@ -1,4 +1,6 @@
 """Session-owned worker profiles, serialized to the authoritative OpenAPI contract."""
+from datetime import time
+
 from fastapi import APIRouter
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -16,7 +18,7 @@ from app.db.models import (
     WorkerProfile,
 )
 from app.errors import ApiError, ErrorCode
-from app.profile_inputs import BasicInput, CareersInput
+from app.profile_inputs import AvailabilitiesInput, BasicInput, CareersInput
 
 router = APIRouter(prefix="/api/users/me/profile")
 
@@ -116,5 +118,28 @@ def replace_careers(body: CareersInput, member: CsrfWorker, db: SessionDep) -> d
                                duties=career.duties, store_name=career.storeName,
                                start_month=career.startMonth, end_month=career.endMonth,
                                is_current=career.isCurrent))
+        user.updated_at = utcnow()
+    return commit_profile(db, user)
+
+
+@router.put("/availabilities")
+def replace_availabilities(body: AvailabilitiesInput, member: CsrfWorker, db: SessionDep) -> dict:
+    user = lock_worker(db, member.user_id)
+    current = profile_body(db, user, lock=True)
+    groups = [{**group.model_dump(), "days": sorted(group.days, key=WEEKDAYS.index)}
+              for group in body.availabilities]
+    if current["availabilities"] != groups:
+        rule_ids = select(AvailabilityRule.id).where(AvailabilityRule.worker_id == user.id)
+        # No cascading deletes: remove FK children before their rules within one transaction.
+        db.execute(delete(AvailabilityDay).where(AvailabilityDay.rule_id.in_(rule_ids)))
+        db.execute(delete(AvailabilityRule).where(AvailabilityRule.worker_id == user.id))
+        for index, group in enumerate(body.availabilities):
+            rule = AvailabilityRule(worker_id=user.id, sort_order=index,
+                                    start_time=time.fromisoformat(group.startTime),
+                                    end_time=time.fromisoformat(group.endTime),
+                                    ends_next_day=group.endsNextDay)
+            db.add(rule)
+            db.flush()
+            db.add_all(AvailabilityDay(rule_id=rule.id, weekday=day) for day in group.days)
         user.updated_at = utcnow()
     return commit_profile(db, user)

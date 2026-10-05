@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 
-from app.registration_inputs import Career, Input, Name, Phone, WorkerInput
+from app.registration_inputs import Availability, Career, Input, Name, Phone, WorkerInput
 
 
 class BasicInput(Input):
@@ -45,3 +45,12 @@ class CareersInput(Input):
     @classmethod
     def career_count(cls, value, info: ValidationInfo):
         return WorkerInput.career_count(value, info)
+
+
+class AvailabilitiesInput(Input):
+    availabilities: Annotated[list[Availability], Field(min_length=1, max_length=100)]
+
+    @field_validator("availabilities")
+    @classmethod
+    def available_intervals(cls, value):
+        return WorkerInput.available_intervals(value)
