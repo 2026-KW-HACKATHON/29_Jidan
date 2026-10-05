@@ -53,3 +53,7 @@ npm run build --prefix back-end/docs -- /tmp/jidan-swagger-check
 ```
 
 Docker CI는 `DOCS_REVISION`에 GitHub Actions의 커밋 SHA를 전달하여 배포된 문서의 revision과 명세 SHA-256을 추적합니다. 업무 endpoint 전체 목록은 [검수 목록](remaining-api-inventory.md)에 있습니다.
+
+## 매뉴얼 작성 MVP 계획
+
+[점주 매뉴얼 작성 MVP 구현 계획](manual-authoring-mvp-plan.md)은 음성 답변·음성 정정·사진 업로드·최종 검토·게시의 프론트 구현 범위와 API 연결을 정의합니다. 전사 원문 확인, 직접 편집, 사진 이름·설명 편집은 MVP에서 제외합니다.
