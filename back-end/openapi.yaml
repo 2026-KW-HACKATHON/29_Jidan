@@ -19742,6 +19742,12 @@ components:
           $ref: '#/components/schemas/JobStoreCard'
         access:
           $ref: '#/components/schemas/StoreWorkerAccess'
+          properties:
+            accessStatus:
+              type: string
+              enum:
+              - ACTIVE
+              - EXPIRING
         publishedVersionId:
           type:
           - string
