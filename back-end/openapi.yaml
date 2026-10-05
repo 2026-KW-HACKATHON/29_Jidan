@@ -11407,6 +11407,8 @@ paths:
                 target:
                   type: WORK_SCHEDULE
                   eventId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                  storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                  workDate: '2026-10-10'
                 createdAt: '2026-10-05T01:00:00Z'
                 readAt: '2026-10-05T01:00:00Z'
       externalDocs:
@@ -11433,6 +11435,8 @@ paths:
         신규 지원·초대 수락·매장 승인·초대 만료·근무 요청·1시간 미응답·근무 확정·근무 전날 안내·게시 매뉴얼 갱신을 domain transaction outbox로 발행합니다. 이벤트 ID+수신자 유일성으로 재처리 중복을 방지합니다. 앱 내부 알림이며 외부 push 등록 API는 이번 화면에 없습니다.
 
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        점주 요청 철회는 WORK_REQUEST_WITHDRAWN, 확정 철회는 WORK_CONFIRMATION_WITHDRAWN으로 당사자에게 발행하며 target=WORK_REQUEST로 과거 요청 상태를 조회합니다. 수락/철회 트랜잭션 outbox와 이벤트+수신자 유일성을 적용합니다. 확정 철회 알림은 취소 일정으로 이동하지 않습니다. WORK_SCHEDULE은 workDate(서울 근무 시작일)로 월별 전체 캘린더를 조회하고 eventId를 강조합니다. 점주는 storeId 필터를 사용할 수 있습니다. 과거 확정 알림의 일정이 철회되어 없어졌다면 철회 안내를 표시하며 접근을 복구하지 않습니다.
       security:
       - SessionCookie: []
       parameters:
@@ -11527,6 +11531,8 @@ paths:
                   target:
                     type: WORK_SCHEDULE
                     eventId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    workDate: '2026-10-10'
                   createdAt: '2026-10-05T01:00:00Z'
                   readAt: null
                 page: 0
@@ -20091,9 +20097,19 @@ components:
           eventId:
             type: string
             format: uuid
+          storeId:
+            type: string
+            format: uuid
+          workDate:
+            type: string
+            format: date
         required:
         - type
         - eventId
+        - storeId
+        - workDate
+        description: 월별 전체 캘린더로 이동합니다. workDate는 Asia/Seoul의 근무 시작일이며 month=workDate 앞 7자로 조회 후 eventId를 강조합니다. 점주는
+          storeId를 선택 필터로 사용할 수 있습니다. 일정 상세 API를 요구하지 않습니다.
     NotificationPage:
       type: object
       additionalProperties: false
@@ -20147,6 +20163,8 @@ components:
           - STORE_INVITED
           - WORK_REMINDER
           - MANUAL_PUBLISHED
+          - WORK_REQUEST_WITHDRAWN
+          - WORK_CONFIRMATION_WITHDRAWN
         title:
           type: string
           minLength: 1
