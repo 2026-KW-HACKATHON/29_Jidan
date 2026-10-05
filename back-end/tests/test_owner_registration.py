@@ -84,9 +84,36 @@ def test_duplicate_business_number_is_not_access_grant(worker_api, db_engine, mo
         owner = make_user(db, "OWNER")
         make_store(db, owner, business_registration_number=OWNER["store"]["businessRegistrationNumber"])
         db.commit()
-    monkeypatch.setattr(registration, "verify_store_address", lambda store: pytest.fail("duplicate must stop first"))
+    monkeypatch.setattr(registration, "verify_store_address", lambda store: store.address)
     r = worker_api.post("/api/auth/registrations/owners", json=OWNER, headers=headers(worker_api))
     assert r.status_code == 409 and r.json()["code"] == "STORE_ALREADY_REGISTERED"
     with Session(db_engine) as db:
         assert db.scalar(select(func.count()).select_from(User)) == 1
         assert db.scalar(select(func.count()).select_from(Store)) == 1
+
+
+def test_address_validation_precedes_account_lock_and_write(worker_api, db_engine, monkeypatch):
+    from sqlalchemy import event
+    statements = []
+    def observe(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement.lower())
+    event.listen(db_engine, "before_cursor_execute", observe)
+    calls = []
+    def validate(store):
+        assert not any("for update" in sql or "insert into users" in sql for sql in statements)
+        calls.append(store.address)
+        return store.address
+    monkeypatch.setattr(registration, "verify_store_address", validate)
+    try:
+        h = headers(worker_api)
+        response = worker_api.post("/api/auth/registrations/owners", json=OWNER, headers=h)
+        assert response.status_code == 201
+        retry = worker_api.post("/api/auth/registrations/owners", json=OWNER,
+                                headers=headers(worker_api, h["Idempotency-Key"]))
+        assert retry.status_code == 201
+        assert len(calls) == 1
+        rejected = worker_api.post("/api/auth/registrations/owners", json=OWNER, headers=headers(worker_api))
+        assert rejected.status_code == 409
+        assert len(calls) == 1
+    finally:
+        event.remove(db_engine, "before_cursor_execute", observe)

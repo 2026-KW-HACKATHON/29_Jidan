@@ -111,13 +111,17 @@ def register_worker(body: WorkerInput, principal: CsrfMemberOrRegistration,
 def register_owner(body: OwnerInput, principal: CsrfMemberOrRegistration,
                    db: SessionDep, key: IdempotencyKey):
     def create():
-        user = new_user(db, principal, body, "OWNER")
+        # Only the first idempotent execution reaches the provider. No account write or
+        # registration-row lock is held while waiting for the external service.
+        if not isinstance(principal, auth.RegistrationPrincipal):
+            raise ApiError(409, ErrorCode.ALREADY_REGISTERED)
         store = body.store
+        canonical_address = verify_store_address(store)
+        user = new_user(db, principal, body, "OWNER")
         if db.scalar(select(Store.id).where(
             Store.business_registration_number == store.businessRegistrationNumber,
         )) is not None:
             raise ApiError(409, ErrorCode.STORE_ALREADY_REGISTERED)
-        canonical_address = verify_store_address(store)
         row = Store(owner_id=user.id, name=store.name, industry=store.industry,
                     postal_code=store.postalCode, address=canonical_address,
                     detail_address=store.detailAddress,
