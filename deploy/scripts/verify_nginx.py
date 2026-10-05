@@ -24,7 +24,7 @@ def verify():
             (config / f"{environment}.conf").write_text((ROOT / "deploy/nginx" / f"{environment}.conf").read_text())
         # The dev upstream responds; the production upstream refuses connections. Both
         # success and proxy-error callback requests must suppress their query logs.
-        (config / "upstream.conf").write_text("server { listen 3021; location / { return 200 'ok'; } }\n")
+        (config / "upstream.conf").write_text("server { listen 3021; access_log off; error_log /dev/null crit; location / { return 200 'ok'; } }\n")
         mount = f"{config}:/etc/nginx/conf.d:ro"
         docker("run", "--rm", "--volume", mount, IMAGE, "nginx", "-t")
         container = docker("run", "--detach", "--publish", "127.0.0.1::80", "--volume", mount, IMAGE)
