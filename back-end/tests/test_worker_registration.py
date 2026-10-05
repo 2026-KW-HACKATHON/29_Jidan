@@ -113,3 +113,24 @@ def test_write_guards(worker_api, kind):
     if kind == "key": values.pop("Idempotency-Key")
     r = worker_api.post("/api/auth/registrations/workers", json=WORKER, headers=values)
     assert r.status_code == (422 if kind == "key" else 403)
+
+
+@pytest.mark.parametrize("change", [
+    {"startMonth": "0000-01"}, {"startMonth": "2999-01"},
+    {"startMonth": "2024-03", "endMonth": "2024-02", "isCurrent": False},
+    {"endMonth": "2024-04"}, {"storeName": None}, {"storeName": " "},
+])
+def test_invalid_careers(change):
+    career = {"industry": "CAFE", "duties": "음료 제조", "startMonth": "2024-03", "endMonth": None,
+              "isCurrent": True, **change}
+    with pytest.raises(ValidationError):
+        WorkerInput.model_validate({**WORKER, "experienceLevel": "EXPERIENCED", "careers": [career]})
+
+
+def test_career_optional_store_and_24_hour_availability():
+    model = WorkerInput.model_validate({**WORKER, "experienceLevel": "EXPERIENCED", "careers": [
+        {"industry": "CAFE", "duties": "음료 제조", "startMonth": "2024-03", "endMonth": None, "isCurrent": True},
+    ], "availabilities": [
+        {"days": ["SUN"], "startTime": "09:00", "endTime": "09:00", "endsNextDay": True},
+    ]})
+    assert model.careers[0].storeName is None

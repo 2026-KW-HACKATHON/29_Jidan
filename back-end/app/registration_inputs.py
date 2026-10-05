@@ -30,6 +30,13 @@ class Career(Input):
     endMonth: Month | None
     isCurrent: Annotated[bool, Field(strict=True)]
 
+    @field_validator("storeName", mode="before")
+    @classmethod
+    def non_null_store_name(cls, value):
+        if value is None:
+            raise ValueError("Omit optional storeName instead of null")
+        return value
+
     @model_validator(mode="after")
     def months(self):
         current = today().strftime("%Y-%m")
