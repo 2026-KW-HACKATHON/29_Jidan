@@ -157,7 +157,8 @@ def create_store(body: StoreIn, owner: CsrfOwner, db: DbSession, key: Idempotenc
 ### 페이지네이션과 레이트 리미터
 
 - `Pagination` 의존성은 `page`(0부터, 기본 0, 최대 1,000,000)와 `size`(1~100, 기본 20)를 검증합니다. 숫자가 아니거나 범위를 벗어나거나 중복되면 422 `VALIDATION_ERROR`이고, 끝 페이지를 넘기면 오류가 아니라 빈 `items`입니다. `page_response(items, total, params)`로 응답을 만듭니다.
-- `enforce_login_rate_limit`(분당 20회/IP), `enforce_admin_password_rate_limit`과 `record_admin_password_failure`·`record_admin_password_success`(실패만 집계, 10분에 IP당 5회·전체 50회)는 초과 시 `Retry-After`와 429 `RATE_LIMITED`를 반환합니다.
+- `enforce_login_rate_limit`(분당 20회/IP)는 확인과 기록을 한 번의 잠금(`hit`)으로 처리해 동시 요청이 한도를 넘지 못합니다.
+- 관리자 비밀번호는 `attempt: AdminAttempt`(= `enforce_admin_password_rate_limit`) 의존성이 요청 시작 시 IP별(10분 5회)·전체(10분 50회) 시도 횟수를 **원자적으로 확보(reserve)** 하고, 한도를 넘으면 `Retry-After`와 429 `RATE_LIMITED`입니다. endpoint는 비밀번호가 틀리면 `attempt.failed()`, 맞으면 `attempt.succeeded()`를 정확히 한 번 호출합니다. 성공하면 확보한 슬롯을 돌려주고(전체·IP 모두) 해당 IP의 끝난 실패 기록을 초기화하되, 아직 진행 중인 다른 시도의 슬롯은 유지합니다. 결과를 보고하지 않고 끝난 요청(예외·검증 실패)은 실패로 남습니다. 전체 한도는 성공해도 초기화되지 않습니다.
 
 ### 환경변수
 

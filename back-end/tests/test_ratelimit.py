@@ -2,18 +2,18 @@ import threading
 from types import SimpleNamespace
 
 import pytest
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app import ratelimit
 from app.errors import ApiError, install_error_handlers
 from app.ratelimit import (
+    AdminAttempt,
+    AdminPasswordAttempt,
     RateLimiter,
     client_address,
     enforce_admin_password_rate_limit,
     enforce_login_rate_limit,
-    record_admin_password_failure,
-    record_admin_password_success,
     reset_all_limits,
 )
 
@@ -166,12 +166,14 @@ def build_app() -> FastAPI:
     def login() -> dict:
         return {"ok": True}
 
-    @app.post("/api/t/admin", dependencies=[Depends(enforce_admin_password_rate_limit)])
-    def admin(request: Request, password: str) -> dict:
+    @app.post("/api/t/admin")
+    def admin(attempt: AdminAttempt, password: str) -> dict:
+        if password == "boom":
+            raise RuntimeError("unexpected")  # leaves without reporting an outcome
         if password != "right":
-            record_admin_password_failure(request)
+            attempt.failed()
             raise ApiError(401, "ADMIN_PASSWORD_INVALID")
-        record_admin_password_success(request)
+        attempt.succeeded()
         return {"ok": True}
 
     return app
@@ -257,3 +259,189 @@ def test_client_address_falls_back_without_a_peer(monkeypatch):
 
     request = SimpleNamespace(headers={"x-forwarded-for": " , "}, client=None)
     assert client_address(request) == "unknown"
+
+
+# --- atomic reservation ----------------------------------------------------------------------
+
+def test_reserve_counts_immediately_and_release_returns_the_slot():
+    limiter = RateLimiter(2, 60, clock=FakeClock())
+    first, second = limiter.reserve("k"), limiter.reserve("k")
+    assert blocked_reserve(limiter) is not None
+    assert limiter.release(first) is True
+    assert limiter.release(first) is False  # idempotent: the slot is only given back once
+    limiter.reserve("k")
+    assert blocked_reserve(limiter) is not None
+    limiter.settle(second)
+    assert blocked_reserve(limiter) is not None  # a settled failure keeps its slot
+
+
+def blocked_reserve(limiter, key="k") -> ApiError | None:
+    try:
+        limiter.reserve(key)
+    except ApiError as error:
+        return error
+    return None
+
+
+def test_release_after_the_window_does_not_remove_another_event():
+    clock = FakeClock()
+    limiter = RateLimiter(2, 10, clock=clock)
+    old = limiter.reserve("k")
+    clock.now += 11  # old expired
+    fresh = limiter.reserve("k")
+    assert limiter.release(old) is False
+    assert limiter.release(fresh) is True
+
+
+def test_reset_settled_keeps_attempts_still_in_flight():
+    limiter = RateLimiter(3, 60, clock=FakeClock())
+    done = limiter.reserve("k")
+    limiter.settle(done)
+    in_flight = limiter.reserve("k")
+    limiter.reset_settled("k")
+    limiter.reserve("k")
+    limiter.reserve("k")
+    assert blocked_reserve(limiter) is not None  # in_flight + 2 new fill the budget of 3
+    limiter.settle(in_flight)
+
+
+def test_concurrent_reservations_never_exceed_the_limit():
+    limiter = RateLimiter(5, 60)
+    barrier = threading.Barrier(40)
+    granted = []
+
+    def worker():
+        barrier.wait()
+        if blocked_reserve(limiter) is None:
+            granted.append(1)
+
+    threads = [threading.Thread(target=worker) for _ in range(40)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(granted) == 5
+
+
+def request_from(address="198.51.100.1"):
+    return SimpleNamespace(headers={}, client=SimpleNamespace(host=address))
+
+
+def test_concurrent_admin_guesses_cannot_exceed_the_ip_budget():
+    barrier = threading.Barrier(30)
+    attempts: list[AdminPasswordAttempt] = []
+    rejected = []
+
+    def worker():
+        barrier.wait()
+        try:
+            attempt = enforce_admin_password_rate_limit(request_from())
+        except ApiError as error:
+            rejected.append(error)
+            return
+        attempts.append(attempt)
+        attempt.failed()
+
+    threads = [threading.Thread(target=worker) for _ in range(30)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(attempts) == ratelimit.ADMIN_PASSWORD_IP_LIMIT
+    assert len(rejected) == 30 - ratelimit.ADMIN_PASSWORD_IP_LIMIT
+    assert all(error.status_code == 429 and "Retry-After" in error.headers for error in rejected)
+
+
+def test_concurrent_http_guesses_cannot_exceed_the_budget(client):
+    barrier = threading.Barrier(24)
+    statuses = []
+
+    def worker():
+        barrier.wait()
+        statuses.append(client.post("/api/t/admin?password=wrong").status_code)
+
+    threads = [threading.Thread(target=worker) for _ in range(24)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert statuses.count(401) == ratelimit.ADMIN_PASSWORD_IP_LIMIT
+    assert statuses.count(429) == 24 - ratelimit.ADMIN_PASSWORD_IP_LIMIT
+
+
+def test_concurrent_global_budget_is_not_exceeded_across_clients():
+    total = ratelimit.ADMIN_PASSWORD_GLOBAL_LIMIT + 20
+    barrier = threading.Barrier(total)
+    granted = []
+
+    def worker(index):
+        barrier.wait()
+        try:
+            granted.append(enforce_admin_password_rate_limit(request_from(f"10.1.{index}.1")))
+        except ApiError:
+            pass
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(total)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(granted) == ratelimit.ADMIN_PASSWORD_GLOBAL_LIMIT
+
+
+def test_a_full_global_budget_gives_the_ip_slot_back():
+    for index in range(ratelimit.ADMIN_PASSWORD_GLOBAL_LIMIT):
+        enforce_admin_password_rate_limit(request_from(f"10.2.{index}.1")).failed()
+    for _ in range(3):
+        with pytest.raises(ApiError):
+            enforce_admin_password_rate_limit(request_from("203.0.113.5"))
+    # the rejected requests did not eat that client's own budget
+    assert ratelimit.admin_password_ip_limiter.reserve("203.0.113.5")
+
+
+def test_success_releases_its_slot_and_forgets_earlier_failures():
+    request = request_from()
+    for _ in range(ratelimit.ADMIN_PASSWORD_IP_LIMIT - 1):
+        enforce_admin_password_rate_limit(request).failed()
+    enforce_admin_password_rate_limit(request).succeeded()
+    for _ in range(ratelimit.ADMIN_PASSWORD_IP_LIMIT):
+        enforce_admin_password_rate_limit(request).failed()
+    with pytest.raises(ApiError):
+        enforce_admin_password_rate_limit(request)
+
+
+def test_success_does_not_erase_slots_of_guesses_still_running():
+    request = request_from()
+    running = [enforce_admin_password_rate_limit(request) for _ in range(ratelimit.ADMIN_PASSWORD_IP_LIMIT - 1)]
+    enforce_admin_password_rate_limit(request).succeeded()
+    enforce_admin_password_rate_limit(request).failed()  # budget: running + this one = limit
+    with pytest.raises(ApiError):
+        enforce_admin_password_rate_limit(request)
+    for attempt in running:
+        attempt.failed()
+
+
+def test_global_budget_is_not_reset_by_a_success():
+    for index in range(ratelimit.ADMIN_PASSWORD_GLOBAL_LIMIT - 1):
+        enforce_admin_password_rate_limit(request_from(f"10.3.{index}.1")).failed()
+    enforce_admin_password_rate_limit(request_from("203.0.113.9")).succeeded()
+    enforce_admin_password_rate_limit(request_from("203.0.113.10")).failed()
+    with pytest.raises(ApiError):
+        enforce_admin_password_rate_limit(request_from("203.0.113.11"))
+
+
+def test_reporting_an_outcome_twice_is_harmless():
+    request = request_from()
+    attempt = enforce_admin_password_rate_limit(request)
+    attempt.succeeded()
+    attempt.succeeded()
+    attempt.failed()  # ignored: the first report wins
+    for _ in range(ratelimit.ADMIN_PASSWORD_IP_LIMIT):
+        enforce_admin_password_rate_limit(request).failed()
+
+
+def test_an_unreported_attempt_keeps_its_slot(client):
+    errors = TestClient(build_app(), raise_server_exceptions=False)
+    for _ in range(ratelimit.ADMIN_PASSWORD_IP_LIMIT):
+        assert errors.post("/api/t/admin?password=boom").status_code == 500
+    assert errors.post("/api/t/admin?password=right").status_code == 429
