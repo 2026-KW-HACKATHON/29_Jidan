@@ -1,0 +1,25 @@
+.home-worker .home-app-bar { padding: 24px 24px 4px; }
+.home-worker .home-bottom-nav { padding-bottom: max(5px, env(safe-area-inset-bottom, 0px)); }
+.home-worker .home-calendar-heading { min-height: 23px; }
+.home-worker .home-calendar-heading button { height: 23px; }
+.worker-home-activity { display: flex; flex-direction: column; gap: 20px; padding: 20px; }
+.worker-home-activity h3 { font-size: 15px; line-height: 23px; }
+.worker-home-activity > div { display: flex; gap: 12px; }
+.worker-home-activity > div > div { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.worker-home-activity span { color: var(--ds-secondary); font-size: 13px; line-height: 20px; white-space: nowrap; }
+.worker-home-activity strong { font-size: 24px; line-height: 36px; letter-spacing: 1px; }
+.worker-home-activity > div > div:first-child strong { color: var(--ds-primary); }
+.worker-home-job { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+.worker-home-job > div { display: flex; align-items: center; gap: 8px; }
+.worker-home-job h4 { flex: 1; min-width: 0; margin: 0; font-size: 15px; line-height: 23px; }
+.worker-home-job > div > span { flex: none; padding: 4px 8px; border-radius: 4px; background: var(--ds-primary-surface); color: var(--ds-primary-strong); font-size: 13px; font-weight: 700; line-height: 20px; }
+.worker-home-job > div > span.worker-home-no-applicants { background: var(--ds-surface); color: var(--ds-secondary); }
+.worker-home-job > p { color: var(--ds-secondary); font-size: 13px; line-height: 20px; }
+.worker-home-more { align-self: flex-end; padding: 0; border: 0; background: transparent; color: #474c52; font-size: 15px; line-height: 23px; cursor: pointer; }
+.worker-home-shifts { display: flex; flex-direction: column; gap: 16px; padding: 16px; }
+.worker-home-shift { display: flex; align-items: center; gap: 16px; min-width: 0; color: var(--ds-gray-80); font-size: 13px; line-height: 20px; }
+.worker-home-shift strong { flex: none; width: 41px; color: var(--ds-primary-strong); }
+.worker-home-shift > span { flex: 1; min-width: 0; }
+.worker-home-shift em { display: grid; flex: none; place-items: center; width: 73px; height: 28px; border-radius: 12px; color: var(--ds-primary-strong); font-style: normal; }
+.worker-home-regular { background: var(--ds-primary-surface); }
+.worker-home-substitute { background: #faeac6; }

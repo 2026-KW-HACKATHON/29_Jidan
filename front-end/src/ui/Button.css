@@ -1,0 +1,21 @@
+.ds-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  min-height: 48px;
+  min-width: 0;
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  box-shadow: var(--ds-shadow);
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.ds-button-primary { background: var(--ds-primary); color: var(--ds-white); }
+.ds-button-secondary { background: var(--ds-white); color: var(--ds-text); }
+.ds-button-danger { background: var(--ds-danger); color: var(--ds-white); }
+.ds-button:disabled { cursor: not-allowed; opacity: .45; }
+.ds-button:focus-visible { outline: 2px solid var(--ds-primary-strong); outline-offset: 3px; }

@@ -1,0 +1,21 @@
+.ds-field { display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0; width: 100%; }
+.ds-field > label { font-weight: 700; }
+.ds-field-control {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  background: var(--ds-white);
+  box-shadow: var(--ds-shadow);
+}
+.ds-field-control::placeholder { color: var(--ds-muted); opacity: 1; }
+.ds-field-control:read-only:not(button) { background: var(--ds-surface); }
+.ds-field .ds-field-hint { font-size: var(--ds-small); color: var(--ds-secondary); overflow-wrap: anywhere; }
+.ds-field .ds-field-error { color: var(--ds-danger-strong); }
+.ds-field-textarea { min-height: 120px; resize: vertical; }
+.ds-field-select { display: flex; align-items: center; gap: var(--ds-space-2); text-align: left; cursor: pointer; }
+.ds-field-select span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ds-field-select img { flex: none; }

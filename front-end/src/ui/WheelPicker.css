@@ -1,0 +1,15 @@
+@import './tokens.css';
+
+.ds-wheel-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.ds-wheel-column > p { text-align: center; color: var(--ds-secondary); font-weight: 700; line-height: 23px; }
+.ds-wheel-shell { position: relative; border-radius: 8px; overflow: hidden; background: var(--ds-surface); }
+.ds-wheel-shell::before, .ds-wheel-shell::after { content: ''; position: absolute; z-index: 1; left: 0; right: 0; height: 32px; pointer-events: none; }
+.ds-wheel-shell::before { top: 0; background: linear-gradient(var(--ds-surface), transparent); }
+.ds-wheel-shell::after { bottom: 0; background: linear-gradient(transparent, var(--ds-surface)); }
+.ds-wheel { height: 120px; overflow-y: auto; scrollbar-width: none; scroll-snap-type: y mandatory; padding-block: 40px; overscroll-behavior: contain; }
+.ds-wheel::-webkit-scrollbar { display: none; }
+.ds-wheel > div { height: 40px; display: flex; align-items: center; justify-content: center; scroll-snap-align: center; font-size: 17px; color: var(--ds-secondary); cursor: pointer; }
+.ds-wheel .is-selected { background: #d6e3fd; color: #0a2c93; border-radius: 8px; font-size: 19px; font-weight: 700; }
+.ds-wheel-column.is-disabled > p, .ds-wheel-column.is-disabled .ds-wheel > div { color: #8c949d; }
+.ds-wheel-column.is-disabled .ds-wheel { overflow-y: hidden; pointer-events: none; }
+.ds-wheel-column.is-disabled .ds-wheel .is-selected { background: #e6e8ea; color: #8c949d; }

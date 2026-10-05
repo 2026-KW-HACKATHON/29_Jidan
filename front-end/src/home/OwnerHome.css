@@ -1,0 +1,30 @@
+/* Keep the managed-store background above the shared .home-card rule, regardless of CSS load order. */
+.owner-home-store.home-card { display: flex; flex-direction: column; gap: 16px; padding: 20px; background: var(--ds-primary); }
+.owner-home-store > p { color: #d6e3fd; font-size: 13px; line-height: 20px; }
+.owner-home-store-title { display: flex; align-items: center; gap: 12px; }
+.owner-home-store-title h3 { flex: 1; min-width: 0; color: var(--ds-white); font-size: 19px; line-height: 29px; }
+.owner-home-store-title span { flex: none; padding: 4px 8px; border-radius: 4px; color: var(--ds-white); font-size: 13px; font-weight: 700; line-height: 20px; white-space: nowrap; }
+.owner-home-operating { background: var(--ds-primary-strong); }
+.owner-home-pending { background: #9c6e16; }
+.owner-home-store-actions { display: flex; gap: 12px; }
+.owner-home-store-actions > button { flex: 1; min-height: 52px; color: var(--ds-gray-80); }
+.owner-home-no-store { min-height: 89px; display: flex; align-items: center; color: var(--ds-white); font-size: 19px; font-weight: 700; line-height: 29px; }
+.owner-home-add-store { padding: 0; border: 0; background: transparent; color: var(--ds-primary-strong); font-size: 15px; font-weight: 700; line-height: 23px; text-align: left; cursor: pointer; }
+.owner-home-job { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+.owner-home-job > div { display: flex; align-items: center; gap: 8px; }
+.owner-home-job h4 { flex: 1; min-width: 0; margin: 0; font-size: 15px; line-height: 23px; }
+.owner-home-job > p { color: var(--ds-secondary); font-size: 13px; line-height: 20px; }
+.owner-home-job > div > span { flex: none; padding: 4px 8px; border-radius: 4px; font-size: 13px; font-weight: 700; line-height: 20px; }
+.owner-home-more { align-self: flex-end; padding: 0; border: 0; background: transparent; color: #474c52; font-size: 15px; line-height: 23px; cursor: pointer; }
+.owner-home-applicants { background: var(--ds-primary-surface); color: var(--ds-primary-strong); }
+.owner-home-no-applicants { background: var(--ds-surface); color: var(--ds-secondary); }
+.owner-home-events { display: flex; flex-direction: column; gap: 16px; padding: 16px; }
+.owner-home-event { display: flex; align-items: flex-start; gap: 16px; min-width: 0; color: var(--ds-gray-80); font-size: 13px; line-height: 20px; }
+.owner-home-event strong { flex: none; width: 41px; color: var(--ds-primary-strong); }
+.owner-home-event > div { flex: 1; min-width: 0; }
+.owner-home-event > div p { text-decoration: underline; text-underline-position: from-font; }
+.owner-home-event > span { flex: none; display: grid; place-items: center; width: 73px; height: 28px; border-radius: 12px; background: #faeac6; color: var(--ds-primary-strong); }
+.owner-home-add-event { padding: 0; border: 0; background: transparent; color: var(--ds-primary-strong); font-size: 15px; font-weight: 700; line-height: 23px; cursor: pointer; }
+
+.owner-home-job {width:100%;border:0;font:inherit;text-align:left;cursor:pointer;}
+.owner-home-job:focus-visible {outline:2px solid var(--ds-primary-strong);outline-offset:3px;}

@@ -1,0 +1,7 @@
+.worker-profile-content { display: flex; flex-direction: column; gap: 20px; }
+.worker-profile-intro { display: flex; flex-direction: column; gap: 8px; }
+.worker-profile-intro h2 { font-size: 22px; line-height: 33px; }
+.worker-profile-intro p { color: var(--ds-secondary); line-height: 23px; overflow-wrap: anywhere; }
+.worker-profile .worker-card h3 { font-size: 19px; line-height: 29px; }
+.worker-profile .worker-link { font-size: 15px !important; line-height: 23px !important; }
+.worker-profile .worker-card p { overflow-wrap: anywhere; }

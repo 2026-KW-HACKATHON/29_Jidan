@@ -1,0 +1,19 @@
+.ds-choice { position: relative; display: inline-flex; max-width: 100%; cursor: pointer; }
+.ds-choice > input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.ds-choice > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--ds-space-3);
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-white);
+  color: var(--ds-secondary);
+  font-weight: 700;
+  box-shadow: var(--ds-shadow);
+  overflow-wrap: anywhere;
+}
+.ds-choice > input:checked + span { background: var(--ds-primary); color: var(--ds-white); }
+.ds-choice > input:focus-visible + span { outline: 2px solid var(--ds-primary-strong); outline-offset: 3px; }
+.ds-choice > input:disabled + span { opacity: .45; cursor: not-allowed; }

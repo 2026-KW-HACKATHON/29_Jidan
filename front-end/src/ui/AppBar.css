@@ -1,0 +1,6 @@
+.ds-app-bar { display: flex; align-items: center; gap: var(--ds-space-4); padding: var(--ds-space-4) var(--ds-space-5); min-height: 64px; }
+.ds-app-bar-compact { min-height: 40px; }
+.ds-app-bar h1 { font-size: 17px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.ds-app-bar button { position: relative; display: grid; place-items: center; width: 7px; height: 14px; flex: none; padding: 0; border: 0; background: transparent; cursor: pointer; }
+/* Enlarge the pointer target without moving Figma's 7×14 icon or title. */
+.ds-app-bar button::after { content: ''; position: absolute; width: 40px; height: 40px; }
