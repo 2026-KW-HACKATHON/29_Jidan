@@ -1,0 +1,6 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {spec,validator} from './helpers/owner-contract.mjs';
+const p='/api/stores/{storeId}/calendar/events';const x=spec.paths[p].post.requestBody.content['application/json'].example;const v=validator('CalendarEventInput');
+test('일정 입력: 정기 근무와 점주 일반 일정의 주체 구분',()=>{assert.ok(v(x));assert.ok(v({...x,kind:'STORE_EVENT',workerId:null}));assert.equal(v({...x,workerId:null}),false);assert.equal(v({...x,kind:'STORE_EVENT'}),false);assert.equal(v({...x,kind:'TEMPORARY_WORK'}),false);});
+for(const [label,patch] of [['공백 제목',{title:' '}],['존재하지 않는 시각',{startAt:'2026-02-30T01:00:00Z'}],['없는 주체',{workerId:'other'}],['자료 권한 주입',{accessGrant:{}}]])test(`일정 입력: ${label} 거절`,()=>assert.equal(v({...x,...patch}),false));
+test('일정 수정: revision 필수, 자동 대타/시작 후 변경 차단 계약',()=>{assert.equal(validator('CalendarEventEdit')(x),false);assert.ok(validator('CalendarEventEdit')({...x,expectedRevision:1}));assert.match(spec.paths[p+'/{eventId}'].put.description,/EVENT_NOT_EDITABLE/);assert.match(spec.paths[p+'/{eventId}'].delete.description,/자료 접근을 종료하지/);});
+test('일정 구간: 서울 자정·한계·접근 종료·겹침 검증 명시',()=>{for(const re of [/startAt<endAt/,/서울 자정/,/24시간/,/유한 종료 이하/,/SCHEDULE_OVERLAP/])assert.match(spec.paths[p].post.description,re);});
