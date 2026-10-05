@@ -12241,9 +12241,11 @@ paths:
       description: |-
         ACTIVE OWNER 세션이 필요합니다. 소유 매장만 반환하며 승인 대기 홈도 지원합니다.
 
-        소유 매장 카드와 선택 매장의 모집 중 공고 전체 건수·최신 3개, 본인 안 읽음 알림을 같은 asOf로 조회합니다. storeId 생략 시 생성일 ASC,id ASC의 첫 매장을 선택하고, 소유 매장이 없으면 selectedStoreId=null/stores=[]/공고0입니다. 대기 매장도 카드에는 반환하지만 모집·캘린더 운영 API는 APPROVED 전 호출할 수 없습니다. 대기 매장의 모집 결과는 빈 값입니다. 선택 storeId의 소유권 불일치는 404입니다. 선택 매장의 일정은 캘린더 API를 별도 조회합니다. 매장이 100개를 넘는 경우 잘라 반환하지 않고 기존 점주 매장 페이지 API 사용을 안내하는 422 HOME_STORE_LIMIT입니다.
+        소유 매장 카드와 선택 매장의 모집 중 공고 전체 건수·최신 3개, 본인 안 읽음 알림을 같은 asOf로 조회합니다. storeId 생략 시 생성일 ASC,id ASC의 첫 매장을 선택하고, 소유 매장이 없으면 selectedStoreId=null/stores=[]/공고0입니다. 대기 매장도 카드에는 반환하지만 모집 운영 API는 APPROVED 전 호출할 수 없습니다. 전체 캘린더 조회에서는 대기 매장을 제외합니다. 대기 매장의 모집 결과는 빈 값입니다. 선택 storeId의 소유권 불일치는 404입니다. 선택 매장의 일정은 캘린더 API를 별도 조회합니다. 매장이 100개를 넘는 경우 잘라 반환하지 않고 기존 점주 매장 페이지 API 사용을 안내하는 422 HOME_STORE_LIMIT입니다.
 
         응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        캘린더는 GET /api/owners/me/calendar/events?month=YYYY-MM으로 별도 조회하고 선택 매장 제한은 storeId 쿼리를 사용합니다. 정기 일정은 MVP에서 제외합니다.
       security:
       - SessionCookie: []
       parameters:
@@ -12329,9 +12331,15 @@ paths:
       description: |-
         ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
 
-        나의 활동의 신청 중(APPLIED/REQUESTED), 승인된 관심 매장, 현재 정기 자료 접근이 있는 서로 다른 매장 수와 안 읽음 알림 수를 같은 asOf로 반환합니다. 정기 근무 2곳은 접근 있는 매장 건수이며 달력 일정 건수가 아닙니다. 추천은 월계1동 APPROVED 매장의 시작 전 RECRUITING·미확정·본인 미지원 공고 중 최신순 최대 3개입니다. 개인화 추천 모델은 Figma에 없어 최신 공고를 우선하는 제안 정책입니다. 캘린더는 월 전환을 위해 별도 월별 API로 조회합니다.
+        나의 활동의 신청 중(APPLIED/REQUESTED), 승인된 관심 매장, 현재 정기 자료 접근이 있는 서로 다른 매장 수와 안 읽음 알림 수를 같은 asOf로 반환합니다. 정기 근무 매장 수는 현재 정기 자료 접근이 있는 매장 건수이며 달력 일정 건수가 아닙니다.
 
-        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+        사용자 확정 추천 순서: 시간이 맞는 공고 우선, 그 안에서 근무일 가까운 순입니다. 월계1동 APPROVED 매장의 시작 전 RECRUITING·미확정·현재 유효 본인 지원이 없는 공고가 후보입니다. 과거 WITHDRAWN 이력만 있으면 재지원 가능하므로 후보에 포함합니다. 최대 3개, 빈 결과는 recommendedJobs=[]입니다. 최소 경력은 기존 안내 조건이며 시간 일치나 추천 후보를 자동 차단하지 않습니다.
+
+        시간 일치는 등록된 주간 Availability를 Asia/Seoul 실제 날짜 구간으로 확장하여 합집합이 근무 [startAt,endAt) 전체를 덮는지 판단합니다. 전체를 덮으면 matchesAvailability=true, 일부만 겹치거나 등록 시간이 없으면 false입니다. 전날 시작한 심야 가능 시간과 SUN→MON도 포함하고 끝에만 닿는 구간은 겹침이 아닙니다. 인접 가능 시간은 합쳐 전체 근무를 덮을 수 있으며 중첩은 중복 계산하지 않습니다.
+
+        matchesAvailability DESC → startAt ASC → id ASC로 정렬합니다. 시간 불일치 공고는 일치 후보 뒤에 표시하며 같은 일치 여부 안에서는 날짜/시각 가까운 순입니다. 등록일 최신순이 아닙니다. 서버가 같은 asOf에서 가능 시간·후보 상태·본인 지원·정렬을 평가합니다. 캘린더는 별도 전체 매장 대타 월별 조회 API를 사용합니다.
+
+        응답은 Cache-Control: no-store입니다.
       security:
       - SessionCookie: []
       parameters: []
@@ -12390,45 +12398,281 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkerHome'
-              example:
-                name: 김지수
-                pendingApplicationCount: 0
-                favoriteStoreCount: 0
-                regularStoreCount: 0
-                unreadNotificationCount: 0
-                recommendedJobs:
-                - title: 주말 오픈 대타
-                  description: 음료 제조와 고객 응대
-                  workPart: WEEKEND_OPEN
-                  workDate: '2026-10-10'
-                  startTime: 09:00
-                  endTime: '14:00'
-                  endsNextDay: false
-                  minimumExperience: ANY
-                  experienceNotes: ''
-                  hourlyPay: 12000
-                  paymentTiming: WORK_DAY
-                  paymentNotes: ''
-                  id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
-                  store:
-                    id: 51c1c743-d377-4e7a-8449-94377eecfce0
-                    name: 컴포즈커피 광운대점
-                    industry: CAFE
-                    address: 서울특별시 노원구 광운로 20
-                    neighborhood: 월계1동
-                  status: RECRUITING
-                  recruitmentCount: 1
-                  applicantCount: 0
-                  startAt: '2026-10-10T00:00:00Z'
-                  endAt: '2026-10-10T05:00:00Z'
-                  estimatedPay: 60000
-                  createdAt: '2026-10-05T01:00:00Z'
-                  closedAt: null
-                  revision: 1
-                  myApplicationId: null
-                  canApply: true
-                  cannotApplyReason: null
-                asOf: '2026-10-05T01:00:00Z'
+              examples:
+                timeBeforeDate:
+                  value:
+                    name: 김지수
+                    pendingApplicationCount: 0
+                    favoriteStoreCount: 0
+                    regularStoreCount: 0
+                    unreadNotificationCount: 0
+                    recommendedJobs:
+                    - title: 가능 시간 일치 · 먼저 오는 근무
+                      description: 음료 제조와 고객 응대
+                      workPart: WEEKEND_OPEN
+                      workDate: '2026-10-10'
+                      startTime: 09:00
+                      endTime: '14:00'
+                      endsNextDay: false
+                      minimumExperience: ANY
+                      experienceNotes: ''
+                      hourlyPay: 12000
+                      paymentTiming: WORK_DAY
+                      paymentNotes: ''
+                      id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      status: RECRUITING
+                      recruitmentCount: 1
+                      applicantCount: 0
+                      startAt: '2026-10-10T09:00:00+09:00'
+                      endAt: '2026-10-10T14:00:00+09:00'
+                      estimatedPay: 60000
+                      createdAt: '2026-10-05T01:00:00Z'
+                      closedAt: null
+                      revision: 1
+                      myApplicationId: null
+                      canApply: true
+                      cannotApplyReason: null
+                      matchesAvailability: true
+                    - title: 가능 시간 일치 · 다음 근무
+                      description: 음료 제조와 고객 응대
+                      workPart: WEEKEND_OPEN
+                      workDate: '2026-10-17'
+                      startTime: 09:00
+                      endTime: '14:00'
+                      endsNextDay: false
+                      minimumExperience: ANY
+                      experienceNotes: ''
+                      hourlyPay: 12000
+                      paymentTiming: WORK_DAY
+                      paymentNotes: ''
+                      id: cc19c8e5-85a2-491e-a21a-384e1b7e9a2e
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      status: RECRUITING
+                      recruitmentCount: 1
+                      applicantCount: 0
+                      startAt: '2026-10-17T09:00:00+09:00'
+                      endAt: '2026-10-17T14:00:00+09:00'
+                      estimatedPay: 60000
+                      createdAt: '2026-10-05T01:00:00Z'
+                      closedAt: null
+                      revision: 1
+                      myApplicationId: null
+                      canApply: true
+                      cannotApplyReason: null
+                      matchesAvailability: true
+                    - title: 더 가까워도 가능 시간 불일치
+                      description: 음료 제조와 고객 응대
+                      workPart: WEEKEND_OPEN
+                      workDate: '2026-10-06'
+                      startTime: 09:00
+                      endTime: '14:00'
+                      endsNextDay: false
+                      minimumExperience: ANY
+                      experienceNotes: ''
+                      hourlyPay: 12000
+                      paymentTiming: WORK_DAY
+                      paymentNotes: ''
+                      id: ae29d7ca-447e-4e5d-a266-e984ab9a217f
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      status: RECRUITING
+                      recruitmentCount: 1
+                      applicantCount: 0
+                      startAt: '2026-10-06T09:00:00+09:00'
+                      endAt: '2026-10-06T14:00:00+09:00'
+                      estimatedPay: 60000
+                      createdAt: '2026-10-05T01:00:00Z'
+                      closedAt: null
+                      revision: 1
+                      myApplicationId: null
+                      canApply: true
+                      cannotApplyReason: null
+                      matchesAvailability: false
+                    asOf: '2026-10-05T01:00:00Z'
+                  description: '가능 시간: SAT 09:00~14:00. 10/10·10/17 토요일 일치가 10/6 화요일 불일치보다 먼저입니다.'
+                adjacentAvailability:
+                  value:
+                    name: 김지수
+                    pendingApplicationCount: 0
+                    favoriteStoreCount: 0
+                    regularStoreCount: 0
+                    unreadNotificationCount: 0
+                    recommendedJobs:
+                    - title: 가능 시간 일치 · 먼저 오는 근무
+                      description: 음료 제조와 고객 응대
+                      workPart: WEEKEND_OPEN
+                      workDate: '2026-10-10'
+                      startTime: 09:00
+                      endTime: '14:00'
+                      endsNextDay: false
+                      minimumExperience: ANY
+                      experienceNotes: ''
+                      hourlyPay: 12000
+                      paymentTiming: WORK_DAY
+                      paymentNotes: ''
+                      id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      status: RECRUITING
+                      recruitmentCount: 1
+                      applicantCount: 0
+                      startAt: '2026-10-10T09:00:00+09:00'
+                      endAt: '2026-10-10T14:00:00+09:00'
+                      estimatedPay: 60000
+                      createdAt: '2026-10-05T01:00:00Z'
+                      closedAt: null
+                      revision: 1
+                      myApplicationId: null
+                      canApply: true
+                      cannotApplyReason: null
+                      matchesAvailability: true
+                    asOf: '2026-10-05T01:00:00Z'
+                  description: '가능 시간: SAT 09:00~12:00 + SAT 12:00~14:00. 합집합이 09:00~14:00 근무 전체를 덮습니다.'
+                previousDayOvernight:
+                  value:
+                    name: 김지수
+                    pendingApplicationCount: 0
+                    favoriteStoreCount: 0
+                    regularStoreCount: 0
+                    unreadNotificationCount: 0
+                    recommendedJobs:
+                    - title: 일요일 심야 가능 시간으로 월요일 근무 일치
+                      description: 음료 제조와 고객 응대
+                      workPart: WEEKEND_OPEN
+                      workDate: '2026-10-12'
+                      startTime: 00:00
+                      endTime: 02:00
+                      endsNextDay: false
+                      minimumExperience: ANY
+                      experienceNotes: ''
+                      hourlyPay: 12000
+                      paymentTiming: WORK_DAY
+                      paymentNotes: ''
+                      id: 8518ce9f-4d89-4e74-a0b3-28f8611c788b
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      status: RECRUITING
+                      recruitmentCount: 1
+                      applicantCount: 0
+                      startAt: '2026-10-11T15:00:00Z'
+                      endAt: '2026-10-11T17:00:00Z'
+                      estimatedPay: 24000
+                      createdAt: '2026-10-05T01:00:00Z'
+                      closedAt: null
+                      revision: 1
+                      myApplicationId: null
+                      canApply: true
+                      cannotApplyReason: null
+                      matchesAvailability: true
+                    asOf: '2026-10-05T01:00:00Z'
+                  description: '가능 시간: SUN 22:00~02:00 endsNextDay=true. 다음 월요일 00:00~02:00 근무 전체와 일치합니다.'
+                touchingBoundary:
+                  value:
+                    name: 김지수
+                    pendingApplicationCount: 0
+                    favoriteStoreCount: 0
+                    regularStoreCount: 0
+                    unreadNotificationCount: 0
+                    recommendedJobs:
+                    - title: 주말 오픈 대타
+                      description: 음료 제조와 고객 응대
+                      workPart: WEEKEND_OPEN
+                      workDate: '2026-10-10'
+                      startTime: 09:00
+                      endTime: '14:00'
+                      endsNextDay: false
+                      minimumExperience: ANY
+                      experienceNotes: ''
+                      hourlyPay: 12000
+                      paymentTiming: WORK_DAY
+                      paymentNotes: ''
+                      id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      status: RECRUITING
+                      recruitmentCount: 1
+                      applicantCount: 0
+                      startAt: '2026-10-10T00:00:00Z'
+                      endAt: '2026-10-10T05:00:00Z'
+                      estimatedPay: 60000
+                      createdAt: '2026-10-05T01:00:00Z'
+                      closedAt: null
+                      revision: 1
+                      myApplicationId: null
+                      canApply: true
+                      cannotApplyReason: null
+                      matchesAvailability: false
+                    asOf: '2026-10-05T01:00:00Z'
+                  description: '가능 시간: SAT 14:00~18:00. 토요일 09:00~14:00 근무 끝에만 닿으므로 불일치입니다.'
+                noAvailability:
+                  value:
+                    name: 김지수
+                    pendingApplicationCount: 0
+                    favoriteStoreCount: 0
+                    regularStoreCount: 0
+                    unreadNotificationCount: 0
+                    recommendedJobs:
+                    - title: 주말 오픈 대타
+                      description: 음료 제조와 고객 응대
+                      workPart: WEEKEND_OPEN
+                      workDate: '2026-10-10'
+                      startTime: 09:00
+                      endTime: '14:00'
+                      endsNextDay: false
+                      minimumExperience: ANY
+                      experienceNotes: ''
+                      hourlyPay: 12000
+                      paymentTiming: WORK_DAY
+                      paymentNotes: ''
+                      id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                      store:
+                        id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                        name: 컴포즈커피 광운대점
+                        industry: CAFE
+                        address: 서울특별시 노원구 광운로 20
+                        neighborhood: 월계1동
+                      status: RECRUITING
+                      recruitmentCount: 1
+                      applicantCount: 0
+                      startAt: '2026-10-10T00:00:00Z'
+                      endAt: '2026-10-10T05:00:00Z'
+                      estimatedPay: 60000
+                      createdAt: '2026-10-05T01:00:00Z'
+                      closedAt: null
+                      revision: 1
+                      myApplicationId: null
+                      canApply: true
+                      cannotApplyReason: null
+                      matchesAvailability: false
+                    asOf: '2026-10-05T01:00:00Z'
+                  description: 등록 가능 시간이 없는 경우 모든 후보가 false이고 startAt ASC,id ASC로 반환합니다.
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=223-5461
@@ -19926,7 +20170,7 @@ components:
         recommendedJobs:
           type: array
           items:
-            $ref: '#/components/schemas/WorkerJobPosting'
+            $ref: '#/components/schemas/RecommendedJobPosting'
           minItems: 0
           maxItems: 3
         asOf:
@@ -20363,6 +20607,203 @@ components:
           minimum: 1
       required:
       - expectedRevision
+    RecommendedJobPosting:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+        description:
+          type: string
+          minLength: 1
+          maxLength: 3000
+          pattern: \S
+        workPart:
+          type: string
+          enum:
+          - WEEKDAY_OPEN
+          - WEEKDAY_CLOSE
+          - WEEKEND_OPEN
+          - WEEKEND_CLOSE
+          - OTHER
+        workDate:
+          type: string
+          format: date
+        startTime:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+        endTime:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+        endsNextDay:
+          type: boolean
+        minimumExperience:
+          type: string
+          enum:
+          - ANY
+          - MONTHS_3
+          - MONTHS_6
+          - YEAR_1
+        experienceNotes:
+          type: string
+          minLength: 0
+          maxLength: 1000
+        hourlyPay:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+        paymentTiming:
+          type: string
+          enum:
+          - WORK_DAY
+          - NEXT_DAY
+          - NEGOTIABLE
+        paymentNotes:
+          type: string
+          minLength: 0
+          maxLength: 1000
+        id:
+          type: string
+          format: uuid
+        store:
+          $ref: '#/components/schemas/JobStoreCard'
+        status:
+          type: string
+          enum:
+          - RECRUITING
+          - CLOSED
+        recruitmentCount:
+          type: integer
+          const: 1
+        applicantCount:
+          type: integer
+          minimum: 0
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        estimatedPay:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        closedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revision:
+          type: integer
+          minimum: 1
+        myApplicationId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        canApply:
+          type: boolean
+        cannotApplyReason:
+          oneOf:
+          - type: string
+            enum:
+            - JOB_CLOSED
+            - JOB_STARTED
+            - ALREADY_APPLIED
+            - ALREADY_CONFIRMED
+            - JOB_FILLED
+          - type: 'null'
+        matchesAvailability:
+          type: boolean
+          description: 등록 가능 시간의 합집합이 실제 근무 [startAt,endAt) 전체를 덮으면 true입니다. 일부만 겹치거나 등록 시간이 없으면 false입니다.
+      required:
+      - title
+      - description
+      - workPart
+      - workDate
+      - startTime
+      - endTime
+      - endsNextDay
+      - minimumExperience
+      - experienceNotes
+      - hourlyPay
+      - paymentTiming
+      - paymentNotes
+      - id
+      - store
+      - status
+      - recruitmentCount
+      - applicantCount
+      - startAt
+      - endAt
+      - estimatedPay
+      - createdAt
+      - closedAt
+      - revision
+      - myApplicationId
+      - canApply
+      - cannotApplyReason
+      - matchesAvailability
+      oneOf:
+      - properties:
+          canApply:
+            const: true
+          status:
+            const: RECRUITING
+          cannotApplyReason:
+            type: 'null'
+          myApplicationId:
+            type: 'null'
+        required:
+        - canApply
+        - status
+        - cannotApplyReason
+        - myApplicationId
+      - properties:
+          canApply:
+            const: false
+          cannotApplyReason:
+            type: string
+            enum:
+            - JOB_CLOSED
+            - JOB_STARTED
+            - ALREADY_APPLIED
+            - ALREADY_CONFIRMED
+            - JOB_FILLED
+        required:
+        - canApply
+        - cannotApplyReason
+      allOf:
+      - if:
+          properties:
+            cannotApplyReason:
+              type: string
+              enum:
+              - ALREADY_APPLIED
+              - ALREADY_CONFIRMED
+          required:
+          - cannotApplyReason
+        then:
+          properties:
+            myApplicationId:
+              type: string
+              format: uuid
+      - if:
+          properties:
+            status:
+              const: CLOSED
+          required:
+          - status
+        then:
+          properties:
+            canApply:
+              const: false
+      description: 시간 일치(true 먼저), 동일 일치 여부 안에서는 startAt ASC,id ASC로 정렬한 홈 추천 카드입니다. 추천은 지원 가능 여부를 대체하지 않습니다.
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
