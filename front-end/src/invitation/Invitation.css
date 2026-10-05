@@ -28,8 +28,8 @@
 .invitation-card-heading { display:flex; align-items:center; gap:8px; }
 .invitation-card-heading > strong { flex:1; min-width:0; overflow-wrap:anywhere; }
 .invitation-badge { flex:none; border-radius:4px; padding:4px 8px; font-size:13px; font-weight:700; background:var(--ds-surface); color:var(--ds-secondary); }
-.invitation-badge-pending { background:var(--ds-primary-surface); color:var(--ds-primary); }
-.invitation-badge-accepted { background:#eef6ee; color:#28702f; }
+.invitation-badge-PENDING { background:var(--ds-primary-surface); color:var(--ds-primary); }
+.invitation-badge-ACCEPTED { background:#eef6ee; color:#28702f; }
 .invitation-dates { display:flex; flex-direction:column; gap:8px; font-size:13px; }
 .invitation-history { font-size:15px; }
 .invitation-empty { box-shadow:none; }
