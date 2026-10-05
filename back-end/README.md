@@ -26,6 +26,8 @@ python -m pytest
 
 로컬에서 DB 설정이 없으면 `database: not_configured`를 반환한다. `APP_ENV=dev|production`에서는 DB 설정이 필수이며, `/api/health`가 `SELECT 1`까지 확인한다. DB 장애 시 자격 증명을 노출하지 않고 503을 반환한다.
 
+로컬에서 DB까지 연결해 실행할 때는 `APP_ENV=local`에 `DB_*`를 지정한다. `APP_ENV=dev`는 CI가 만드는 `swagger-static/` 설계 문서 산출물이 없으면 시작하지 않으므로(`app/design_docs.py`), 로컬에서 쓰려면 `back-end/docs`의 빌드로 산출물을 먼저 만들어야 한다.
+
 ## DB 접근과 마이그레이션
 
 SQLAlchemy 2.x(드라이버 PyMySQL)와 Alembic을 쓴다. 연결 정보는 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`에서 읽으며 엔진은 첫 사용 시 만든다.
