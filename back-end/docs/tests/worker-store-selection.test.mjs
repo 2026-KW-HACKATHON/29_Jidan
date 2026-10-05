@@ -1,0 +1,4 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {spec,validator} from './helpers/owner-contract.mjs';
+const p='/api/users/me/stores';const x=spec.paths[p+'/{storeId}/access'].get.responses['200'].content['application/json'].example;
+test('매장 선택: 미게시 매장과 빈 접근 목록',()=>{assert.ok(validator('WorkerAccessibleStore')(x));assert.ok(validator('WorkerAccessibleStore')({...x,publishedVersionId:null}));const page=spec.paths[p].get.responses['200'].content['application/json'].example;assert.ok(validator('WorkerAccessibleStorePage')({...page,items:[],totalItems:0}));});
+test('매장 선택: 현재 본인 접근만 조회하고 임의 개인정보 차단',()=>{assert.equal(validator('WorkerAccessibleStore')({...x,otherWorkers:[]}),false);assert.match(spec.paths[p].get.description,/중복 없이/);assert.match(spec.paths[p+'/{storeId}/access'].get.description,/매뉴얼\/사진\/AI 대화/);});
