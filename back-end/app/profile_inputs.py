@@ -1,10 +1,10 @@
 """Profile edits share the registration field and calendar rules."""
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 
-from app.registration_inputs import Input, Name, Phone, WorkerInput
+from app.registration_inputs import Career, Input, Name, Phone, WorkerInput
 
 
 class BasicInput(Input):
@@ -35,3 +35,13 @@ class BasicInput(Input):
         if not self.model_fields_set:
             raise ValueError("At least one basic field is required")
         return self
+
+
+class CareersInput(Input):
+    experienceLevel: Literal["NEW", "EXPERIENCED"]
+    careers: Annotated[list[Career], Field(max_length=20)]
+
+    @field_validator("careers")
+    @classmethod
+    def career_count(cls, value, info: ValidationInfo):
+        return WorkerInput.career_count(value, info)

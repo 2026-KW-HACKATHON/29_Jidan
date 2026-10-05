@@ -1,6 +1,6 @@
 """Session-owned worker profiles, serialized to the authoritative OpenAPI contract."""
 from fastapi import APIRouter
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentWorker
@@ -16,7 +16,7 @@ from app.db.models import (
     WorkerProfile,
 )
 from app.errors import ApiError, ErrorCode
-from app.profile_inputs import BasicInput
+from app.profile_inputs import BasicInput, CareersInput
 
 router = APIRouter(prefix="/api/users/me/profile")
 
@@ -96,5 +96,25 @@ def update_basic(body: BasicInput, member: CsrfWorker, db: SessionDep) -> dict:
             setattr(row, column, value)
             changed = True
     if changed:
+        user.updated_at = utcnow()
+    return commit_profile(db, user)
+
+
+@router.put("/careers")
+def replace_careers(body: CareersInput, member: CsrfWorker, db: SessionDep) -> dict:
+    user = lock_worker(db, member.user_id)
+    current = profile_body(db, user, lock=True)
+    careers = [c.model_dump(exclude={"storeName"} if c.storeName is None else set())
+               for c in body.careers]
+    if current["experienceLevel"] != body.experienceLevel or current["careers"] != careers:
+        profile = db.scalar(select(WorkerProfile).where(WorkerProfile.user_id == user.id)
+                            .with_for_update().execution_options(populate_existing=True))
+        profile.experience_level = body.experienceLevel
+        db.execute(delete(WorkerCareer).where(WorkerCareer.worker_id == user.id))
+        for index, career in enumerate(body.careers):
+            db.add(WorkerCareer(worker_id=user.id, sort_order=index, industry=career.industry,
+                               duties=career.duties, store_name=career.storeName,
+                               start_month=career.startMonth, end_month=career.endMonth,
+                               is_current=career.isCurrent))
         user.updated_at = utcnow()
     return commit_profile(db, user)
