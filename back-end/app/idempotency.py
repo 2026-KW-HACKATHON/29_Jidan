@@ -14,6 +14,12 @@ handler rolls back and releases the key so the client can retry.
 
 Only successful results are stored. Errors raised by the handler are not replayed.
 
+Headers. A result may carry the allow-listed headers in `REPLAY_HEADERS` (`Location`, ...); they
+are stored and sent again on a replay. `Set-Cookie` and every other header are never stored: a
+replay does not create a new session, so a cookie must not be (and cannot be) replayed from the
+database. The caller adds cookies to the response of the request that actually ran the handler;
+see the "#105 합의 사항" section of the README.
+
 Subject. Records are keyed by the person's Google `sub` (hashed), not by the session kind: a
 registration session and the member session created from it map to the same subject, so the
 registration request can be retried after registering (docs/auth-design.md). See
@@ -24,7 +30,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Annotated, Any
@@ -68,12 +74,41 @@ def subject_id_for(principal: MemberPrincipal | RegistrationPrincipal) -> str:
     return hashlib.sha256(google_sub.encode("utf-8")).hexdigest()
 
 
+# Response headers that are stored with the result and sent again on a replay. Everything else
+# is dropped on purpose; in particular `Set-Cookie` and anything carrying a session or token
+# secret must never reach the database. A header outside this list is rejected loudly
+# (ValueError) rather than silently lost, so a handler cannot assume it will be replayed.
+REPLAY_HEADERS = frozenset({"location", "content-location", "etag"})
+MAX_REPLAY_HEADER_LENGTH = 2048
+
+
 @dataclass(frozen=True)
 class IdempotentResult:
-    """What a handler produced: a status code and a JSON-compatible body (None for no body)."""
+    """What a handler produced: a status code, a JSON-compatible body (None for no body) and
+    optional response `headers` limited to `REPLAY_HEADERS` (e.g. `Location` of a created
+    resource). Cookies are not part of a result: see `run_idempotent`."""
 
     status_code: int
     body: Any = None
+    headers: Mapping[str, str] | None = None
+
+    def __post_init__(self) -> None:
+        if not self.headers:
+            return
+        clean: dict[str, str] = {}
+        for name, value in self.headers.items():
+            lowered = str(name).lower()
+            if lowered not in REPLAY_HEADERS:
+                raise ValueError(
+                    f"header {name!r} cannot be stored for replay (allowed: {sorted(REPLAY_HEADERS)})"
+                )
+            if (
+                not isinstance(value, str) or not value or len(value) > MAX_REPLAY_HEADER_LENGTH
+                or any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+            ):
+                raise ValueError(f"invalid value for header {name!r}")
+            clean[lowered] = value
+        object.__setattr__(self, "headers", clean)
 
 
 def idempotency_key(
@@ -121,6 +156,7 @@ class _Owned:
 class _Completed:
     status_code: int
     body: Any
+    headers: Mapping[str, str] | None = None
 
 
 class _Busy:
@@ -187,7 +223,9 @@ def _reserve(subject_id: str, key: str, endpoint: str, request_hash: str):
             if record.endpoint != endpoint or record.request_hash != request_hash:
                 raise _reuse_error()
             if record.state == "COMPLETED":
-                return _Completed(record.response_status, record.response_body)
+                return _Completed(
+                    record.response_status, record.response_body, _replayable(record.response_headers),
+                )
             if record.locked_until is not None and record.locked_until <= now:
                 taken = session.execute(
                     update(IdempotencyRecord)
@@ -205,6 +243,17 @@ def _reserve(subject_id: str, key: str, endpoint: str, request_hash: str):
     return _Busy()
 
 
+def _replayable(stored: Any) -> dict[str, str] | None:
+    """Stored headers filtered through the allow list again, whatever the row contains."""
+    if not isinstance(stored, dict):
+        return None
+    headers = {
+        name.lower(): value for name, value in stored.items()
+        if isinstance(name, str) and name.lower() in REPLAY_HEADERS and isinstance(value, str)
+    }
+    return headers or None
+
+
 def _complete(db: Session, owned: _Owned, result: IdempotentResult) -> None:
     updated = db.execute(
         update(IdempotencyRecord)
@@ -215,6 +264,7 @@ def _complete(db: Session, owned: _Owned, result: IdempotentResult) -> None:
         )
         .values(
             state="COMPLETED", response_status=result.status_code, response_body=result.body,
+            response_headers=dict(result.headers) if result.headers else None,
             completed_at=utcnow(), lock_token=None, locked_until=None,
         )
     )
@@ -232,8 +282,13 @@ def _release(owned: _Owned) -> None:
         ))
 
 
-def _response(status_code: int, body: Any, *, replayed: bool) -> Response:
-    headers = {REPLAY_HEADER: "true"} if replayed else None
+def _response(
+    status_code: int, body: Any, headers: Mapping[str, str] | None = None, *, replayed: bool,
+) -> Response:
+    headers = dict(headers or {})
+    if replayed:
+        headers[REPLAY_HEADER] = "true"
+    headers = headers or None
     if body is None:
         return Response(status_code=status_code, headers=headers)
     return JSONResponse(body, status_code=status_code, headers=headers)
@@ -276,7 +331,7 @@ def run_idempotent(
         if isinstance(outcome, _Completed):
             if revalidate is not None:
                 revalidate()
-            return _response(outcome.status_code, outcome.body, replayed=True)
+            return _response(outcome.status_code, outcome.body, outcome.headers, replayed=True)
         if time.monotonic() >= deadline:
             raise ApiError(
                 409, ErrorCode.STATE_CONFLICT, "이전 요청을 처리 중입니다. 잠시 후 다시 시도해 주세요.",
@@ -298,7 +353,7 @@ def run_idempotent(
         db.rollback()
         _release(outcome)
         raise
-    return _response(result.status_code, result.body, replayed=False)
+    return _response(result.status_code, result.body, result.headers, replayed=False)
 
 
 def purge_expired(*, db: Session | None = None) -> int:

@@ -514,6 +514,8 @@ class IdempotencyRecord(Base):
     locked_until: Mapped[datetime | None] = mapped_column(UtcDateTime)
     response_status: Mapped[int | None] = mapped_column(Integer)
     response_body: Mapped[Any | None] = mapped_column(JSON)
+    # Allow-listed headers only (app.idempotency.REPLAY_HEADERS); never cookies or secrets.
+    response_headers: Mapped[dict[str, str] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)

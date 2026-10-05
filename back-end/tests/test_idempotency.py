@@ -751,3 +751,96 @@ def test_handler_sees_data_committed_while_it_waited_for_the_key(mysql_caller_en
     worker.join(timeout=30)
     assert not worker.is_alive()
     assert seen["late"] == 1
+
+
+# --- replayed headers ------------------------------------------------------------------------
+
+def header_app(headers):
+    app = FastAPI()
+    install_error_handlers(app)
+
+    @app.post("/api/t/created")
+    def created(body: ThingIn, owner: CsrfOwner, db: DbSession, key: IdempotencyKey):
+        return run_idempotent(
+            db=db, principal=owner, key=key, method="POST", path="/api/t/created", body=body,
+            handler=lambda: IdempotentResult(201, {"id": "x"}, headers=headers),
+        )
+
+    return TestClient(app)
+
+
+def test_allow_listed_headers_are_stored_and_replayed(db_engine):
+    caller = Caller(db_engine)
+    api = header_app({"Location": "/api/stores/abc", "ETag": '"v1"'})
+    key = new_key()
+    first = post(api, caller, key, path="/api/t/created")
+    again = post(api, caller, key, path="/api/t/created")
+    assert first.headers["location"] == "/api/stores/abc" and "Idempotent-Replayed" not in first.headers
+    assert again.status_code == 201 and again.json() == {"id": "x"}
+    assert again.headers["location"] == "/api/stores/abc" and again.headers["etag"] == '"v1"'
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert records(db_engine)[0].response_headers == {"location": "/api/stores/abc", "etag": '"v1"'}
+
+
+@pytest.mark.parametrize("name", ["Set-Cookie", "set-cookie", "Authorization", "X-CSRF-Token", "X-Custom"])
+def test_cookies_and_other_headers_cannot_be_stored(db_engine, name):
+    with pytest.raises(ValueError, match="cannot be stored"):
+        IdempotentResult(201, {}, headers={name: "jidan_session=secret-token"})
+
+
+@pytest.mark.parametrize("value", ["", "a\r\nSet-Cookie: x=1", "x" * 3000, None])
+def test_unsafe_header_values_are_rejected(value):
+    with pytest.raises(ValueError, match="invalid value"):
+        IdempotentResult(201, {}, headers={"Location": value})
+
+
+def test_set_cookie_added_by_the_caller_is_neither_stored_nor_replayed(db_engine):
+    caller = Caller(db_engine)
+    app = FastAPI()
+    install_error_handlers(app)
+
+    @app.post("/api/t/cookie")
+    def cookie(body: ThingIn, owner: CsrfOwner, db: DbSession, key: IdempotencyKey):
+        response = run_idempotent(
+            db=db, principal=owner, key=key, method="POST", path="/api/t/cookie", body=body,
+            handler=lambda: IdempotentResult(201, {"ok": True}, headers={"Location": "/x"}),
+        )
+        if "Idempotent-Replayed" not in response.headers:  # only the run that did the work
+            response.set_cookie("jidan_session", "secret-token-value")
+        return response
+
+    api = TestClient(app)
+    key = new_key()
+    first = post(api, caller, key, path="/api/t/cookie")
+    again = post(api, caller, key, path="/api/t/cookie")
+    assert "secret-token-value" in first.headers["set-cookie"]
+    assert "set-cookie" not in again.headers and again.headers["location"] == "/x"
+    with Session(db_engine) as session:
+        row = session.scalars(select(IdempotencyRecord)).one()
+        stored = f"{row.response_headers} {row.response_body}".lower()
+        assert "cookie" not in stored and "secret-token-value" not in stored
+
+
+def test_tampered_stored_headers_are_filtered_on_replay(db_engine):
+    caller = Caller(db_engine)
+    api = header_app({"Location": "/ok"})
+    key = new_key()
+    post(api, caller, key, path="/api/t/created")
+    with Session(db_engine) as session:
+        row = session.scalars(select(IdempotencyRecord)).one()
+        row.response_headers = {"Set-Cookie": "evil=1", "location": "/ok", "x-other": "1"}
+        session.commit()
+    again = post(api, caller, key, path="/api/t/created")
+    assert "set-cookie" not in again.headers and "x-other" not in again.headers
+    assert again.headers["location"] == "/ok"
+
+
+def test_results_without_headers_and_rows_without_the_column_value_still_replay(api, caller, db_engine):
+    key = new_key()
+    assert post(api, caller, key).status_code == 201
+    with Session(db_engine) as session:
+        session.execute(update(IdempotencyRecord).values(response_headers=None))
+        session.commit()  # a row written before migration 0004
+    again = post(api, caller, key)
+    assert again.status_code == 201 and again.headers["Idempotent-Replayed"] == "true"
+    assert "location" not in again.headers
