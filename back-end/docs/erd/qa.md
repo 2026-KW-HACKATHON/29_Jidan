@@ -83,7 +83,7 @@ erDiagram
 | `manual_qa_conversations` | 매장과 질문한 WORKER에 귀속. 접근 종료 후에도 이력을 다른 사용자에게 넘기지 않으며 현재 권한 없이는 복원 불가 |
 | `manual_qa` | `(conversation_id, sequence)` UNIQUE. 질문마다 접수 당시 현재 게시 버전을 고정. question은 텍스트 또는 완료 전사를 텍스트로 보존. 상태 `RUNNING/READY/ERROR`. RUNNING은 answer/오류/completed_at NULL, READY는 answer·outcome·completed_at 필수, ERROR는 공개 오류·completed_at 필수 및 answer NULL |
 | `manual_qa_citations` | `(qa_id, sort_order)` UNIQUE. 같은 질문의 게시 버전에 속하는 섹션만 참조. ANSWERED이면 1~10개 근거, NEEDS_OWNER이면 0개. excerpt는 당시 근거 발췌를 보존하고 sectionTitle/versionId는 불변 게시본에서 조회 가능 |
-| `qa_media` | 같은 매장·본인 WORKER의 비공개 IMAGE/AUDIO. 점주 업로드와 소유권을 분리. 원문 object_key는 응답 금지. expires_at/deleted_at으로 보관 기한과 정리 상태 표현 |
+| `qa_media` | 같은 매장·본인 WORKER의 비공개 IMAGE/AUDIO. API purpose의 QUESTION_IMAGE/QUESTION_AUDIO로 각각 매핑하며 sizeBytes는 byte_size에 대응. 점주 업로드와 소유권을 분리. 원문 object_key는 응답 금지. expires_at/deleted_at으로 보관 기한과 정리 상태 표현 |
 | `manual_qa_photos` | 같은 매장·본인 질문의 IMAGE만 최대 3개. `(qa_id, sort_order)` UNIQUE이며 질문 내 중복 파일 금지. 대화의 worker/store와 파일 귀속 일치 검증 |
 
 - `outcome=ANSWERED`는 게시본에 충분한 근거가 있을 때만 허용한다. 근거 부족 또는 미확정 정보는 `NEEDS_OWNER`로 표시한다. 사진과 사용자 지시가 점주 매뉴얼의 사실을 바꾸지 않는다.
