@@ -76,6 +76,8 @@ tags:
   description: 요청·기한·응답·근무 확정과 매뉴얼 접근 연결
 - name: 일반회원 초대함
   description: 검증 이메일로 받은 매장 초대 조회·응답
+- name: 공통 알림
+  description: 회원별 전체/안 읽음 알림과 읽음 처리
 security:
 - SessionCookie: []
 externalDocs:
@@ -11149,6 +11151,242 @@ paths:
               $ref: '#/components/schemas/ReceivedInvitationResponse'
             example:
               decision: ACCEPT
+  /api/users/me/notifications/{notificationId}/read:
+    post:
+      tags:
+      - 공통 알림
+      operationId: markNotificationRead
+      summary: 선택 알림 읽음 처리
+      description: |-
+        가입 완료된 ACTIVE OWNER 또는 WORKER 세션이 필요합니다. 알림은 세션 회원 본인만 접근합니다.
+
+        카드를 눌렀을 때 본인 알림의 readAt을 최초 서버 시각으로 설정합니다. 이미 읽었다면 readAt을 유지해 200 현재 결과를 반환합니다. 대상 화면 이동은 target으로 수행하고 대상 권한 오류가 나더라도 알림 읽음과는 별개입니다. 본인 소유가 아닌 ID는 404입니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+
+        변경은 SessionCookie + X-CSRF-Token 및 허용 Origin의 정확한 scheme/host/port 검증이 필요합니다. 누락/불일치는 403 CSRF_INVALID입니다. Idempotency-Key(UUID)를 회원 주체·endpoint·정규화 body 기준 24시간 기록하며 동일 요청은 최초 결과를 재현하고 다른 본문 재사용은 409 IDEMPOTENCY_KEY_REUSED입니다. 재현 시에도 현재 역할·매장 접근을 재검증합니다.
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - name: notificationId
+        in: path
+        required: true
+        description: 'notificationId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: 같은 논리 요청의 재시도에는 동일 UUID를 사용합니다.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '409':
+          description: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: STATE_CONFLICT
+                message: 현재 상태·revision 또는 Idempotency-Key가 충돌합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+              example:
+                id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                type: WORK_CONFIRMED
+                title: 대타 근무가 확정됐어요
+                body: 컴포즈커피 광운대점 10월 10일 09:00–14:00
+                target:
+                  type: WORK_SCHEDULE
+                  eventId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                createdAt: '2026-10-05T01:00:00Z'
+                readAt: '2026-10-05T01:00:00Z'
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=506-4373
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRead'
+            example: {}
+  /api/users/me/notifications:
+    get:
+      tags:
+      - 공통 알림
+      operationId: listMyNotifications
+      summary: 전체·안 읽은 알림과 안 읽음 건수
+      description: |-
+        가입 완료된 ACTIVE OWNER 또는 WORKER 세션이 필요합니다. 알림은 세션 회원 본인만 접근합니다.
+
+        read=ALL/UNREAD 필터, 최신 생성순(createdAt DESC,id DESC). unreadCount는 필터/페이지와 무관한 본인 전체 미열람 건수이며 asOf와 같은 시점입니다. 빈 목록은 200 items=[]입니다. target은 내부 리소스 종류/ID만 담고 외부 URL·초대 토큰을 포함하지 않습니다. 알림 조회만으로 읽음 처리하지 않습니다. target 페이지 API는 현재 권한을 다시 검증하며 초대/근무 만료 후 오래된 알림을 눌러도 접근이 복구되지 않습니다.
+
+        신규 지원·초대 수락·매장 승인·초대 만료·근무 요청·1시간 미응답·근무 확정·근무 전날 안내·게시 매뉴얼 갱신을 domain transaction outbox로 발행합니다. 이벤트 ID+수신자 유일성으로 재처리 중복을 방지합니다. 앱 내부 알림이며 외부 push 등록 API는 이번 화면에 없습니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: 0부터 시작
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        description: 페이지 크기; 기본 20, 최대 100
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: read
+        in: query
+        required: false
+        description: read
+        schema:
+          type: string
+          enum:
+          - ALL
+          - UNREAD
+          default: ALL
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPage'
+              example:
+                items:
+                - id: fc95196b-5eb0-4a9a-a24b-1a5468c19563
+                  type: WORK_CONFIRMED
+                  title: 대타 근무가 확정됐어요
+                  body: 컴포즈커피 광운대점 10월 10일 09:00–14:00
+                  target:
+                    type: WORK_SCHEDULE
+                    eventId: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                  createdAt: '2026-10-05T01:00:00Z'
+                  readAt: null
+                page: 0
+                size: 20
+                totalItems: 1
+                asOf: '2026-10-05T01:00:00Z'
+                unreadCount: 1
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=506-3834
 components:
   securitySchemes:
     SessionCookie:
@@ -16122,6 +16360,182 @@ components:
       - expiresAt
       - accessExpiresAt
       - createdAt
+    NotificationTarget:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        properties:
+          type:
+            type: string
+            const: JOB_APPLICATION
+          applicationId:
+            type: string
+            format: uuid
+          storeId:
+            type: string
+            format: uuid
+          jobId:
+            type: string
+            format: uuid
+        required:
+        - type
+        - applicationId
+        - storeId
+        - jobId
+      - type: object
+        additionalProperties: false
+        properties:
+          type:
+            type: string
+            const: WORK_REQUEST
+          requestId:
+            type: string
+            format: uuid
+          storeId:
+            type: string
+            format: uuid
+          jobId:
+            type: string
+            format: uuid
+        required:
+        - type
+        - requestId
+        - storeId
+        - jobId
+      - type: object
+        additionalProperties: false
+        properties:
+          type:
+            type: string
+            const: STORE_INVITATION
+          invitationId:
+            type: string
+            format: uuid
+        required:
+        - type
+        - invitationId
+      - type: object
+        additionalProperties: false
+        properties:
+          type:
+            type: string
+            const: STORE
+          storeId:
+            type: string
+            format: uuid
+        required:
+        - type
+        - storeId
+      - type: object
+        additionalProperties: false
+        properties:
+          type:
+            type: string
+            const: MANUAL
+          storeId:
+            type: string
+            format: uuid
+        required:
+        - type
+        - storeId
+      - type: object
+        additionalProperties: false
+        properties:
+          type:
+            type: string
+            const: WORK_SCHEDULE
+          eventId:
+            type: string
+            format: uuid
+        required:
+        - type
+        - eventId
+    NotificationPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+          minItems: 0
+          maxItems: 100
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalItems:
+          type: integer
+          minimum: 0
+        asOf:
+          type: string
+          format: date-time
+        unreadCount:
+          type: integer
+          minimum: 0
+      required:
+      - items
+      - page
+      - size
+      - totalItems
+      - asOf
+      - unreadCount
+    Notification:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+          - NEW_APPLICATION
+          - INVITATION_ACCEPTED
+          - STORE_APPROVED
+          - INVITATION_EXPIRED
+          - WORK_REQUEST_RECEIVED
+          - WORK_REQUEST_NO_RESPONSE
+          - WORK_CONFIRMED
+          - STORE_INVITED
+          - WORK_REMINDER
+          - MANUAL_PUBLISHED
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+        body:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: \S
+        target:
+          $ref: '#/components/schemas/NotificationTarget'
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - type
+      - title
+      - body
+      - target
+      - createdAt
+      - readAt
+    NotificationRead:
+      type: object
+      additionalProperties: false
+      properties: {}
+      required: []
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.

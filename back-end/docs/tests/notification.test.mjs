@@ -1,0 +1,5 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {spec,validator} from './helpers/owner-contract.mjs';
+const p='/api/users/me/notifications';const sample=spec.paths[p].get.responses['200'].content['application/json'].example;
+test('알림: 안 읽음/모두 읽음/빈 목록 응답',()=>{const v=validator('NotificationPage');assert.ok(v(sample));assert.ok(v({...sample,items:[],totalItems:0,unreadCount:0}));assert.equal(v({...sample,unreadCount:-1}),false);});
+test('알림 target: 외부 URL·토큰·종류 불일치 차단',()=>{const v=validator('NotificationTarget');assert.ok(v({type:'WORK_REQUEST',requestId:sample.items[0].id,storeId:sample.items[0].id,jobId:sample.items[0].id}));for(const x of [{type:'WORK_REQUEST',url:'https://example.com'},{type:'STORE_INVITATION',invitationId:sample.items[0].id,token:'secret'},{type:'STORE',requestId:sample.items[0].id}])assert.equal(v(x),false);});
+test('알림 읽음: 클라이언트 시각·수신자 주입 차단',()=>{const v=validator('NotificationRead');assert.ok(v({}));assert.equal(v({readAt:'2026-10-05T01:00:00Z'}),false);assert.equal(v({userId:'x'}),false);assert.match(spec.paths[p+'/{notificationId}/read'].post.description,/readAt을 유지/);});
