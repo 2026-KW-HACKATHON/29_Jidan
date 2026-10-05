@@ -19486,11 +19486,17 @@ components:
           manualVersionId:
             type: string
             format: uuid
+        required:
+        - manualStatus
+        - manualVersionId
       - properties:
           manualStatus:
             const: NOT_PUBLISHED
           manualVersionId:
             type: 'null'
+        required:
+        - manualStatus
+        - manualVersionId
     ReceivedInvitationResult:
       oneOf:
       - $ref: '#/components/schemas/StoreInvitationAcceptance'
