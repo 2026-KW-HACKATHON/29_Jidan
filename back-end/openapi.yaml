@@ -66,6 +66,8 @@ tags:
   description: 현재 유효한 매장 자료 접근으로 점주가 게시한 업무 목록·단계 열람
 - name: 점주 대타 공고
   description: 점주 공고 등록·모집 중/마감 관리
+- name: 대타 공고 탐색
+  description: 일반회원 공고 검색·필터·상세
 security:
 - SessionCookie: []
 externalDocs:
@@ -9027,6 +9029,286 @@ paths:
       externalDocs:
         description: 기준 Figma 화면
         url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=516-4923
+  /api/job-postings:
+    get:
+      tags:
+      - 대타 공고 탐색
+      operationId: searchJobPostings
+      summary: 대타 공고 검색·필터·최신순
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        월계1동 APPROVED 매장의 모집 중이고 근무 시작 전인 공고만 반환합니다. q는 매장명 또는 담당 업무(title/description)를 검색하며 trim 후 빈 검색은 전체입니다. 업종 생략=전체, 근무일은 Asia/Seoul 오늘을 기준으로 TODAY, TOMORROW, WEEK(오늘부터 7일), MONTH(오늘부터 30일) 반열린 범위를 사용합니다. 시간대 MORNING=[06,12), AFTERNOON=[12,18), NIGHT=[18,다음날06)와 근무 구간이 겹치면 포함합니다. 끝이 경계와 같은 경우 겹침이 아닙니다.
+
+        고정 최신순(createdAt DESC,id DESC)입니다. 필터는 AND이며 결과 없음은 200 items=[]입니다. 지원자 수는 개인정보 없는 현재 유효 지원 수입니다. 날짜 범위·시간대 해석은 화면에 없는 설계 제안입니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: 0부터 시작
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        description: 페이지 크기; 기본 20, 최대 100
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: q
+        in: query
+        required: false
+        description: 매장명 또는 업무, 앞뒤 공백 제거
+        schema:
+          type: string
+          minLength: 0
+          maxLength: 100
+      - name: industry
+        in: query
+        required: false
+        description: 생략하면 전체
+        schema:
+          $ref: '#/components/schemas/Industry'
+      - name: workDay
+        in: query
+        required: false
+        description: 근무일 필터
+        schema:
+          type: string
+          enum:
+          - ALL
+          - TODAY
+          - TOMORROW
+          - WEEK
+          - MONTH
+          default: ALL
+      - name: timeBand
+        in: query
+        required: false
+        description: 시간대 필터
+        schema:
+          type: string
+          enum:
+          - ALL
+          - MORNING
+          - AFTERNOON
+          - NIGHT
+          default: ALL
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerJobPostingPage'
+              example:
+                items:
+                - title: 주말 오픈 대타
+                  description: 음료 제조와 고객 응대
+                  workPart: WEEKEND_OPEN
+                  workDate: '2026-10-10'
+                  startTime: 09:00
+                  endTime: '14:00'
+                  endsNextDay: false
+                  minimumExperience: ANY
+                  experienceNotes: ''
+                  hourlyPay: 12000
+                  paymentTiming: WORK_DAY
+                  paymentNotes: ''
+                  id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                  store:
+                    id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    name: 컴포즈커피 광운대점
+                    industry: CAFE
+                    address: 서울특별시 노원구 광운로 20
+                    neighborhood: 월계1동
+                  status: RECRUITING
+                  recruitmentCount: 1
+                  applicantCount: 0
+                  startAt: '2026-10-10T00:00:00Z'
+                  endAt: '2026-10-10T05:00:00Z'
+                  estimatedPay: 60000
+                  createdAt: '2026-10-05T01:00:00Z'
+                  closedAt: null
+                  revision: 1
+                  myApplicationId: null
+                  canApply: true
+                  cannotApplyReason: null
+                page: 0
+                size: 20
+                totalItems: 1
+                asOf: '2026-10-05T01:00:00Z'
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=468-2984
+  /api/job-postings/{jobId}:
+    get:
+      tags:
+      - 대타 공고 탐색
+      operationId: getJobPosting
+      summary: 대타 공고 상세·지원 가능 여부
+      description: |-
+        ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
+
+        현재 공고 조건·추정 보수·매장 위치·지원 가능 여부를 반환합니다. myApplicationId는 본인 신청만 반환합니다. CLOSED 또는 시작 후에는 상세는 읽을 수 있지만 canApply=false입니다. canApply=false 이유는 서버가 결정하며 최초 지원 후 신청 철회 API로 이동합니다. 다른 지원자 개인정보·점주 사업자번호·전화번호는 노출하지 않습니다.
+
+        응답은 Cache-Control: no-store이며 개인정보·토큰·음성 원문을 로그에 남기지 않습니다.
+      security:
+      - SessionCookie: []
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        description: 'jobId: URL 상위 리소스와의 귀속 및 현재 주체의 권한을 검증합니다.'
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: 역할·계정·매장 승인·CSRF/Origin·현재 접근 권한 실패.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '404':
+          description: 리소스를 찾을 수 없습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RESOURCE_NOT_FOUND
+                message: 리소스를 찾을 수 없습니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '422':
+          description: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: 필드·날짜·시간·쿼리·리소스 귀속 검증 실패. fieldErrors로 안내합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: 일시 처리 실패. 저장·상태 전이를 원자적으로 롤백합니다.
+                requestId: req_chapter_100
+                fieldErrors: []
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerJobPosting'
+              example:
+                title: 주말 오픈 대타
+                description: 음료 제조와 고객 응대
+                workPart: WEEKEND_OPEN
+                workDate: '2026-10-10'
+                startTime: 09:00
+                endTime: '14:00'
+                endsNextDay: false
+                minimumExperience: ANY
+                experienceNotes: ''
+                hourlyPay: 12000
+                paymentTiming: WORK_DAY
+                paymentNotes: ''
+                id: 8215b01a-ed7b-4c4a-950f-c6e1480bd563
+                store:
+                  id: 51c1c743-d377-4e7a-8449-94377eecfce0
+                  name: 컴포즈커피 광운대점
+                  industry: CAFE
+                  address: 서울특별시 노원구 광운로 20
+                  neighborhood: 월계1동
+                status: RECRUITING
+                recruitmentCount: 1
+                applicantCount: 0
+                startAt: '2026-10-10T00:00:00Z'
+                endAt: '2026-10-10T05:00:00Z'
+                estimatedPay: 60000
+                createdAt: '2026-10-05T01:00:00Z'
+                closedAt: null
+                revision: 1
+                myApplicationId: null
+                canApply: true
+                cannotApplyReason: null
+      externalDocs:
+        description: 기준 Figma 화면
+        url: https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=468-2992
 components:
   securitySchemes:
     SessionCookie:
@@ -13312,6 +13594,172 @@ components:
       - hourlyPay
       - paymentTiming
       - paymentNotes
+    WorkerJobPostingPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerJobPosting'
+          minItems: 0
+          maxItems: 100
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalItems:
+          type: integer
+          minimum: 0
+        asOf:
+          type: string
+          format: date-time
+      required:
+      - items
+      - page
+      - size
+      - totalItems
+      - asOf
+    WorkerJobPosting:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+        description:
+          type: string
+          minLength: 1
+          maxLength: 3000
+          pattern: \S
+        workPart:
+          type: string
+          enum:
+          - WEEKDAY_OPEN
+          - WEEKDAY_CLOSE
+          - WEEKEND_OPEN
+          - WEEKEND_CLOSE
+          - OTHER
+        workDate:
+          type: string
+          format: date
+        startTime:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+        endTime:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+        endsNextDay:
+          type: boolean
+        minimumExperience:
+          type: string
+          enum:
+          - ANY
+          - MONTHS_3
+          - MONTHS_6
+          - YEAR_1
+        experienceNotes:
+          type: string
+          minLength: 0
+          maxLength: 1000
+        hourlyPay:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+        paymentTiming:
+          type: string
+          enum:
+          - WORK_DAY
+          - NEXT_DAY
+          - NEGOTIABLE
+        paymentNotes:
+          type: string
+          minLength: 0
+          maxLength: 1000
+        id:
+          type: string
+          format: uuid
+        store:
+          $ref: '#/components/schemas/JobStoreCard'
+        status:
+          type: string
+          enum:
+          - RECRUITING
+          - CLOSED
+        recruitmentCount:
+          type: integer
+          const: 1
+        applicantCount:
+          type: integer
+          minimum: 0
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        estimatedPay:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        closedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revision:
+          type: integer
+          minimum: 1
+        myApplicationId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        canApply:
+          type: boolean
+        cannotApplyReason:
+          oneOf:
+          - type: string
+            enum:
+            - JOB_CLOSED
+            - JOB_STARTED
+            - ALREADY_APPLIED
+            - ALREADY_CONFIRMED
+          - type: 'null'
+      required:
+      - title
+      - description
+      - workPart
+      - workDate
+      - startTime
+      - endTime
+      - endsNextDay
+      - minimumExperience
+      - experienceNotes
+      - hourlyPay
+      - paymentTiming
+      - paymentNotes
+      - id
+      - store
+      - status
+      - recruitmentCount
+      - applicantCount
+      - startAt
+      - endAt
+      - estimatedPay
+      - createdAt
+      - closedAt
+      - revision
+      - myApplicationId
+      - canApply
+      - cannotApplyReason
   responses:
     AdminPasswordUnauthorized:
       description: 관리자 비밀번호가 일치하지 않습니다.
