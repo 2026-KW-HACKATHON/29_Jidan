@@ -17,3 +17,8 @@ it('HTTP는 다른 매장·불완전한 응답을 거절하고 provider 원문�
  const service=createManualHttpService(id,()=> 'csrf',vi.fn().mockResolvedValue(new Response(JSON.stringify({code:'REVISION_CONFLICT',message:'private provider payload'}),{status:409})))
  await expect(service.call('getOwnerManualState',{},undefined,{signal})).rejects.toThrow(/^REVISION_CONFLICT$/)
 })
+it('이력 페이지는 0부터 시작하고 UUID 경로와 query를 분리한다',async()=>{
+ const response={items:[],page:2,size:100,totalItems:0,totalPages:0,asOf:'2026-10-06T00:00:00Z'},transport=vi.fn().mockResolvedValue(new Response(JSON.stringify(response))),signal=new AbortController().signal
+ await createManualHttpService(id,()=>null,transport).call('getManualInterviewTurns',{sessionId:id,page:'2'},undefined,{signal})
+ expect(transport.mock.calls[0][0]).toBe(`/api/stores/${id}/manual/interviews/${id}/turns?page=2&size=100`)
+})
