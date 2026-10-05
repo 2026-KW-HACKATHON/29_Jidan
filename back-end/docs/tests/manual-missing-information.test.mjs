@@ -20,6 +20,20 @@ test('미확정 대상·필드 조합과 빈 설명 거절',()=>{
  const v=validator('ManualMissingInformation');assert.ok(v(gap));
  for(const x of [{...gap,target:'MANUAL'},{...gap,targetId:null},{...gap,field:'steps'},{...gap,description:' '},{...gap,acknowledged:true}])assert.equal(v(x),false);
 });
+test('모든 미확정 분기는 판별 필드 누락과 다른 대상의 필드 거절',()=>{
+ const v=validator('ManualMissingInformation');
+ for(const target of [
+  {target:'MANUAL',targetId:null,field:'shifts'},
+  {target:'SHIFT',targetId:gap.targetId,field:'endTime'},
+  {target:'SECTION',targetId:gap.targetId,field:'steps'},
+ ]){
+  const value={...gap,...target};assert.ok(v(value));
+  for(const field of ['target','targetId','field']){
+   const missing={...value};delete missing[field];assert.equal(v(missing),false);
+  }
+  assert.equal(v({...value,field:target.field==='steps'?'endTime':'steps'}),false);
+ }
+});
 test('미확정 항목은 최종 발행 동의로도 확인하며 내부 issues 주입은 거절',()=>{
  const v=validator('ManualPublishInput');const x={expectedVersionId:draft.versionId,expectedRevision:draft.revision,confirmed:true,acknowledgedIssueIds:[gap.id]};
  assert.ok(v(x));assert.equal(v({...x,issues:[]}),false);

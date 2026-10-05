@@ -21,7 +21,7 @@ test('초대: PENDING/완료 상태의 시각과 수락자 일치 및 비밀 응
   const accepted = { ...pending, status: 'ACCEPTED', acceptedAt: '2026-10-05T02:00:00Z', acceptedBy: { workerId: '7390d3c1-dc0d-4b1c-814d-b68a1df5c1b6', name: '김지수' } };
   assert.ok(invitation(accepted)); assert.equal(invitation({ ...accepted, acceptedBy: null }), false);
   assert.equal(invitation({ ...pending, acceptedAt: accepted.acceptedAt }), false);
-  assert.equal(invitation({ ...pending, status: 'CANCELED' }), false);
+  assert.equal(invitation({ ...pending, status: 'CANCELLED' }), false);
   assert.equal(invitation({ ...pending, status: 'DECLINED' }), false);
   for (const field of ['token', 'tokenHash', 'invitationUrl', 'password']) assert.equal(invitation({ ...pending, [field]: 'secret' }), false);
 });
