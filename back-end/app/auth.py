@@ -240,6 +240,34 @@ def clear_registration_cookie(response: Response) -> None:
     )
 
 
+# Cookies only after the commit. A cookie sent before its session row is durable would log the
+# user in with a token the server cannot find if the commit then fails. These helpers commit the
+# request's session first, and an exception (commit failure) means no `Set-Cookie` is added; the
+# caller's error handler then answers with a 5xx. Use them in place of the bare cookie setters
+# whenever the same request created or revoked the session on `db`.
+
+def commit_then_set_session_cookie(db: Session, response: Response, issued: IssuedSession) -> None:
+    db.commit()
+    set_session_cookie(response, issued)
+
+
+def commit_then_clear_session_cookie(db: Session, response: Response) -> None:
+    db.commit()
+    clear_session_cookie(response)
+
+
+def commit_then_set_registration_cookie(
+    db: Session, response: Response, issued: IssuedSession,
+) -> None:
+    db.commit()
+    set_registration_cookie(response, issued)
+
+
+def commit_then_clear_registration_cookie(db: Session, response: Response) -> None:
+    db.commit()
+    clear_registration_cookie(response)
+
+
 def _cookie_token(request: Request, name: str) -> str | None:
     token = request.cookies.get(name)
     if not token or len(token) > MAX_TOKEN_LENGTH:
