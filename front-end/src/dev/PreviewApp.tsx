@@ -3,6 +3,7 @@ import { MobileLayout } from '../ui/MobileLayout'
 import { AuthFlow } from '../auth/AuthFlow'
 import { Fragment, lazy, Suspense } from 'react'
 import { handlePreviewLink, navigatePreview, usePreviewLocation } from './navigation'
+const Manual = lazy(() => import('./ManualPreview'))
 const Invitations = lazy(() => import('./InvitationsPreview'))
 const StoreManagement = lazy(() => import('./StoreManagementPreview'))
 const OwnerJobs = lazy(() => import('./OwnerJobsPreview'))
@@ -18,6 +19,7 @@ const Employment = lazy(() => import('./EmploymentPreview'))
 const ProfilePreview = lazy(() => import('./WorkerProfilePreview'))
 import './PreviewApp.css'
 const groups=[
+ {title:'점주 매뉴얼 작성',links:[['매뉴얼 시작 안내','/__manual'],['인터뷰 이어하기','/__manual?resume=1']]},
  {title:'점주 지원자 확인',links:[['지원자 목록','/__owner/jobs?view=applicants&id=open'],['지원자 없음','/__owner/jobs?view=applicants&id=open&noApplicants=1'],['박지원 지원서','/__owner/jobs?view=applicants&id=open&review=park'],['김래원 지원서·열람 전용','/__owner/jobs?view=applicants&id=open&review=kim&readonly=1'],['근무 요청 확인','/__owner/jobs?view=applicants&id=open&overlay=request&applicant=park'],['근무 요청 완료','/__owner/jobs?view=applicants&id=open&overlay=request-complete&applicant=park'],['근무 요청 실패·재시도','/__owner/jobs?view=applicants&id=open&overlay=request&applicant=park&requestFail=1']]},
  {title:'점주 공고 관리',links:[['모집 중 공고','/__owner/jobs'],['마감 공고','/__owner/jobs?tab=closed'],['공고 없는 상태','/__owner/jobs?empty=1'],['모집 마감 확인','/__owner/jobs?view=detail&id=open&overlay=close'],['모집 마감 완료','/__owner/jobs?view=detail&id=open&overlay=closed'],['모집 마감 실패','/__owner/jobs?view=detail&id=open&overlay=close&fail=1']]},
  {title:'점주 공고 등록',links:[['1. 업무 조건','/__owner/jobs?view=create'],['2. 경험 조건','/__owner/jobs?view=create&step=2'],['3. 보수 조건','/__owner/jobs?view=create&step=3'],['근무 파트 선택','/__owner/jobs?view=create&picker=part'],['최소 경력 선택','/__owner/jobs?view=create&step=2&picker=experience'],['지급 시점 선택','/__owner/jobs?view=create&step=3&picker=payment'],['공고 등록 완료','/__owner/jobs?view=create&step=3&result=success'],['공고 등록 실패','/__owner/jobs?view=create&step=3&result=failure&fail=1']]},
@@ -33,7 +35,8 @@ function ScreenList({current}:{current:string}) {
  return <>{groups.map(group=><section key={group.title}><h3>{group.title}</h3>{group.links.map(([title,url])=><a key={url} href={url} aria-current={url===current?'page':undefined}>{title}</a>)}</section>)}</>
 }
 export default function PreviewApp(){const current=usePreviewLocation();const path=current.split('?')[0];let content
- if(path==='/__owner/jobs')content=<OwnerJobs/>
+ if(path==='/__manual')content=<Manual/>
+ else if(path==='/__owner/jobs')content=<OwnerJobs/>
  else if(path==='/__invitations')content=<Invitations/>
  else if(path==='/__store/manage')content=<StoreManagement/>
  else if(path==='/__jobs')content=<Jobs/>
