@@ -9,6 +9,7 @@ from app.auth_views import router as auth_views_router
 from app.database import database_status
 from app.design_docs import install_design_docs
 from app.errors import UnstructuredHTTPException, install_error_handlers
+from app.logout import router as logout_router
 from app.middleware import install_middleware
 from app.oauth import router as oauth_router
 from app.registration import router as registration_router
@@ -20,6 +21,7 @@ install_middleware(app)
 app.include_router(auth_views_router)
 app.include_router(oauth_router)
 app.include_router(registration_router)
+app.include_router(logout_router)
 
 
 @app.get("/api/health")
