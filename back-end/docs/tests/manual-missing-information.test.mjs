@@ -21,6 +21,6 @@ test('미확정 대상·필드 조합과 빈 설명 거절',()=>{
  for(const x of [{...gap,target:'MANUAL'},{...gap,targetId:null},{...gap,field:'steps'},{...gap,description:' '},{...gap,acknowledged:true}])assert.equal(v(x),false);
 });
 test('미확정 항목은 최종 발행 동의로도 확인하며 내부 issues 주입은 거절',()=>{
- const v=validator('ManualPublishInput');const x={expectedRevision:draft.revision,confirmed:true,acknowledgedIssueIds:[gap.id]};
+ const v=validator('ManualPublishInput');const x={expectedVersionId:draft.versionId,expectedRevision:draft.revision,confirmed:true,acknowledgedIssueIds:[gap.id]};
  assert.ok(v(x));assert.equal(v({...x,issues:[]}),false);
 });

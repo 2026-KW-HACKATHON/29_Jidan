@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 지단 API 설계 명세
-  version: 0.8.0
+  version: 0.9.0
   description: |-
     Figma 인증·회원·매장·근무자 관리, 공고·지원·근무 확정, 홈·캘린더·알림, 매뉴얼·AI 인터뷰·업무 질문을 위한 구현 전 계약입니다.
 
@@ -6177,6 +6177,13 @@ paths:
         - 입력의 실질 변경이 없으면 revision/updatedAt을 유지합니다. 변경이 있으면 revision+1이며 부족 항목의 현재 확인을 초기화합니다. 이전 점주 확인은 별도 감사 이력에 남깁니다.
         - 수집된 원문 답변/평가/게시본을 수정하지 않습니다. 진행/생성/오류 초안 또는 게시본은 409 MANUAL_STATE_CONFLICT입니다. 클라이언트가 version/status/issues/점주 주체를 변경할 수 없습니다.
 
+        **대상 초안 식별과 재시도**
+
+        - expectedVersionId는 사용자가 조회·검토한 초안의 versionId이며 expectedRevision과 함께 필수입니다. 다른 초안에서 같은 revision 값이 재사용되어도 같은 리소스로 간주하지 않습니다.
+        - 현재 역할·매장 소유권을 검사한 뒤 멱등성 결과를 확인합니다. 같은 key·같은 본문의 성공 재시도는 최초 결과만 재현하고 현재 초안에 작업을 다시 적용하지 않습니다. expectedVersionId도 정규화 body에 포함하므로 같은 key로 다른 버전을 보내면 409 IDEMPOTENCY_KEY_REUSED입니다.
+        - 신규 요청은 매장 매뉴얼의 현재 초안 포인터를 잠그고 ID 비교·revision 비교·상태 검증·변경을 같은 트랜잭션에서 수행합니다. 현재 초안이 없거나 expectedVersionId와 다르면 revision이 같아도 409 MANUAL_VERSION_CONFLICT이며 내용·확인·게시 포인터·outbox를 변경하지 않습니다. ID가 일치한 뒤 revision이 다르면 409 REVISION_CONFLICT입니다. 게시·새 초안 생성도 같은 매뉴얼 잠금에 참여합니다.
+        - 충돌 후 최신 초안을 다시 조회하되 이전 입력·확인 의사를 새 versionId에 자동 적용하지 않습니다. 사용자가 새 초안을 다시 검토한 후 그 versionId/revision과 새 key로 요청합니다. expectedVersionId 누락·null·UUID 형식 오류는 422 VALIDATION_ERROR입니다.
+
         **회원 인증과 리소스 권한**
 
         - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
@@ -6281,17 +6288,26 @@ paths:
                 requestId: req_profile_001
                 fieldErrors: []
         '409':
-          description: REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
+          description: MANUAL_VERSION_CONFLICT / REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
             최신 조회 후 현재 상태에 맞게 요청합니다.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                code: REVISION_CONFLICT
-                message: 최신 내용을 다시 확인해 주세요.
-                requestId: req_profile_001
-                fieldErrors: []
+              examples:
+                revisionConflict:
+                  value:
+                    code: REVISION_CONFLICT
+                    message: 최신 내용을 다시 확인해 주세요.
+                    requestId: req_manual_revision
+                    fieldErrors: []
+                versionConflict:
+                  summary: 다른 초안으로 교체되었거나 현재 초안이 없음
+                  value:
+                    code: MANUAL_VERSION_CONFLICT
+                    message: 검토한 초안이 현재 초안과 다릅니다. 다시 조회해 주세요.
+                    requestId: req_manual_version
+                    fieldErrors: []
         '503':
           description: 작업 예약 또는 저장소 실패. 변경 전체 rollback.
           content:
@@ -6355,6 +6371,7 @@ paths:
             examples:
               default:
                 value:
+                  expectedVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
                   expectedRevision: 1
                   content:
                     shifts:
@@ -6526,6 +6543,13 @@ paths:
         - 이 확인이 원문 답변이나 인텐트 coverage를 COVERED로 바꾸지 않습니다. 점주가 검토한 초안에 대해 발행을 허용하는 동의입니다.
         - 최종 게시 버튼은 publication API에서 남은 OPEN 항목을 한 번에 확인하고 발행할 수도 있습니다. 이 API는 검토 중 항목별 확인을 저장할 때 사용합니다.
 
+        **대상 초안 식별과 재시도**
+
+        - expectedVersionId는 사용자가 조회·검토한 초안의 versionId이며 expectedRevision과 함께 필수입니다. 다른 초안에서 같은 revision 값이 재사용되어도 같은 리소스로 간주하지 않습니다.
+        - 현재 역할·매장 소유권을 검사한 뒤 멱등성 결과를 확인합니다. 같은 key·같은 본문의 성공 재시도는 최초 결과만 재현하고 현재 초안에 작업을 다시 적용하지 않습니다. expectedVersionId도 정규화 body에 포함하므로 같은 key로 다른 버전을 보내면 409 IDEMPOTENCY_KEY_REUSED입니다.
+        - 신규 요청은 매장 매뉴얼의 현재 초안 포인터를 잠그고 ID 비교·revision 비교·상태 검증·변경을 같은 트랜잭션에서 수행합니다. 현재 초안이 없거나 expectedVersionId와 다르면 revision이 같아도 409 MANUAL_VERSION_CONFLICT이며 내용·확인·게시 포인터·outbox를 변경하지 않습니다. ID가 일치한 뒤 revision이 다르면 409 REVISION_CONFLICT입니다. 게시·새 초안 생성도 같은 매뉴얼 잠금에 참여합니다.
+        - 충돌 후 최신 초안을 다시 조회하되 이전 입력·확인 의사를 새 versionId에 자동 적용하지 않습니다. 사용자가 새 초안을 다시 검토한 후 그 versionId/revision과 새 key로 요청합니다. expectedVersionId 누락·null·UUID 형식 오류는 422 VALIDATION_ERROR입니다.
+
         **회원 인증과 리소스 권한**
 
         - 가입 완료된 ACTIVE `OWNER`의 회원 세션이 필요합니다. 가입 세션만 있으면 **401 REGISTRATION_REQUIRED**입니다.
@@ -6630,17 +6654,26 @@ paths:
                 requestId: req_profile_001
                 fieldErrors: []
         '409':
-          description: REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
+          description: MANUAL_VERSION_CONFLICT / REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
             최신 조회 후 현재 상태에 맞게 요청합니다.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                code: REVISION_CONFLICT
-                message: 최신 내용을 다시 확인해 주세요.
-                requestId: req_profile_001
-                fieldErrors: []
+              examples:
+                revisionConflict:
+                  value:
+                    code: REVISION_CONFLICT
+                    message: 최신 내용을 다시 확인해 주세요.
+                    requestId: req_manual_revision
+                    fieldErrors: []
+                versionConflict:
+                  summary: 다른 초안으로 교체되었거나 현재 초안이 없음
+                  value:
+                    code: MANUAL_VERSION_CONFLICT
+                    message: 검토한 초안이 현재 초안과 다릅니다. 다시 조회해 주세요.
+                    requestId: req_manual_version
+                    fieldErrors: []
         '503':
           description: 작업 예약 또는 저장소 실패. 변경 전체 rollback.
           content:
@@ -6710,6 +6743,7 @@ paths:
             examples:
               default:
                 value:
+                  expectedVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
                   expectedRevision: 2
                   issueIds:
                   - 9b45e14a-2830-41bf-a0fd-3a86d772e889
@@ -6745,8 +6779,15 @@ paths:
         - 같은 트랜잭션에서 항목 확인 → 초안의 immutable PUBLISHED 전환 → currentPublishedVersionId 교체 → 활성 초안 포인터 해제 → 알림 이벤트 outbox 저장을 수행합니다. 작업 실패 시 전체 rollback하고 기존 게시본을 유지합니다.
         - 게시본 content는 불변입니다. 수정은 새 인터뷰·새 초안 버전으로 진행하며 이전 게시본/평가/동의/인용 출처는 보존합니다. 게시 취소/버전 이력 관리 API는 후속 범위입니다.
         - 게시 시 사진 참조를 다시 검증합니다. 삭제/다른 매장 파일·잘못된 UUID/시간 참조가 있으면 422이며 게시하지 않습니다.
-        - 같은 key는 최초 게시 결과를 재현합니다. 새 key로 이미 게시된 초안을 발행하면 409 MANUAL_STATE_CONFLICT입니다. 재전송으로 버전을 복제하거나 추가 알림을 만들지 않습니다.
+        - 같은 key는 최초 게시 결과를 재현합니다. 새 key로 이미 게시된 초안을 발행하면 현재 초안과 ID가 다르거나 현재 초안이 없으므로 409 MANUAL_VERSION_CONFLICT입니다. 재전송으로 버전을 복제하거나 추가 알림을 만들지 않습니다.
         - 알림 실제 전달 실패는 게시 완료를 rollback하지 않습니다. 향후 알림 기능에서 outbox를 재처리합니다. 공개 응답에는 점주 계정 ID·대화·미충족 항목·내부 평가를 포함하지 않습니다.
+
+        **대상 초안 식별과 재시도**
+
+        - expectedVersionId는 사용자가 조회·검토한 초안의 versionId이며 expectedRevision과 함께 필수입니다. 다른 초안에서 같은 revision 값이 재사용되어도 같은 리소스로 간주하지 않습니다.
+        - 현재 역할·매장 소유권을 검사한 뒤 멱등성 결과를 확인합니다. 같은 key·같은 본문의 성공 재시도는 최초 결과만 재현하고 현재 초안에 작업을 다시 적용하지 않습니다. expectedVersionId도 정규화 body에 포함하므로 같은 key로 다른 버전을 보내면 409 IDEMPOTENCY_KEY_REUSED입니다.
+        - 신규 요청은 매장 매뉴얼의 현재 초안 포인터를 잠그고 ID 비교·revision 비교·상태 검증·변경을 같은 트랜잭션에서 수행합니다. 현재 초안이 없거나 expectedVersionId와 다르면 revision이 같아도 409 MANUAL_VERSION_CONFLICT이며 내용·확인·게시 포인터·outbox를 변경하지 않습니다. ID가 일치한 뒤 revision이 다르면 409 REVISION_CONFLICT입니다. 게시·새 초안 생성도 같은 매뉴얼 잠금에 참여합니다.
+        - 충돌 후 최신 초안을 다시 조회하되 이전 입력·확인 의사를 새 versionId에 자동 적용하지 않습니다. 사용자가 새 초안을 다시 검토한 후 그 versionId/revision과 새 key로 요청합니다. expectedVersionId 누락·null·UUID 형식 오류는 422 VALIDATION_ERROR입니다.
 
         **회원 인증과 리소스 권한**
 
@@ -6852,17 +6893,26 @@ paths:
                 requestId: req_profile_001
                 fieldErrors: []
         '409':
-          description: REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
+          description: MANUAL_VERSION_CONFLICT / REVISION_CONFLICT / IDEMPOTENCY_KEY_REUSED / MANUAL_STATE_CONFLICT / INTERVIEW_STATE_CONFLICT.
             최신 조회 후 현재 상태에 맞게 요청합니다.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                code: REVISION_CONFLICT
-                message: 최신 내용을 다시 확인해 주세요.
-                requestId: req_profile_001
-                fieldErrors: []
+              examples:
+                revisionConflict:
+                  value:
+                    code: REVISION_CONFLICT
+                    message: 최신 내용을 다시 확인해 주세요.
+                    requestId: req_manual_revision
+                    fieldErrors: []
+                versionConflict:
+                  summary: 다른 초안으로 교체되었거나 현재 초안이 없음
+                  value:
+                    code: MANUAL_VERSION_CONFLICT
+                    message: 검토한 초안이 현재 초안과 다릅니다. 다시 조회해 주세요.
+                    requestId: req_manual_version
+                    fieldErrors: []
         '503':
           description: 작업 예약 또는 저장소 실패. 변경 전체 rollback.
           content:
@@ -6923,11 +6973,13 @@ paths:
             examples:
               default:
                 value:
+                  expectedVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
                   expectedRevision: 3
                   confirmed: true
                   acknowledgedIssueIds: []
               confirmMissingInformation:
                 value:
+                  expectedVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
                   expectedRevision: 3
                   confirmed: true
                   acknowledgedIssueIds:
@@ -18184,12 +18236,17 @@ components:
       type: object
       additionalProperties: false
       properties:
+        expectedVersionId:
+          type: string
+          format: uuid
+          description: 조회하고 검토한 초안의 versionId. 현재 초안 ID와 일치해야 합니다.
         expectedRevision:
           type: integer
           minimum: 1
         content:
           $ref: '#/components/schemas/ManualContent'
       required:
+      - expectedVersionId
       - expectedRevision
       - content
     ManualWorkerPreview:
@@ -18215,6 +18272,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        expectedVersionId:
+          type: string
+          format: uuid
+          description: 조회하고 검토한 초안의 versionId. 현재 초안 ID와 일치해야 합니다.
         expectedRevision:
           type: integer
           minimum: 1
@@ -18234,6 +18295,7 @@ components:
           maxLength: 2000
           pattern: \S
       required:
+      - expectedVersionId
       - expectedRevision
       - issueIds
       - confirmed
@@ -18241,6 +18303,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        expectedVersionId:
+          type: string
+          format: uuid
+          description: 조회하고 검토한 초안의 versionId. 현재 초안 ID와 일치해야 합니다.
         expectedRevision:
           type: integer
           minimum: 1
@@ -18254,6 +18320,7 @@ components:
           maxItems: 200
           uniqueItems: true
       required:
+      - expectedVersionId
       - expectedRevision
       - confirmed
       - acknowledgedIssueIds

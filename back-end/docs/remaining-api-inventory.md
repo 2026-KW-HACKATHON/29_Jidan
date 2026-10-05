@@ -1,6 +1,6 @@
 # Figma 잔여 API 명세 목록
 
-기준: [KW-HACKATHON Figma](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1), 이슈 #100. 기존 53개 operation과 화면을 대조하여 현재 MVP에 필요한 46개를 추가한 목록입니다. 현재 OpenAPI 0.8.0은 총 99개 operation입니다. 이 문서는 구현 완료를 의미하지 않습니다.
+기준: [KW-HACKATHON Figma](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1), 이슈 #100. 기존 53개 operation과 화면을 대조하여 현재 MVP에 필요한 46개를 추가한 목록입니다. 현재 OpenAPI 0.9.0은 총 99개 operation입니다. 이 문서는 구현 완료를 의미하지 않습니다.
 
 ## 이미 명세가 있는 챕터
 
@@ -163,3 +163,5 @@ OpenAPI lint와 JSON Schema/예시/상태 계약 테스트는 구현 계약을 �
 새로 확정한 요청 기한·확정 철회·재지원·캘린더 범위·추천 순서는 설계 제안으로 남겨두지 않습니다. 화면에 없는 관심 매장 등록/해제, 첫 매장 선택과 집계 상한, 파일 보관 상한 및 근무 중첩 차단은 기존 보완 설계로 유지합니다.
 
 0.8.0은 수락 시 CLOSED/closedAt 기록, 확정 철회 시 RECRUITING/closedAt=null 복구, 마감 재요청의 이력 보존으로 상태 전이를 보정합니다. 0.7.0의 캘린더 편집/개별 상세 API 제거, TEMPORARY_WORK만 허용하는 이벤트, WORK_SCHEDULE target의 storeId/workDate 필수화, 추천 카드 matchesAvailability 필수화와 철회 상태 추가를 포함하는 계약 변경입니다. 업무 API 구현 또는 데이터 마이그레이션을 수행한 것은 아닙니다. 설계 Swagger 제공 endpoint는 별도 문서 경로이며 [개발 CI/CD와 주소](README.md#개발-서버-cicd와-endpoint)에 정리했습니다.
+
+0.9.0은 초안 내용 수정·부족 항목 확인·게시 요청에 expectedVersionId를 필수 추가한다. 초안 교체 충돌과 멱등성 처리 규칙은 [매뉴얼 계약](manual-interview-design.md#초안-교체와-오래된-탭-보호-openapi-090)을 따른다.
