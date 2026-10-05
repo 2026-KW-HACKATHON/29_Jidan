@@ -23,6 +23,7 @@ mkdir -p "$root/releases"
 exec 9>"$root/deploy.lock"
 flock -w 300 9
 child=
+migration_container=
 run() {
   "$@" &
   child=$!
@@ -61,6 +62,11 @@ cleanup() {
     wait "$child" 2>/dev/null || true
     child=
   fi
+  # An interrupted `compose run` client can leave its one-off container migrating.
+  if [[ -n "$migration_container" ]]; then
+    docker rm -f "$migration_container" >/dev/null 2>&1 || true
+    migration_container=
+  fi
   if ! recover_pending; then
     echo 'ROLLBACK FAILED: pending marker retained; retry deployment to recover.' >&2
     status=1
@@ -80,6 +86,16 @@ if [[ "$component" == backend ]]; then
 fi
 compose "$release" config --quiet
 compose "$release" pull
+# Only dev backend migrates automatically, before any container changes. Production stays manual.
+if [[ "$environment/$component" == dev/backend ]]; then
+  migration_container="$project-migrate-${release##*.}"
+  if ! compose "$release" run --rm --no-deps -T --name "$migration_container" backend python -m alembic upgrade head; then
+    echo 'DB migration failed; the running release was left untouched and the new release was not deployed.' >&2
+    echo 'MySQL DDL is not transactional: check `alembic current` and the schema before retrying.' >&2
+    exit 1
+  fi
+  migration_container=
+fi
 ln -s "$release" "$root/pending"
 compose "$release" up -d --wait --wait-timeout 180
 container=$(compose "$release" ps -q "$component")
