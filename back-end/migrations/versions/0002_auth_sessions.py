@@ -10,6 +10,12 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
+
+def cs_string(length):
+    """Case-sensitive on MySQL (the default utf8mb4_0900_ai_ci folds case)."""
+    return sa.String(length).with_variant(sa.String(length, collation="utf8mb4_0900_as_cs"), "mysql")
+
+
 UTC_DATETIME = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql")
 
 revision = "0002"
@@ -21,7 +27,7 @@ depends_on = None
 def upgrade() -> None:
     op.create_table('auth_sessions',
     sa.Column('id', sa.CHAR(length=36), nullable=False),
-    sa.Column('token_hash', sa.String(length=64), nullable=False),
+    sa.Column('token_hash', cs_string(64), nullable=False),
     sa.Column('user_id', sa.CHAR(length=36), nullable=False),
     sa.Column('created_at', UTC_DATETIME, nullable=False),
     sa.Column('last_seen_at', UTC_DATETIME, nullable=False),
@@ -34,8 +40,8 @@ def upgrade() -> None:
     op.create_index('ix_auth_sessions_user_id', 'auth_sessions', ['user_id'], unique=False)
     op.create_table('registration_sessions',
     sa.Column('id', sa.CHAR(length=36), nullable=False),
-    sa.Column('token_hash', sa.String(length=64), nullable=False),
-    sa.Column('google_sub', sa.String(length=255), nullable=False),
+    sa.Column('token_hash', cs_string(64), nullable=False),
+    sa.Column('google_sub', cs_string(255), nullable=False),
     sa.Column('google_email', sa.String(length=320), nullable=False),
     sa.Column('email_verified', sa.Boolean(), nullable=False),
     sa.Column('created_at', UTC_DATETIME, nullable=False),

@@ -10,6 +10,16 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
+
+def cs_string(length):
+    """Case-sensitive on MySQL (the default utf8mb4_0900_ai_ci folds case)."""
+    return sa.String(length).with_variant(sa.String(length, collation="utf8mb4_0900_as_cs"), "mysql")
+
+
+def cs_char(length):
+    return sa.CHAR(length).with_variant(sa.CHAR(length, collation="utf8mb4_0900_as_cs"), "mysql")
+
+
 UTC_DATETIME = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql")
 
 revision = "0003"
@@ -21,11 +31,11 @@ depends_on = None
 def upgrade() -> None:
     op.create_table('idempotency_records',
     sa.Column('id', sa.CHAR(length=36), nullable=False),
-    sa.Column('subject_id', sa.String(length=64), nullable=False),
-    sa.Column('idempotency_key', sa.CHAR(length=36), nullable=False),
-    sa.Column('endpoint', sa.String(length=255), nullable=False),
-    sa.Column('request_hash', sa.String(length=64), nullable=False),
-    sa.Column('state', sa.String(length=16), nullable=False),
+    sa.Column('subject_id', cs_string(64), nullable=False),
+    sa.Column('idempotency_key', cs_char(36), nullable=False),
+    sa.Column('endpoint', cs_string(255), nullable=False),
+    sa.Column('request_hash', cs_string(64), nullable=False),
+    sa.Column('state', cs_string(16), nullable=False),
     sa.Column('lock_token', sa.CHAR(length=36), nullable=True),
     sa.Column('locked_until', UTC_DATETIME, nullable=True),
     sa.Column('response_status', sa.Integer(), nullable=True),

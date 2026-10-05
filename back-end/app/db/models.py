@@ -31,7 +31,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 
 from app.db.checks import digits_only, not_blank
-from app.db.types import UtcDateTime, cs_string, new_uuid, normalize_optional_text, utcnow
+from app.db.types import UtcDateTime, cs_char, cs_string, new_uuid, normalize_optional_text, utcnow
 
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_N_name)s",
@@ -456,7 +456,7 @@ class AuthSession(Base):
     __table_args__ = (Index("ix_auth_sessions_user_id", "user_id"),)
 
     id: Mapped[str] = _id()
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    token_hash: Mapped[str] = mapped_column(cs_string(64), unique=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
@@ -471,8 +471,8 @@ class RegistrationSession(Base):
     __table_args__ = (Index("ix_registration_sessions_expires_at", "expires_at"),)
 
     id: Mapped[str] = _id()
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
-    google_sub: Mapped[str] = mapped_column(String(255))
+    token_hash: Mapped[str] = mapped_column(cs_string(64), unique=True)
+    google_sub: Mapped[str] = mapped_column(cs_string(255))
     google_email: Mapped[str] = mapped_column(String(320))
     email_verified: Mapped[bool] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
@@ -505,11 +505,13 @@ class IdempotencyRecord(Base):
     id: Mapped[str] = _id()
     # SHA-256 hex of the Google `sub` (app.idempotency.subject_id_for): the same value before
     # and after registration, so records follow the person from registration session to member.
-    subject_id: Mapped[str] = mapped_column(String(64))
-    idempotency_key: Mapped[str] = mapped_column(CHAR(36))
-    endpoint: Mapped[str] = mapped_column(String(255))  # "METHOD /path"
-    request_hash: Mapped[str] = mapped_column(String(64))
-    state: Mapped[str] = mapped_column(String(16))
+    subject_id: Mapped[str] = mapped_column(cs_string(64))
+    # Stored as a lower-case UUID (app.idempotency.idempotency_key normalizes); cs_char keeps
+    # MySQL from folding case if something bypasses that.
+    idempotency_key: Mapped[str] = mapped_column(cs_char(36))
+    endpoint: Mapped[str] = mapped_column(cs_string(255))  # "METHOD /path"; paths are case-sensitive
+    request_hash: Mapped[str] = mapped_column(cs_string(64))
+    state: Mapped[str] = mapped_column(cs_string(16))
     lock_token: Mapped[str | None] = mapped_column(CHAR(36))
     locked_until: Mapped[datetime | None] = mapped_column(UtcDateTime)
     response_status: Mapped[int | None] = mapped_column(Integer)

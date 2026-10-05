@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, String, TypeDecorator
+from sqlalchemy import CHAR, DateTime, String, TypeDecorator
 
 
 def new_uuid() -> str:
@@ -31,6 +31,15 @@ def cs_string(length: int) -> String:
     both sides match.
     """
     return String(length).with_variant(String(length, collation="utf8mb4_0900_as_cs"), "mysql")
+
+
+def cs_char(length: int) -> CHAR:
+    """Fixed-length CHAR with the same case-sensitive MySQL collation as `cs_string`.
+
+    For a UUID the client sends (not generated here), where MySQL's default collation would fold
+    'ABC...' and 'abc...' into one value. Server-generated UUID keys stay plain CHAR(36).
+    """
+    return CHAR(length).with_variant(CHAR(length, collation="utf8mb4_0900_as_cs"), "mysql")
 
 
 def utcnow() -> datetime:
