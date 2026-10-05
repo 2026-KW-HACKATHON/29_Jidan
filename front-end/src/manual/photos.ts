@@ -27,6 +27,7 @@ export function createPhotoAttachment(service:ManualService, sessionId:string, r
  return async(signal:AbortSignal)=>{
   if(!mediaId){const form=new FormData();form.set('purpose','MANUAL_PHOTO');form.set('file',blob,'photo');const result=await service.call('uploadManualMedia',{},form,{signal,key:uploadKey});if(result.data.purpose!=='MANUAL_PHOTO'||result.data.storeId!==service.storeId)throw new ManualError('INVALID_RESPONSE');mediaId=result.data.id}
   signal.throwIfAborted()
+  if(photos.some(photo=>photo.mediaId===mediaId))throw new ManualError('PHOTO_ALREADY_ATTACHED')
   const body:ManualInterviewPhotoUpdate={...target,expectedRevision:review.revision,photos:[...photos,{mediaId,caption:null,title}]}
   const result=await service.call('replaceManualInterviewReviewPhotos',{sessionId,intentId:review.intentId},body,{signal,key:linkKey})
   if(result.data.intentId!==review.intentId)throw new ManualError('INVALID_RESPONSE')
