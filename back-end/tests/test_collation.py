@@ -1,5 +1,7 @@
 """Case-sensitive enum and identifier columns (MySQL's default collation is case-insensitive)."""
 
+import uuid
+
 import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError
@@ -9,6 +11,7 @@ from app.db.models import (
     AvailabilityDay,
     AvailabilityRule,
     Base,
+    IdempotencyRecord,
     StoreApprovalRequest,
 )
 from tests.factories import (
@@ -29,13 +32,24 @@ from tests.schema_checks import (
 )
 
 ENUM_COLUMNS = enum_columns(Base.metadata)
-CASE_SENSITIVE = [*ENUM_COLUMNS, ("users", "google_sub"), ("store_invitations", "token_hash")]
-EMAIL_COLUMNS = [("users", "google_email"), ("store_invitations", "invited_email")]
+IDENTIFIER_COLUMNS = [
+    ("users", "google_sub"), ("store_invitations", "token_hash"),
+    ("auth_sessions", "token_hash"), ("registration_sessions", "token_hash"),
+    ("registration_sessions", "google_sub"),
+    ("idempotency_records", "subject_id"), ("idempotency_records", "idempotency_key"),
+    ("idempotency_records", "endpoint"), ("idempotency_records", "request_hash"),
+]
+CASE_SENSITIVE = [*ENUM_COLUMNS, *IDENTIFIER_COLUMNS]
+EMAIL_COLUMNS = [
+    ("users", "google_email"), ("store_invitations", "invited_email"),
+    ("registration_sessions", "google_email"),
+]
 
 
 def test_every_enum_check_column_is_discovered():
-    assert len(ENUM_COLUMNS) == 14  # a new enum column must be added to this count consciously
+    assert len(ENUM_COLUMNS) == 15  # a new enum column must be added to this count consciously
     assert ("users", "role") in ENUM_COLUMNS and ("application_selection_effects", "previous_status") in ENUM_COLUMNS
+    assert ("idempotency_records", "state") in ENUM_COLUMNS
 
 
 def test_models_ask_for_case_sensitive_collation_exactly_where_intended():
@@ -89,6 +103,10 @@ def enum_rows(session):
     session.add(rule)
     session.flush()
     session.add(AvailabilityDay(rule_id=rule.id, weekday="MON"))
+    session.add(IdempotencyRecord(
+        subject_id="a" * 64, idempotency_key=str(uuid.uuid4()), endpoint="POST /api/x",
+        request_hash="b" * 64, state="PROCESSING", expires_at=NOW,
+    ))
     session.flush()
     return session
 
@@ -117,6 +135,24 @@ def test_enum_column_rejects_other_letter_case(enum_rows, table, column, variant
 
 def column_length(table, column) -> int:
     return Base.metadata.tables[table].c[column].type.length
+
+
+def test_idempotency_and_session_identifiers_are_case_sensitive(session):
+    """Distinct-case values are distinct rows; only the app (not the DB) lower-cases the key."""
+    lower = "0b9a3c1e-5d2f-4a6b-8c7d-1e2f3a4b5c6d"
+    for index, key in enumerate((lower, lower.upper())):
+        session.add(IdempotencyRecord(
+            subject_id="a" * 64, idempotency_key=key, endpoint="POST /api/stores",
+            request_hash=f"{index}" * 64, state="PROCESSING", expires_at=NOW,
+        ))
+    session.add(IdempotencyRecord(
+        subject_id="a" * 64, idempotency_key=str(uuid.uuid4()), endpoint="POST /api/Stores",
+        request_hash="b" * 64, state="PROCESSING", expires_at=NOW,
+    ))
+    session.flush()  # no unique violation: 'abc…' and 'ABC…' differ
+    count = session.execute(text(
+        "SELECT COUNT(*) FROM idempotency_records WHERE endpoint = 'POST /api/stores'")).scalar_one()
+    assert count == 2
 
 
 def test_google_sub_and_token_hash_are_case_sensitive(session):
