@@ -13,7 +13,7 @@ import { WorkerProfile } from '../../profile/WorkerProfile'
 import type { ProfileService } from '../../profile/service'
 type Page = 1|2|3|'review'|'complete'|'profile'
 type Editor = {kind:'career'|'time';index:number}|null
-export function WorkerRegistration({ service=workerService, onBack, onExpired, onHome, initialDraft=emptyWorker, initialPage=1, profileService }: { profileService?:ProfileService;service?:WorkerService;onBack:()=>void;onExpired:()=>void;onHome:()=>void;initialDraft?:WorkerDraft;initialPage?:Page }) {
+export function WorkerRegistration({ service=workerService, onBack, onExpired, onHome, onRegistered, initialDraft=emptyWorker, initialPage=1, profileService }: { profileService?:ProfileService;service?:WorkerService;onBack:()=>void;onExpired:()=>void;onHome:()=>void;onRegistered?:()=>void;initialDraft?:WorkerDraft;initialPage?:Page }) {
   const [draft,setDraft]=useState(initialDraft),[page,setPage]=useState<Page>(initialPage),[editor,setEditor]=useState<Editor>(null),[editing,setEditing]=useState(false)
   const [email,setEmail]=useState(''),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[errors,setErrors]=useState<Errors>({}),[message,setMessage]=useState(''),[expired,setExpired]=useState(false),[loadVersion,setLoadVersion]=useState(0),[scope,setScope]=useState('')
   const editSnapshot=useRef<{draft:WorkerDraft;key:string;dirty:boolean}|null>(null)
@@ -37,7 +37,7 @@ export function WorkerRegistration({ service=workerService, onBack, onExpired, o
     if(page!=='review'){if(editing){setEditing(false);setPage('review')}else setPage(page===1?2:page===2?3:'review');return}
     lock.current=true;setBusy(true);const controller=new AbortController();request.current=controller
     const timer=setTimeout(()=>{controller.abort();if(alive.current){lock.current=false;setBusy(false);setMessage('등록 응답이 지연되고 있어요. 같은 내용으로 다시 시도해 주세요.')}},15000)
-    try {const receipt=await service.submit(normalizedWorker(draft),key.current,controller.signal);if(!alive.current||controller.signal.aborted)return;if(!isWorkerReceipt(receipt))throw new WorkerFailure('network');dirty.current=false;clearWorkerDraft();setPage('complete')}
+    try {const receipt=await service.submit(normalizedWorker(draft),key.current,controller.signal);if(!alive.current||controller.signal.aborted)return;if(!isWorkerReceipt(receipt))throw new WorkerFailure('network');dirty.current=false;clearWorkerDraft();setPage('complete');onRegistered?.()}
     catch(e){if(!alive.current||controller.signal.aborted)return;if(e instanceof WorkerFailure&&e.code==='expired'){setExpired(true);setReady(false);setEmail('');setEditor(null);setErrors({});dirty.current=false}if(e instanceof WorkerFailure&&e.code==='validation'){setErrors(e.fields);setEditing(true);setPage(Object.keys(e.fields).some(k=>['name','phone','birth','gender'].includes(k))?1:Object.keys(e.fields).some(k=>['experience','careers'].includes(k))?2:3)}setMessage(e instanceof WorkerFailure&&e.message!==e.code?e.message:e instanceof WorkerFailure&&e.code==='expired'?'가입 세션이 만료됐어요. 다시 로그인해 주세요.':'프로필을 등록하지 못했어요. 입력 내용을 확인하고 다시 시도해 주세요.')}
     finally {clearTimeout(timer);if(alive.current&&!controller.signal.aborted){lock.current=false;setBusy(false)}}
   }

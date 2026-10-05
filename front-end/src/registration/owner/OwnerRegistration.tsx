@@ -22,8 +22,8 @@ const messages = {
   network: ['요청을 처리하지 못했어요', '입력 내용은 유지돼요. 잠시 후 다시 시도해 주세요.'],
 } as const
 
-export function OwnerRegistration({ onBack, onExpired, service = ownerService, addressSearch, homeMode = false, storage = sessionStorage }: {
-  onBack: () => void; onExpired: () => void; service?: OwnerService; addressSearch?: AddressSearch; homeMode?: boolean; storage?: Storage
+export function OwnerRegistration({ onBack, onExpired, onRegistered, service = ownerService, addressSearch, homeMode = false, storage = sessionStorage }: {
+  onBack: () => void; onExpired: () => void; onRegistered?: () => void; service?: OwnerService; addressSearch?: AddressSearch; homeMode?: boolean; storage?: Storage
 }) {
   const [identity, setIdentity] = useState<OwnerIdentity | null>(null)
   const [state, setState] = useState(initialDraft)
@@ -110,7 +110,7 @@ export function OwnerRegistration({ onBack, onExpired, service = ownerService, a
       const result = await service.submit(normalizeDraft(state.draft), state.requestKey, controller.signal)
       if (!live.current || controller.signal.aborted) return
       if (!isOwnerReceipt(result)) throw new OwnerFailure('network')
-      clearDraft(storage); setReceipt(result); setFailure(null)
+      clearDraft(storage); setReceipt(result); setFailure(null); onRegistered?.()
     } catch (error) {
       if (!live.current || controller.signal.aborted) return
       const reason = error instanceof OwnerFailure ? error : new OwnerFailure('network')

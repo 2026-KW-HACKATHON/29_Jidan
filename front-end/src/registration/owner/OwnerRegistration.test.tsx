@@ -195,3 +195,7 @@ it.each(['점주 정보 수정', '매장 정보 수정'])('확인 화면의 %s �
  expect(screen.getByText(valid.storeName)).toBeVisible()
  expect(screen.queryByText('취소할 변경')).not.toBeInTheDocument()
 })
+
+it('서버 접수 후 가입 세션 전환을 알린다',async()=>{
+ ready();const onRegistered=vi.fn();render(<OwnerRegistration service={{identity:async()=>identity,submit:async()=>receipt}} onBack={vi.fn()} onExpired={vi.fn()} onRegistered={onRegistered}/>);fireEvent.click(await screen.findByRole('button',{name:'매장 등록 신청'}));await waitFor(()=>expect(onRegistered).toHaveBeenCalledOnce())
+})

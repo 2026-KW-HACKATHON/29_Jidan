@@ -78,3 +78,15 @@ it('로그아웃 중 중복 제출을 막고 성공 후 로그인으로 이동�
 it('callback 공개 오류 힌트는 표시만 하고 인증 권한을 만들지 않는다',async()=>{
  setup('/login',{kind:'guest'},'?error=GOOGLE_ACCESS_DENIED&role=OWNER');expect(await screen.findByRole('alert')).toHaveTextContent('Google 로그인이 취소됐어요')
 })
+
+it('가입이 성공하면 기존 가입 만료 타이머를 취소한다',async()=>{
+ vi.useFakeTimers();const navigate=vi.fn()
+ render(<AuthFlow path="/signup/worker" service={{read:async()=>({kind:'registration',context:{identity:{provider:'GOOGLE',email:'a@b.com',emailVerified:true},allowedRoles:['OWNER','WORKER'],expiresAt:new Date(Date.now()+600000).toISOString()}}),startGoogle:vi.fn()}} navigate={navigate} renderHome={()=>null} renderRegistration={(_role,registered)=><button onClick={registered}>가입 성공</button>}/> )
+ await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'가입 성공'}));await act(async()=>vi.advanceTimersByTimeAsync(600000));expect(navigate).not.toHaveBeenCalled()
+})
+
+it('가입 유형 화면의 로그아웃 실패는 안내 후 재시도가 가능하다',async()=>{
+ const logout=vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined),navigate=vi.fn()
+ render(<AuthFlow path="/signup" service={{read:async()=>({kind:'registration'}),startGoogle:vi.fn(),logout}} navigate={navigate} renderHome={()=>null} renderRegistration={()=>null}/> )
+ const back=await screen.findByRole('button',{name:'뒤로 가기'});fireEvent.click(back);expect(await screen.findByRole('dialog')).toBeVisible();expect(navigate).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'확인'}));await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());fireEvent.click(back);await waitFor(()=>expect(navigate).toHaveBeenCalledWith('/login',true))
+})

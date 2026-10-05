@@ -26,3 +26,13 @@ it.each(['OWNER','WORKER'] as const)('mock %s 상태로 샘플 매장 없는 홈
   await screen.findByRole('heading',{name:accountType==='OWNER'?'안녕하세요, 김지수 점주님':'안녕하세요, 김지수님'})
   expect(screen.queryByText('명랑핫도그 광운대점')).not.toBeInTheDocument(); expect(fetch).not.toHaveBeenCalled()
 })
+
+it.each([['/__auth/session','/home','authenticated'],['/__auth/signup','/signup','registration']] as const)('OAuth 복귀 %s는 실제 인증 경계로 진입한다',async(path,expected,kind)=>{
+ window.history.replaceState(null,'',path)
+ const state=kind==='authenticated'?{kind,session:{displayName:'김',accountType:'WORKER' as const}}:{kind}
+ render(<App authService={{read:async()=>state,startGoogle:vi.fn()}}/>);await waitFor(()=>expect(window.location.pathname).toBe(expected));await screen.findByRole(kind==='authenticated'?'heading':'button',{name:kind==='authenticated'?'안녕하세요, 김님':'점주로 가입'});expect(fetch).not.toHaveBeenCalled()
+})
+it('서버 이동 지시가 승인 대기이면 일반 점주 홈 대신 승인 대기 화면을 표시한다',async()=>{
+ window.history.replaceState(null,'','/home')
+ render(<App authService={{read:async()=>({kind:'authenticated',session:{displayName:'김',accountType:'OWNER',nextAction:'OWNER_APPROVAL_PENDING',stores:[{storeId:'store',storeName:'내 매장',approvalStatus:'PENDING',permissions:['READ_STORE_STATUS']}]}}),startGoogle:vi.fn()}}/>);await screen.findByText('승인 대기 중');expect(screen.getByRole('heading',{name:'내 매장'})).toBeInTheDocument()
+})

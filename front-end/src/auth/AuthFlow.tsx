@@ -14,7 +14,7 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
   path: AuthPath; search?: string
   navigate: (path: AuthPath | '/login?error=signup_expired', replace?: boolean) => void
   renderHome: (session: Session) => ReactNode
-  renderRegistration: (role: SignupRole) => ReactNode
+  renderRegistration: (role: SignupRole, onRegistered: () => void) => ReactNode
   service?: AuthService
 }) {
   const [state, setState] = useState<AuthState>({ kind: 'unavailable' })
@@ -23,6 +23,7 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
   const [readError, setReadError] = useState('')
   const [busy, setBusy] = useState(false)
   const [revision, setRevision] = useState(0)
+  const [registered, setRegistered] = useState(false)
   const request = useRef<AbortController | null>(null)
   const locked = useRef(false)
   const hint = new URLSearchParams(search).get('error')
@@ -43,13 +44,13 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
   }, [service, path, navigate, revision])
   const expiresAt = state.kind === 'registration' ? state.context?.expiresAt : state.kind === 'authenticated' ? state.session.expiresAt : undefined
   useEffect(() => {
-    if (!expiresAt || checking) return
+    if (!expiresAt || checking || registered) return
     const timer = setTimeout(() => {
       if (state.kind === 'registration') { setState({ kind: 'guest' }); navigate('/login?error=signup_expired', true) }
       else { setChecking(true); setRevision(value => value + 1) }
     }, Math.max(0, Date.parse(expiresAt) - Date.now()))
     return () => clearTimeout(timer)
-  }, [expiresAt, checking, state.kind, navigate])
+  }, [expiresAt, checking, registered, state.kind, navigate])
   async function command(kind: 'start' | 'logout') {
     if (locked.current) return
     if (kind === 'start' && state.kind === 'unavailable') { setMessage(readError || errorMessage('UNKNOWN_ERROR')); return }
@@ -64,8 +65,8 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
   const modal = <Modal open={!!message} state="information" title="요청을 완료하지 못했어요" description={message} onClose={() => setMessage('')} />
   if (!checking && state.kind === 'authenticated' && path === '/home') return <>{renderHome(state.session)}{service.logout && <Button intent="secondary" busy={busy} onClick={() => void command('logout')}>로그아웃</Button>}{modal}</>
   if (!checking && state.kind === 'registration' && path.startsWith('/signup')) {
-    if (path === '/signup/owner' || path === '/signup/worker') return <>{renderRegistration(path.endsWith('/owner') ? 'owner' : 'worker')}{modal}</>
-    return <RoleSelectionScreen onBack={() => { if (service.logout) void command('logout'); else navigate('/login') }} onSelect={role => navigate(`/signup/${role}`)} />
+    if (path === '/signup/owner' || path === '/signup/worker') return <>{renderRegistration(path.endsWith('/owner') ? 'owner' : 'worker', () => setRegistered(true))}{modal}</>
+    return <><RoleSelectionScreen onBack={() => { if (service.logout) void command('logout'); else navigate('/login') }} onSelect={role => { if (!locked.current) navigate(`/signup/${role}`) }} />{modal}</>
   }
   return <><LoginScreen onStart={() => void command('start')} busy={checking || busy} />
     {checking && <p role="status">로그인 정보를 확인하고 있어요.</p>}
