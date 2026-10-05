@@ -12,13 +12,13 @@ erDiagram
     USERS ||--o{ STORES : owns
     STORES ||--|| STORE_APPROVAL_REQUESTS : requires
     STORES ||--o{ STORE_INVITATIONS : sends
-    STORE_INVITATIONS ||--o| STORE_ACCESS_GRANTS : grants
+    STORE_INVITATIONS o|--o| STORE_ACCESS_GRANTS : grants
     STORES ||--o{ JOB_POSTINGS : publishes
     JOB_POSTINGS ||--o{ JOB_APPLICATIONS : receives
     JOB_APPLICATIONS ||--o{ WORK_REQUESTS : prompts
     WORK_REQUESTS ||--o| SHIFT_ASSIGNMENTS : confirms
     JOB_POSTINGS ||--o{ SHIFT_ASSIGNMENTS : records
-    SHIFT_ASSIGNMENTS ||--o| STORE_ACCESS_GRANTS : grants
+    SHIFT_ASSIGNMENTS o|--o| STORE_ACCESS_GRANTS : grants
     USERS ||--o{ FAVORITE_STORES : saves
     STORES ||--o{ FAVORITE_STORES : saved_by
     STORES ||--o| STORE_MANUALS : owns
@@ -30,6 +30,8 @@ erDiagram
     MANUAL_VERSIONS ||--o{ MANUAL_QA : grounds
     USERS ||--o{ NOTIFICATIONS : receives
 ```
+
+접근 권한의 초대/확정 근무 출처는 각각 선택 관계이며, 두 FK 중 정확히 하나만 지정하는 XOR 제약을 함께 적용한다. 둘 다 없거나 둘 다 있는 접근은 허용하지 않는다. 상세 제약은 [매장 접근](access.md)을 따른다.
 
 ## 상세 ERD
 

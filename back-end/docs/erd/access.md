@@ -6,8 +6,8 @@ erDiagram
     USERS ||--o{ STORE_INVITATIONS : invites
     USERS o|--o{ STORE_INVITATIONS : accepts
     USERS o|--o{ STORE_INVITATIONS : declines
-    STORE_INVITATIONS ||--o| STORE_ACCESS_GRANTS : grants
-    SHIFT_ASSIGNMENTS ||--o| STORE_ACCESS_GRANTS : grants
+    STORE_INVITATIONS o|--o| STORE_ACCESS_GRANTS : grants
+    SHIFT_ASSIGNMENTS o|--o| STORE_ACCESS_GRANTS : grants
     STORES ||--o{ STORE_ACCESS_GRANTS : allows
     USERS ||--o{ STORE_ACCESS_GRANTS : receives
 
@@ -56,7 +56,7 @@ erDiagram
 | 테이블 | 핵심 제약 |
 | --- | --- |
 | `store_invitations` | 승인된 매장의 점주만 생성. `token_hash` UNIQUE, 원문 링크 토큰은 저장하지 않음. `expires_at=created_at+7일`. `access_expires_at`은 선택 자료 접근 종료 시각. 수락·거절·취소 결과는 상호 배타적이며 완료 시각과 처리 주체를 보존 |
-| `store_access_grants` | `invitation_id`와 `assignment_id` 중 정확히 하나만 NOT NULL. 각각 UNIQUE. `worker_id`는 `role=WORKER`. `store_id`는 원본 초대 또는 확정 근무의 매장과 일치 |
+| `store_access_grants` | `invitation_id`와 `assignment_id` 중 정확히 하나만 NOT NULL. 각각 UNIQUE. 도식의 두 출처는 각각 0..1이며 XOR 제약으로 둘 다 NULL 또는 둘 다 지정하는 경우를 금지. `worker_id`는 `role=WORKER`. `store_id`는 원본 초대 또는 확정 근무의 매장과 일치 |
 
 - 초대 생성 시 선택한 `access_expires_at`은 생성 시각보다 미래이거나 NULL이다. 링크의 `expires_at`과 별개이며 PENDING에서 둘 중 먼저 도달한 기한부터 EXPIRED로 투영한다. 수락·거절·취소가 완료되면 시간이 지나도 원래 상태를 유지한다. 상태는 완료 시각과 기한에서 계산할 수 있어 별도 status 컬럼을 필수로 두지 않는다.
 - 재전송은 `token_hash`, `last_sent_at`, 메일 outbox를 한 트랜잭션에서 교체하고 이전 링크를 무효화한다. `created_at`, `expires_at`, `access_expires_at`, 수신 주소는 유지한다. 큐 기록 실패는 전체 rollback하여 기존 링크가 유효하다. `last_sent_at`은 실제 수신 시각이 아닌 발송 요청 기록 시각이다.
