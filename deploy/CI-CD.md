@@ -134,3 +134,12 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/tests -v
 # actionlint 설치 환경
 actionlint -shellcheck= -pyflakes= .github/workflows/*.yml
 ```
+
+## OAuth callback 프록시 검증
+
+backend CI는 `python3 deploy/scripts/verify_nginx.py`로 dev/production 원본 설정을
+일회용 Nginx 컨테이너에서 `nginx -t` 검증한다. 임의의 localhost 포트를 사용하며
+정상 upstream(200)과 연결 실패(502) callback 모두에서 가짜 code/state가 로그에
+남지 않는지 확인한다. 일반 요청의 로그가 실제로 남는지도 대조한다.
+이 검사는 서버 설정을 교체하거나 reload하지 않는다. 실제 서버의 설정 반영과
+`nginx -t`/reload 및 로그 차단 확인은 배포 시 별도로 수행해야 한다.
