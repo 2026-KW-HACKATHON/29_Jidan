@@ -19233,6 +19233,24 @@ components:
         - canApply
         - cannotApplyReason
       allOf:
+      - oneOf:
+        - properties:
+            status:
+              const: RECRUITING
+            closedAt:
+              type: 'null'
+          required:
+          - status
+          - closedAt
+        - properties:
+            status:
+              const: CLOSED
+            closedAt:
+              type: string
+              format: date-time
+          required:
+          - status
+          - closedAt
       - if:
           properties:
             cannotApplyReason:

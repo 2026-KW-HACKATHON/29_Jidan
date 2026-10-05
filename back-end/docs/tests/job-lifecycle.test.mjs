@@ -51,3 +51,26 @@ test('마감 재요청 계약: 시작 전·진행 중·완료 후 이력 보존,
   assert.equal(conflict.content['application/json'].example.code, 'WORK_REQUEST_WITHDRAWAL_REQUIRED');
   assert.doesNotMatch(JSON.stringify(closure), /CONFIRMATION_WITHDRAWAL_REQUIRED|JOB_IN_PROGRESS/);
 });
+
+
+test('점주·일반회원 공고 모두 모집·마감 시각 불변식 적용', () => {
+  const ownerValidator = validator('JobPosting');
+  const workerValidator = validator('WorkerJobPosting');
+  const before = examples.recruiting.value;
+  const closed = examples.accepted.value;
+  const reopened = examples.confirmationWithdrawn.value;
+  for (const [job, canApply, reason] of [
+    [before, true, null], [closed, false, 'JOB_FILLED'],
+    [closed, false, 'JOB_CLOSED'], [reopened, true, null],
+    [before, false, 'JOB_STARTED'],
+  ]) {
+    const worker = { ...job, myApplicationId: null, canApply, cannotApplyReason: reason };
+    assert.ok(ownerValidator(job), JSON.stringify(ownerValidator.errors));
+    assert.ok(workerValidator(worker), JSON.stringify(workerValidator.errors));
+    const wrongTime = job.status === 'CLOSED' ? null : closed.closedAt;
+    for (const closedAt of [wrongTime, undefined, 'invalid-date']) {
+      assert.equal(ownerValidator({ ...job, closedAt }), false);
+      assert.equal(workerValidator({ ...worker, closedAt }), false);
+    }
+  }
+});
