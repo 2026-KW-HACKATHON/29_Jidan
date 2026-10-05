@@ -184,9 +184,9 @@ def callback(request: Request, db: SessionDep) -> Response:
 
 
 @router.get("/registration")
-def registration(principal: auth.CurrentRegistration, db: SessionDep) -> dict:
-    if db.scalar(select(User.id).where(User.google_sub == principal.google_sub)) is not None:
-        raise ApiError(409, ErrorCode.ALREADY_REGISTERED)
+def registration(principal: auth.CurrentMemberOrRegistration, db: SessionDep) -> dict:
+    if isinstance(principal, auth.MemberPrincipal) or db.scalar(select(User.id).where(User.google_sub == principal.google_sub)) is not None:
+        raise ApiError(403, ErrorCode.ALREADY_REGISTERED)
     if not principal.email_verified:
         raise ApiError(401, ErrorCode.GOOGLE_IDENTITY_INVALID)
     return {"identity": identity(principal.google_email), "expiresAt": principal.expires_at.isoformat(),

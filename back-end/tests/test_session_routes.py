@@ -1,11 +1,11 @@
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app import auth
 from app.auth_views import router
 from app.db import engine as engine_module
 from app.errors import install_error_handlers
+from tests.auth_contract import ContractClient
 from tests.factories import make_store, make_user
 
 
@@ -14,7 +14,7 @@ def test_session_permissions_reflect_approval(engine, monkeypatch):
     app = FastAPI()
     install_error_handlers(app)
     app.include_router(router)
-    api = TestClient(app)
+    api = ContractClient(app)
     assert api.get("/api/auth/session").status_code == 401
     with Session(engine) as db:
         user = make_user(db, "OWNER")

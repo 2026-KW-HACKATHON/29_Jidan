@@ -2,7 +2,6 @@ from datetime import timedelta
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,6 +10,7 @@ from app.db import utcnow
 from app.db.models import AuthSession, OAuthTransaction, RegistrationSession
 from app.errors import install_error_handlers
 from app.logout import router
+from tests.auth_contract import ContractClient
 from tests.factories import make_user
 
 
@@ -21,7 +21,7 @@ def logout_api(db_engine, monkeypatch):
     app = FastAPI()
     install_error_handlers(app)
     app.include_router(router)
-    return TestClient(app, raise_server_exceptions=False)
+    return ContractClient(app, raise_server_exceptions=False)
 
 
 def test_logout_all_browser_sessions_and_repeat(logout_api, db_engine):

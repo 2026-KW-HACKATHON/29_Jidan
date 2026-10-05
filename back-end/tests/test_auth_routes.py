@@ -3,7 +3,6 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +13,7 @@ from app.db import utcnow
 from app.db.models import AuthSession, OAuthTransaction
 from app.errors import install_error_handlers
 from app.middleware import install_middleware
+from tests.auth_contract import ContractClient
 from tests.factories import make_user
 
 
@@ -32,7 +32,7 @@ def auth_api(engine, monkeypatch):
     install_middleware(app)
     app.include_router(oauth.router)
     app.include_router(views_router)
-    return TestClient(app, follow_redirects=False, raise_server_exceptions=False)
+    return ContractClient(app, follow_redirects=False, raise_server_exceptions=False)
 
 
 def begin(api):
@@ -64,6 +64,8 @@ def test_existing_member_rotates(auth_api, engine, monkeypatch):
     r = auth_api.get("/api/auth/google/callback", params={"state": params["state"], "code": "code"})
     assert r.headers["location"] == "http://frontend.test/__auth/session"
     assert auth_api.get("/api/auth/session").json()["user"]["identity"]["email"] == "updated@test.org"
+    assert auth_api.get("/api/auth/registration").status_code == 403
+    assert auth_api.get("/api/auth/registration").json()["code"] == "ALREADY_REGISTERED"
     with Session(engine) as db:
         assert db.scalar(select(AuthSession).where(AuthSession.token_hash == auth.hash_token(issued.token))).revoked_at
 

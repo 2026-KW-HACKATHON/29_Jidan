@@ -2,7 +2,6 @@ import uuid
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -14,6 +13,7 @@ from app.errors import install_error_handlers
 from app.middleware import install_middleware
 from app.registration import router
 from app.registration_inputs import WorkerInput
+from tests.auth_contract import ContractClient
 
 WORKER = {
     "name": "김지수", "phoneNumber": "01012345678", "birthDate": "2001-03-14",
@@ -31,7 +31,7 @@ def worker_api(db_engine, monkeypatch):
     install_middleware(app)
     app.include_router(router)
     app.include_router(view_router)
-    api = TestClient(app, raise_server_exceptions=False)
+    api = ContractClient(app, raise_server_exceptions=False)
     with Session(db_engine) as db:
         issued = auth.create_registration_session("worker-sub", "worker@test.org", db=db)
         db.commit()
