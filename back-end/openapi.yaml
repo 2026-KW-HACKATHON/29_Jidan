@@ -9081,6 +9081,8 @@ paths:
       operationId: searchJobPostings
       summary: 대타 공고 검색·필터·최신순
       description: |-
+        이미 근무가 확정된 공고는 점주가 별도 모집 마감 전이어도 탐색 결과에서 제외합니다.
+
         ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
 
         월계1동 APPROVED 매장의 모집 중이고 근무 시작 전인 공고만 반환합니다. q는 매장명 또는 담당 업무(title/description)를 검색하며 trim 후 빈 검색은 전체입니다. 업종 생략=전체, 근무일은 Asia/Seoul 오늘을 기준으로 TODAY, TOMORROW, WEEK(오늘부터 7일), MONTH(오늘부터 30일) 반열린 범위를 사용합니다. 시간대 MORNING=[06,12), AFTERNOON=[12,18), NIGHT=[18,다음날06)와 근무 구간이 겹치면 포함합니다. 끝이 경계와 같은 경우 겹침이 아닙니다.
@@ -9249,6 +9251,8 @@ paths:
       operationId: getJobPosting
       summary: 대타 공고 상세·지원 가능 여부
       description: |-
+        단일 근무자가 확정되면 canApply=false, cannotApplyReason=JOB_FILLED입니다. 본인 신청이 있으면 ALREADY_APPLIED/ALREADY_CONFIRMED를 우선합니다.
+
         ACTIVE WORKER 세션이 필요합니다. 다른 역할/정지 계정은 403입니다. 본인이 아닌 리소스와 없는 리소스는 동일 404 RESOURCE_NOT_FOUND입니다.
 
         현재 공고 조건·추정 보수·매장 위치·지원 가능 여부를 반환합니다. myApplicationId는 본인 신청만 반환합니다. CLOSED 또는 시작 후에는 상세는 읽을 수 있지만 canApply=false입니다. canApply=false 이유는 서버가 결정하며 최초 지원 후 신청 철회 API로 이동합니다. 다른 지원자 개인정보·점주 사업자번호·전화번호는 노출하지 않습니다.
@@ -18617,6 +18621,7 @@ components:
         applicantCount:
           type: integer
           minimum: 0
+          description: WITHDRAWN/NOT_SELECTED를 제외한 APPLIED/REQUESTED/CONFIRMED/COMPLETED 지원 건수. 마감 전 화면의 지원자 수에 사용합니다.
         startAt:
           type: string
           format: date-time
@@ -18667,12 +18672,18 @@ components:
             const: RECRUITING
           closedAt:
             type: 'null'
+        required:
+        - status
+        - closedAt
       - properties:
           status:
             const: CLOSED
           closedAt:
             type: string
             format: date-time
+        required:
+        - status
+        - closedAt
     JobStoreCard:
       type: object
       additionalProperties: false
@@ -18912,6 +18923,7 @@ components:
             - JOB_STARTED
             - ALREADY_APPLIED
             - ALREADY_CONFIRMED
+            - JOB_FILLED
           - type: 'null'
       required:
       - title
@@ -18940,6 +18952,60 @@ components:
       - myApplicationId
       - canApply
       - cannotApplyReason
+      oneOf:
+      - properties:
+          canApply:
+            const: true
+          status:
+            const: RECRUITING
+          cannotApplyReason:
+            type: 'null'
+          myApplicationId:
+            type: 'null'
+        required:
+        - canApply
+        - status
+        - cannotApplyReason
+        - myApplicationId
+      - properties:
+          canApply:
+            const: false
+          cannotApplyReason:
+            type: string
+            enum:
+            - JOB_CLOSED
+            - JOB_STARTED
+            - ALREADY_APPLIED
+            - ALREADY_CONFIRMED
+            - JOB_FILLED
+        required:
+        - canApply
+        - cannotApplyReason
+      allOf:
+      - if:
+          properties:
+            cannotApplyReason:
+              type: string
+              enum:
+              - ALREADY_APPLIED
+              - ALREADY_CONFIRMED
+          required:
+          - cannotApplyReason
+        then:
+          properties:
+            myApplicationId:
+              type: string
+              format: uuid
+      - if:
+          properties:
+            status:
+              const: CLOSED
+          required:
+          - status
+        then:
+          properties:
+            canApply:
+              const: false
     ApplicationCreate:
       type: object
       additionalProperties: false
