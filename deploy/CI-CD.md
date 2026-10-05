@@ -48,7 +48,22 @@ PR은 테스트·빌드만 수행한다. 같은 저장소의 PR만 self-hosted r
 - DB 설정은 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` 환경 변수에서 읽는다.
 - 환경 구분은 `APP_ENV=dev|production`을 사용한다.
 
-DB migration 자동 실행은 아직 포함하지 않는다. migration 도구를 선택하면 별도 단계로 추가하며, 이미지 rollback이 DB schema를 되돌리지는 않는다.
+### DB 마이그레이션
+
+도구는 Alembic이며 리비전은 `back-end/migrations/versions/`에 있고 이미지에 함께 들어간다. **배포 시 자동 실행은 아직 넣지 않았다.** 스키마가 바뀌는 릴리즈는 다음 순서로 수동 적용한다.
+
+1. 새 이미지 배포가 성공한 뒤(또는 이전 코드가 새 스키마와 호환되는 경우 배포 전에) RPi5의 해당 환경 백엔드 릴리즈 디렉터리에서 실행한다.
+   ```bash
+   docker compose exec backend python -m alembic current
+   docker compose exec backend python -m alembic upgrade head
+   ```
+   컨테이너에는 `runtime.env`의 `DB_*`가 이미 주입되어 있다. 자격 증명은 출력하거나 기록하지 않는다.
+2. 적용 뒤 `current`가 head 리비전이고 `GET /api/health`가 `database: ok`인지 확인한다.
+3. 마이그레이션이 실패하면 트랜잭션 DDL이 없는 MySQL 특성상 일부만 적용될 수 있다. 새 배포를 진행하지 말고 `alembic current`와 실제 테이블을 확인해 수동으로 정리한다.
+
+**롤백 한계**: 이미지 롤백(배포 스크립트의 자동 복구)은 DB 스키마를 되돌리지 않는다. 스키마를 되돌리려면 이전 이미지로 복구하기 전에 `alembic downgrade -1`을 따로 실행해야 하며, 데이터를 삭제하는 downgrade는 사전에 백업한 뒤에만 수행한다. 따라서 스키마 변경은 이전 버전 코드와 호환되도록 두 단계(추가 → 코드 전환 → 제거)로 나눈다. 자동 실행은 실패 시 중단·복구 정책을 정한 뒤 별도 이슈에서 추가한다.
+
+dev 환경에서는 `jidan_dev`에 위 절차로 적용한 뒤 헬스체크를 확인한다. 운영 환경은 dev 적용과 검증이 끝난 리비전만 적용한다.
 
 ## RPi5 네트워크 및 DB
 
