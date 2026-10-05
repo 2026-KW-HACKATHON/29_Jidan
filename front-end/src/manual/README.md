@@ -19,3 +19,5 @@ Figma: [시작](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-
 추가 미리보기: `?case=draft`, `missing`, `correction-running`, `correction-error`, `correction-clarify`, `correction-noop`, `generation-error`. 사진·정정 작업은 샘플 서비스의 메모리 상태로만 처리됩니다. 실제 회원 쿠키·CSRF·STT·AI·저장소·운영 진입 및 근무자 게시본/Q&A의 통합 검증은 #123/#118/#119/#120/#121/#131 범위입니다. 이 UI PR에서 관련 이슈를 통합 완료로 종료하지 않습니다.
 
 Figma: [사진 첨부](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-2979), [최종 검토](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2757), [근무자 미리보기](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3203). 서버에 있는 section 수와 저장 순서를 사용하며 Figma 샘플의 3페이지를 고정하지 않습니다. MVP에서 제외한 이름·설명·텍스트 내용 편집은 렌더링하지 않습니다.
+
+HTTP 어댑터의 클라이언트 대기 상한은 일반 요청 10초·파일 업로드 60초이며 서버 작업의 수명 제한이 아닙니다. 응답 body 읽기까지 포함하고 화면 이탈 시 연결된 요청을 중단합니다. 타임아웃 후에는 저장한 멱등 키·본문을 재사용합니다. JSON 변경 body는 선택한 OpenAPI schema의 조건부 필드·revision·대상을 전송 전에 검증합니다.
