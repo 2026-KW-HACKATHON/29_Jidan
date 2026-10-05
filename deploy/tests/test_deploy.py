@@ -16,7 +16,9 @@ args=sys.argv[1:]
 with open(os.environ['CALLS'], 'a') as f: f.write(json.dumps([Path(sys.argv[0]).name]+args)+'\\n')
 mode=os.environ.get('FAIL', '')
 if Path(sys.argv[0]).name == 'curl':
-    sys.exit(22 if mode == 'public' and args[-1].startswith('https:') else 0)
+    failed = mode == 'public' and args[-1].startswith('https:')
+    failed = failed or (mode == 'docs' and args[-1].endswith('/api/swagger/openapi.json'))
+    sys.exit(22 if failed else 0)
 if args[0] == 'compose':
     if 'pull' in args and mode == 'pull': sys.exit(1)
     if 'up' in args and mode == 'up' and '/previous/' not in ' '.join(args): sys.exit(1)
@@ -56,12 +58,52 @@ class DeployTests(unittest.TestCase):
         (self.root / 'current').symlink_to(prev)
         return prev
 
-    def run_deploy(self, failure='', image=IMAGE, environment='dev'):
+    def run_deploy(self, failure='', image=IMAGE, environment='dev', component='frontend'):
         self.env['FAIL'] = failure
-        result = subprocess.run(['bash', str(SCRIPT), environment, 'frontend', image],
+        result = subprocess.run(['bash', str(SCRIPT), environment, component, image],
                                 cwd=self.base, env=self.env, capture_output=True, text=True)
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
         return result, calls
+
+    def backend(self, environment='dev'):
+        (self.base / 'deploy/backend').mkdir(parents=True, exist_ok=True)
+        (self.base / 'deploy/backend/compose.yml').write_text('services: {}\n')
+        self.root = self.base / f'apps/{environment}/backend'
+        self.root.mkdir(parents=True)
+        (self.root / 'runtime.env').write_text(f'APP_ENV={environment}\n')
+        return IMAGE.replace('-frontend@', '-backend@')
+
+    def test_development_backend_verifies_public_and_local_swagger_before_commit(self):
+        image = self.backend()
+        result, calls = self.run_deploy(image=image, component='backend')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        urls = [c[-1] for c in calls if c[0] == 'curl']
+        for base in ['http://127.0.0.1:3021', 'https://dev-jidan.leehyowon14.dev']:
+            for path in ['/api/swagger/', '/api/swagger/openapi.json']:
+                self.assertIn(base + path, urls)
+        self.assertTrue((self.root / 'current').exists())
+
+    def test_production_backend_never_probes_development_swagger(self):
+        image = self.backend('production')
+        result, calls = self.run_deploy(image=image, environment='production', component='backend')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any('/api/swagger' in ' '.join(c) for c in calls))
+
+    def test_missing_swagger_rolls_back_previous_backend(self):
+        image = self.backend()
+        prev = self.previous()
+        result, calls = self.run_deploy('docs', image=image, component='backend')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.root / 'current').resolve(), prev)
+        self.assertTrue(any('up' in c and str(prev / 'compose.yml') in c for c in calls))
+        self.assertFalse((self.root / 'pending').exists())
+
+    def test_missing_swagger_on_first_backend_deployment_cleans_container(self):
+        image = self.backend()
+        result, calls = self.run_deploy('docs', image=image, component='backend')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(any('down' in c for c in calls))
+        self.assertFalse((self.root / 'current').exists())
 
     def test_success_updates_pointer(self):
         prev = self.previous()
