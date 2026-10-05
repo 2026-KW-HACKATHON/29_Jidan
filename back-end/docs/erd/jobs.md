@@ -109,9 +109,9 @@ erDiagram
 
 ## 수락·철회·재모집
 
-- 사용자 확정: 수락은 요청 ACCEPTED, 지원 CONFIRMED, 다른 지원 NOT_SELECTED, 미결 요청 CANCELLED, 확정 근무·TEMPORARY 접근·알림 outbox 생성과 공고 RECRUITING→CLOSED를 같은 트랜잭션에서 처리한다. `closed_at=responded_at=confirmed_at`이다. 신규 지원/요청은 확정된 공고의 JOB_FILLED를 일반 CLOSED 오류보다 먼저 판정한다.
+- 사용자 확정: 수락은 요청 ACCEPTED, 지원 CONFIRMED, 선택 지원을 제외한 현재 APPLIED/REQUESTED 지원만 NOT_SELECTED, 미결 요청 CANCELLED, 확정 근무·TEMPORARY 접근·알림 outbox 생성과 공고 RECRUITING→CLOSED를 같은 트랜잭션에서 처리한다. `closed_at=responded_at=confirmed_at`이다. 신규 지원/요청은 확정된 공고의 JOB_FILLED를 일반 CLOSED 오류보다 먼저 판정한다.
 - 근무 시작 전(`now < startAt`) 점주의 확정 철회는 요청 CONFIRMATION_WITHDRAWN, 해당 확정 withdrawn_at 기록, 선택 지원 APPLIED 복구와 공고 CLOSED→RECRUITING 및 `closed_at=NULL`을 원자 처리한다. 해당 확정의 TEMPORARY 접근만 종료하고 활성 캘린더에서 제외한다. 이전 마감 시각은 기존 확정의 confirmed_at과 수락 이력에 보존한다. 정기 접근과 다른 대타 접근, 이미 종료된 접근의 최초 revoked_at은 유지한다.
-- 다른 지원은 `application_selection_effects`에 기록된 원인·현재 NOT_SELECTED 상태·적용 revision이 일치할 때만 직전 상태로 복구한다. WITHDRAWN, 별도로 종료/변경된 지원, 다른 확정의 효과는 되살리지 않는다. 과거 요청을 재활성화하지 않고 새 requestId/key를 만든다.
+- 수락 전에 만료된 요청과 연결 지원을 정리한다. 과거 WITHDRAWN/NOT_SELECTED/COMPLETED 지원은 상태·revision·철회 시각·요청 이력을 변경하지 않는다. 이번 수락으로 실제 변경된 지원만 `application_selection_effects`에 기록한다. 확정 철회 시 기록된 원인·현재 NOT_SELECTED 상태·적용 revision이 일치할 때만 APPLIED로 복구하고 REQUESTED나 취소된 요청은 복원하지 않는다. WITHDRAWN, 별도로 종료/변경된 지원, 다른 확정의 효과는 되살리지 않는다. 과거 요청을 재활성화하지 않고 새 requestId/key를 만든다.
 - 정확히 근무 시작부터 확정 철회 불가. 근무 종료만으로 다시 열리지 않으며 지원만 COMPLETED로 조회/전환하고 요청 ACCEPTED 및 확정 이력을 보존한다. 수동 자료 접근 종료도 공고를 다시 열지 않는다.
 - 선정 없이 수동 마감할 때는 유효 대기 요청 철회를 먼저 수행한다. 미확정 RECRUITING만 CLOSED로 바꾸고 현재 지원을 종료한다. 이미 CLOSED이면 최신 revision의 재요청은 시각·revision·확정·접근·일정 변경 없이 성공한다. 새 key의 오래된 revision은 충돌, 같은 key 재시도는 최초 결과다.
 

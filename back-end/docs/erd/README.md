@@ -2,7 +2,7 @@
 
 Figma의 입력·조회·상태 흐름과 OpenAPI를 연결한 **구현 전 관계형 데이터 설계**다. DB 마이그레이션이나 API 구현 완료를 뜻하지 않는다.
 
-2026-10-05 사용자 결정에 따라 **근무 요청 수락 시 공고 자동 마감, 근무 시작 전 확정 철회 시 모집 재개**를 우선 반영했다. 나머지 충돌은 [OpenAPI 0.8.0](https://github.com/2026-KW-HACKATHON/29_Jidan/blob/b7c10a6/back-end/openapi.yaml)과 [API PR #91](https://github.com/2026-KW-HACKATHON/29_Jidan/pull/91)을 기준으로 정합화했다. ERD는 [PR #95](https://github.com/2026-KW-HACKATHON/29_Jidan/pull/95)에서 별도 검토하며 두 브랜치의 선후 병합과 관계없이 이 계약을 구현 기준으로 사용한다.
+2026-10-05 사용자 결정에 따라 **근무 요청 수락 시 공고 자동 마감, 근무 시작 전 확정 철회 시 모집 재개**를 우선 반영했다. 나머지 충돌은 [OpenAPI 0.8.0](https://github.com/2026-KW-HACKATHON/29_Jidan/blob/3cf66ac/back-end/openapi.yaml)과 [API PR #91](https://github.com/2026-KW-HACKATHON/29_Jidan/pull/91)을 기준으로 정합화했다. ERD는 [PR #95](https://github.com/2026-KW-HACKATHON/29_Jidan/pull/95)에서 별도 검토하며 두 브랜치의 선후 병합과 관계없이 이 계약을 구현 기준으로 사용한다.
 
 ```mermaid
 erDiagram
