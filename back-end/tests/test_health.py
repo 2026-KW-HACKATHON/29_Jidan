@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 import pymysql
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 
 from app.main import app
 
@@ -37,14 +38,21 @@ def configure_database(monkeypatch):
 
 def test_database_is_checked_when_configured(monkeypatch):
     configure_database(monkeypatch)
-    connect = MagicMock()
-    cursor = connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
-    cursor.fetchone.return_value = (1,)
-    monkeypatch.setattr("app.database.pymysql.connect", connect)
+    engine = MagicMock()
+    connection = engine.connect.return_value.__enter__.return_value
+    connection.execute.return_value.scalar.return_value = 1
+    monkeypatch.setattr("app.database.get_engine", lambda: engine)
     response = client.get("/api/health")
     assert response.json() == {"status": "ok", "environment": "dev", "database": "ok"}
-    cursor.execute.assert_called_once_with("SELECT 1")
-    assert connect.call_args.kwargs["database"] == "jidan_dev"
+    assert str(connection.execute.call_args.args[0]) == "SELECT 1"
+
+
+def test_unexpected_database_response_is_unavailable(monkeypatch):
+    configure_database(monkeypatch)
+    engine = MagicMock()
+    engine.connect.return_value.__enter__.return_value.execute.return_value.scalar.return_value = 0
+    monkeypatch.setattr("app.database.get_engine", lambda: engine)
+    assert client.get("/api/health").status_code == 503
 
 
 @pytest.mark.parametrize("environment", ["dev", "production", "invalid"])
@@ -60,13 +68,19 @@ def test_invalid_database_port(monkeypatch, port):
     assert client.get("/api/health").status_code == 503
 
 
-def test_database_failure_does_not_expose_credentials(monkeypatch):
+@pytest.mark.parametrize("error", [
+    pymysql.OperationalError("secret-password-and-host"),
+    OperationalError("SELECT 1", {}, Exception("secret-password-and-host")),
+])
+def test_database_failure_does_not_expose_credentials(monkeypatch, error):
     configure_database(monkeypatch)
-    monkeypatch.setattr("app.database.pymysql.connect", MagicMock(
-        side_effect=pymysql.OperationalError("secret-password-and-host")))
+    engine = MagicMock()
+    engine.connect.side_effect = error
+    monkeypatch.setattr("app.database.get_engine", lambda: engine)
     response = client.get("/api/health")
     assert response.status_code == 503
     assert response.json() == {"detail": "Service unavailable"}
+    assert "secret" not in response.text
 
 
 def test_partial_local_database_configuration_is_rejected(monkeypatch):
