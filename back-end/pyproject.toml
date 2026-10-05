@@ -4,3 +4,4 @@ line-length = 100
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["mysql: needs a dedicated *_test MySQL database configured through DB_*; skipped otherwise"]

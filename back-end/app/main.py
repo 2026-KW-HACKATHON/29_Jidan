@@ -2,6 +2,7 @@ import os
 
 import pymysql
 from fastapi import FastAPI, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import database_status
 from app.design_docs import install_design_docs
@@ -16,7 +17,7 @@ def health() -> dict[str, str]:
         if environment not in {"local", "dev", "production"}:
             raise ValueError("Invalid environment")
         database = database_status(environment)
-    except (pymysql.MySQLError, OSError, ValueError):
+    except (pymysql.MySQLError, SQLAlchemyError, OSError, ValueError):
         # Keep connection details and credentials out of public health responses.
         raise HTTPException(status_code=503, detail="Service unavailable") from None
     return {"status": "ok", "environment": environment, "database": database}
