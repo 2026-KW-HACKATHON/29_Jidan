@@ -42,3 +42,35 @@ export const stateFixture:ManualState={
   "draftVersionId": "a0912ce8-1103-428d-aed0-57a5d78c7f0d",
   "interviewSessionId": "c701b623-889c-4d28-b055-501251ac6773"
 }
+
+import type {ManualIntentReview} from '../manual/types'
+export const reviewFixture:ManualIntentReview={
+  "intentId": "09dbccbd-75e2-4709-9a80-b9a9ddeef10a",
+  "revision": 3,
+  "status": "READY",
+  "content": {
+    "intentId": "09dbccbd-75e2-4709-9a80-b9a9ddeef10a",
+    "summary": "야간조는 22시부터 다음 날 7시까지입니다.",
+    "shifts": [
+      {
+        "id": "44b35781-3e98-4f28-9505-2178b2863c5e",
+        "name": "야간조",
+        "startTime": "22:00",
+        "endTime": "07:00",
+        "endsNextDay": true
+      }
+    ],
+    "sections": [],
+    "needsDetail": false,
+    "structurePhotos": [
+      {
+        "mediaId": "5329e5a1-0293-44eb-b11b-69df76660be1",
+        "caption": "근무표",
+        "title": "업무 참고 사진"
+      }
+    ]
+  },
+  "confirmedAt": null,
+  "processing": null,
+  "error": null
+}
