@@ -35,6 +35,7 @@ SQLAlchemy 2.x(드라이버 PyMySQL)와 Alembic을 쓴다. 연결 정보는 `DB_
 - `app/db/`: 엔진·세션 팩토리(`get_engine`, `session_scope`), FastAPI 의존성 `SessionDep`/`get_session`, `UtcDateTime`, `new_uuid`.
   `session_scope`는 블록이 성공하면 commit, 예외가 나면 rollback하는 스크립트·서비스용 컨텍스트다.
 - 규칙: UUID는 `CHAR(36)`, 시각은 UTC `DATETIME(6)`(`UtcDateTime`은 타임존이 없는 값을 거부하고 읽을 때 UTC aware로 돌려준다), 근무일·요일은 `Asia/Seoul` 기준으로 서비스에서 계산한다. enum 값은 `VARCHAR` + `CHECK`다. enum 성격 컬럼과 `google_sub`·`token_hash`는 MySQL에서 대소문자를 구분하도록 `cs_string`(`utf8mb4_0900_as_cs`, NO PAD)을 쓴다. MySQL 기본 collation은 `'worker'`를 `'WORKER'`와 같게 보기 때문이다. 새 enum 컬럼은 반드시 `cs_string`을 쓰고 `tests/test_collation.py`의 컬럼 수를 갱신한다. 이메일은 의도적으로 대소문자를 구분하지 않는다(근거: [ERD 결정 기록](docs/erd/README.md)).
+- `app/db/checks.py`: SQLite와 MySQL에서 의미가 다른 문자열 CHECK(`LENGTH`는 글자/바이트, `TRIM`은 U+0020만, MySQL 기본 collation은 폭 없는 문자를 빈 값으로 취급)를 방언별 SQL로 쓰는 `digits_only`·`not_blank`. 사업자 번호(ASCII 숫자 10자리)와 `introduction`·경력 `store_name`(공백 아닌 글자 필요)이 쓴다. CHECK 이름은 같고 본문만 다르며 `0001`에 같은 문장이 있다. 새 문자열 CHECK는 `LENGTH`·`TRIM`을 직접 쓰지 말고 이 모듈에 추가한다. 남은 차이는 [ERD 결정 기록](docs/erd/README.md)의 표를 본다.
 - `app/db/models.py`: P0 도메인 15개 테이블(users, 프로필, 매장·승인, 초대·접근, 공고·지원·근무 요청). 기준 스키마는 [ERD](docs/erd/README.md)에서 옮겼다.
 - 기록을 보존해야 하는 참조에는 cascade 삭제를 두지 않는다. 다른 테이블을 봐야 하는 규칙(역할, 같은 매장 일치, 시간 중첩, 행 개수 상한, 30분 단위, 이메일 정규화)은 서비스 계층에서 검증한다.
 
@@ -48,7 +49,7 @@ python -m alembic upgrade head --sql  # 연결 없이 SQL만 출력(오프라인
 python -m alembic revision --autogenerate -m "변경 설명"  # 새 리비전 초안, 반드시 직접 검토
 ```
 
-**리비전은 한 줄(선형)로만 유지한다.** 새 리비전은 항상 현재 head 뒤에 붙이고, 한 시점에 한 사람만 추가한다. 병렬 PR로 head가 둘이 되면 `tests/test_migrations.py`가 실패한다. 발행된 리비전은 수정하지 않고 새 리비전을 추가한다. 모델과 마이그레이션이 어긋나면 같은 테스트가 실패한다. `compare_metadata`는 CHECK 제약을 비교하지 않으므로 `tests/test_schema_drift.py`가 CHECK의 이름과 정규화한 SQL(SQLite·MySQL 각각)을 따로 비교한다. 정규화 규칙(대소문자·따옴표·공백·`_utf8mb4` 제거, 문자열 리터럴은 원문 비교, MySQL은 괄호 비교 제외)은 `tests/schema_checks.py` 설명에 있다. UNIQUE·INDEX·FK 어긋남은 `compare_metadata`가 잡으며 같은 파일에서 확인한다. collation 어긋남도 `compare_metadata`가 잡지 못하므로 `tests/test_collation.py`가 MySQL `information_schema`와 모델의 collation을 비교한다.
+**리비전은 한 줄(선형)로만 유지한다.** 새 리비전은 항상 현재 head 뒤에 붙이고, 한 시점에 한 사람만 추가한다. 병렬 PR로 head가 둘이 되면 `tests/test_migrations.py`가 실패한다. 발행된 리비전은 수정하지 않고 새 리비전을 추가한다. 모델과 마이그레이션이 어긋나면 같은 테스트가 실패한다. `compare_metadata`는 CHECK 제약을 비교하지 않으므로 `tests/test_schema_drift.py`가 CHECK의 이름과 정규화한 SQL(SQLite·MySQL 각각, 방언별 CHECK는 해당 방언으로 렌더링해서)을 따로 비교한다. 정규화 규칙(대소문자·따옴표·공백·`_utf8mb4` 제거, 문자열 리터럴은 원문 비교, MySQL은 괄호 비교 제외)은 `tests/schema_checks.py` 설명에 있다. UNIQUE·INDEX·FK 어긋남은 `compare_metadata`가 잡으며 같은 파일에서 확인한다. collation 어긋남도 `compare_metadata`가 잡지 못하므로 `tests/test_collation.py`가 MySQL `information_schema`와 모델의 collation을 비교한다.
 
 ### 요청 처리 commit 규칙 (#104/#105 공통)
 

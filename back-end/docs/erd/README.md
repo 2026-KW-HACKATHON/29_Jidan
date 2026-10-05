@@ -88,8 +88,19 @@ Figma의 Design 화면을 주요 근거로 사용했고 Design System/Wireframe/
 | 삭제 정책 | 모든 FK는 기본(RESTRICT). cascade 삭제 없음 |
 | 활성 유일성 | 활성 지원·확정·대기 요청은 생성 컬럼(`active_worker_id` 등)에 UNIQUE를 걸어 DB에서 중복을 막음. 공고당 유효 PENDING 요청의 직렬화는 공고 잠금과 서비스 검증으로 보완 |
 | `users.name`·`phone_number` | NOT NULL. 가입 최종 확인에서 한 번에 저장하므로 부분 가입 행을 만들지 않는다는 해석 |
-| 경력 `store_name` | `worker_careers`·`application_careers` 모두 NULL 허용. OpenAPI `Career.storeName`이 선택(required 아님, 있으면 `minLength 1`·`\S`)이고 [근무 정보 설계](../worker-profile-design.md)도 "지우려면 필드를 생략"이라 NOT NULL이면 저장할 수 없기 때문. 생략·빈 문자열·공백만 있는 값은 `NULL`, 값이 있으면 앞뒤 공백을 제거해 저장(ORM `normalize_optional_text`). DB `CHECK (store_name IS NULL OR TRIM(store_name) <> '')`가 우회 쓰기를 막는다. API는 빈 문자열을 422로 거절하므로 서비스까지 도달하는 값은 생략 또는 비공백이다. 지원서 경력 스냅샷도 동일하게 `NULL`을 그대로 복사 |
+| 경력 `store_name` | `worker_careers`·`application_careers` 모두 NULL 허용. OpenAPI `Career.storeName`이 선택(required 아님, 있으면 `minLength 1`·`\S`)이고 [근무 정보 설계](../worker-profile-design.md)도 "지우려면 필드를 생략"이라 NOT NULL이면 저장할 수 없기 때문. 생략·빈 문자열·공백만 있는 값은 `NULL`, 값이 있으면 앞뒤 공백을 제거해 저장(ORM `normalize_optional_text`). DB `CHECK`(공백 판정은 아래 "공백·숫자 CHECK" 행)가 우회 쓰기를 막는다. API는 빈 문자열을 422로 거절하므로 서비스까지 도달하는 값은 생략 또는 비공백이다. 지원서 경력 스냅샷도 동일하게 `NULL`을 그대로 복사 |
 | `stores.detail_address` | NULL 허용(ERD가 필수를 명시하지 않음) |
-| 사업자 번호 | 숫자 10자리만 저장(`LENGTH = 10`), 하이픈 제거는 서비스 책임 |
+| 사업자 번호 | 하이픈을 제거한 ASCII 숫자 10자리만 저장. 하이픈 제거는 서비스 책임. `LENGTH = 10`은 SQLite에서 글자 수, MySQL에서 바이트 수라 `'가나다a'`(4글자·10바이트)가 MySQL에서만 통과하고 전각 숫자 10자(30바이트)는 SQLite에서만 통과했으므로 방언별 CHECK로 바꿨다(아래 행) |
+| 공백·숫자 CHECK (SQLite·MySQL 동일 의미) | CHECK 이름은 같고 SQL 본문만 방언별이다(`app/db/checks.py`의 `DialectSql`, 마이그레이션 `0001`에 같은 문장을 고정). `stores.business_registration_number`는 SQLite `LENGTH(c) = 10 AND c NOT GLOB '*[^0-9]*'`, MySQL `CHAR_LENGTH(c) = 10 AND REGEXP_LIKE(c, '^[0-9]{10}$')`. 공백 판정(`job_applications.introduction`, 경력 `store_name`)은 `TRIM(x) <> ''`를 버렸다. `TRIM`은 두 DB 모두 U+0020만 지우므로 탭·개행·NBSP·전각 공백만 있는 값이 통과했고, MySQL 기본 collation은 폭 없는 공백·제어 문자를 빈 문자열과 같게 봐서 그런 값만 MySQL이 거절하는 차이도 있었다. 이제 SQLite `TRIM(x, char(<Unicode White_Space 코드포인트>)) <> ''`, MySQL `REGEXP_LIKE(x, '[^[:space:]]')`로 둘 다 "공백이 아닌 글자가 하나 이상"을 요구한다(두 집합이 U+0000~U+30FF 전 구간에서 같음을 확인). 폭 없는 공백(U+200B)·제어 문자는 두 DB 모두 내용으로 본다. MySQL은 `REGEXP`를 `regexp_like()`로 저장하므로 처음부터 그 형태로 쓴다. 모델 CHECK와 DB의 일치는 `tests/test_schema_drift.py`가 방언별로 비교한다 |
+| 남은 SQLite↔MySQL 차이 | 아래 표 |
+
+**남은 SQLite↔MySQL 차이** (스키마로 맞추지 않고 서비스 책임으로 둔 것)
+
+| 항목 | 차이 | 판단 |
+| --- | --- | --- |
+| 경력 `start_month`·`end_month` 형식 | DB는 `'YYYY-MM'` 형식을 검사하지 않는다(문자열 `VARCHAR(7)`). 형식이 맞는 값끼리의 `start_month <= end_month` 비교는 두 DB에서 같다. 형식이 틀린 값은 `'2024-1' < '2024-02'` 같은 사전식 순서가 되고, MySQL 기본 collation에서는 U+200B 같은 무시되는 글자가 붙은 값을 같은 값으로 본다(SQLite는 다른 값) | 서비스(API 스키마 `YYYY-MM` 검증)가 형식·미래 월을 막는다. DB 형식 CHECK는 ERD에 없는 새 제약이고 방언별 월 범위 표현이 커서 이번 범위에서 제외 |
+| 경력 `industry`·`duties`, 이름 등 일반 문자열 | MySQL 기본 collation은 대소문자·악센트를 구분하지 않고 `=`·`UNIQUE`가 그렇게 동작한다. 해당 컬럼에는 UNIQUE·CHECK 비교가 없다 | 영향 없음 |
+| `TIME` 소수초 | MySQL `TIME`은 소수초를 반올림해 저장하고 SQLite는 문자열 그대로 둔다 | 서비스가 30분 단위(소수초 없음)만 허용하므로 문서화만 한다 |
+| 다른 방언 차이 가능성이 있는 CHECK | 나머지 CHECK는 정수 비교·`IN (enum)`·NULL 일치·시각 비교뿐이다. enum 대소문자는 `cs_string`으로 맞췄고, 시각은 UTC `DATETIME(6)` 비교다 | 점검 결과 차이 없음 |
 | 서비스 검증으로 남긴 것 | `users.role`과 FK 대상 일치, 같은 매장 일치, 시간 중첩, 경력·가능 시간 개수 상한, 30분 단위, 미래 월 금지, 초대 이메일 소문자 정규화 |
 | 이번 범위 밖 | 세션·OAuth 상태·멱등성(#104), 알림 outbox(#116), 관심 매장(#117), 매뉴얼·인터뷰·Q&A(#118~#121) 테이블. 이후 리비전은 `0001` 뒤에 한 줄로 추가 |
