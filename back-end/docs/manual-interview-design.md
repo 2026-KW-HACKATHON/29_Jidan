@@ -65,7 +65,7 @@ flowchart TD
 | 열람 | `GET M/published` | 전체/공통/선택 근무조 업무 목록 |
 | 열람 | `GET M/published/sections/{sectionId}` | 현재 게시 업무의 단계·사진 상세 |
 
-AI 질의응답·인용 응답, 일별 체크리스트 실행, 인터뷰 폐기/게시 취소/과거 버전 관리 API는 별도 범위다. 체크리스트 대상 여부(`checklistItem`)는 매뉴얼 지시문의 힌트만 정의한다.
+AI 질의응답·인용 응답은 [업무 질문 계약](qa-conversation-design.md)과 [질문 미디어 계약](qa-media-design.md)에 별도 챕터로 정의했다. 일별 체크리스트 실행, 인터뷰 폐기/게시 취소/과거 버전 관리 API는 이 화면 범위에 없다. 체크리스트 대상 여부(`checklistItem`)는 매뉴얼 지시문의 힌트만 정의한다.
 
 ## 권한과 공개 범위
 
