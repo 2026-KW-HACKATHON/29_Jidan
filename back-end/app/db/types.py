@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, TypeDecorator
+from sqlalchemy import DateTime, String, TypeDecorator
 
 
 def new_uuid() -> str:
@@ -16,6 +16,21 @@ def normalize_optional_text(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def cs_string(length: int) -> String:
+    """VARCHAR compared case-sensitively on MySQL (utf8mb4_0900_as_cs); SQLite already is.
+
+    utf8mb4_0900_as_cs is NO PAD, so 'WORKER ' != 'WORKER'. The older utf8mb4_bin is PAD SPACE:
+    it would let `role = 'WORKER '` pass the CHECK and make UNIQUE treat 'a' and 'a ' as equal.
+
+    MySQL's default collation (utf8mb4_0900_ai_ci) is case- and accent-insensitive, so
+    `role IN ('WORKER')` would accept 'worker' and UNIQUE would treat 'Ab' and 'ab' as equal.
+    Use it for enum-like CHECK columns and opaque identifiers (google_sub, token_hash).
+    Emails stay on the default collation on purpose. Never use it on a FK/PK column unless
+    both sides match.
+    """
+    return String(length).with_variant(String(length, collation="utf8mb4_0900_as_cs"), "mysql")
 
 
 def utcnow() -> datetime:

@@ -26,7 +26,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 
-from app.db.types import UtcDateTime, new_uuid, normalize_optional_text, utcnow
+from app.db.types import UtcDateTime, cs_string, new_uuid, normalize_optional_text, utcnow
 
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_N_name)s",
@@ -79,11 +79,11 @@ class User(Base):
     )
 
     id: Mapped[str] = _id()
-    google_sub: Mapped[str] = mapped_column(String(255), unique=True)
+    google_sub: Mapped[str] = mapped_column(cs_string(255), unique=True)
     google_email: Mapped[str] = mapped_column(String(320))
     email_verified: Mapped[bool] = mapped_column(Boolean)
-    role: Mapped[str] = mapped_column(String(16))
-    status: Mapped[str] = mapped_column(String(16), default="ACTIVE")
+    role: Mapped[str] = mapped_column(cs_string(16))
+    status: Mapped[str] = mapped_column(cs_string(16), default="ACTIVE")
     name: Mapped[str] = mapped_column(String(100))
     phone_number: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
@@ -99,8 +99,8 @@ class WorkerProfile(Base):
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
     birth_date: Mapped[date] = mapped_column(Date)
-    gender: Mapped[str] = mapped_column(String(8))
-    experience_level: Mapped[str] = mapped_column(String(16))
+    gender: Mapped[str] = mapped_column(cs_string(8))
+    experience_level: Mapped[str] = mapped_column(cs_string(16))
 
 
 class WorkerCareer(Base):
@@ -156,7 +156,7 @@ class AvailabilityDay(Base):
 
     id: Mapped[str] = _id()
     rule_id: Mapped[str] = mapped_column(ForeignKey("availability_rules.id"))
-    weekday: Mapped[str] = mapped_column(String(3))
+    weekday: Mapped[str] = mapped_column(cs_string(3))
 
 
 class Store(Base):
@@ -182,7 +182,7 @@ class Store(Base):
     # Digits only: the service strips hyphens before insert.
     business_registration_number: Mapped[str] = mapped_column(String(10), unique=True)
     phone_number: Mapped[str] = mapped_column(String(20))
-    approval_status: Mapped[str] = mapped_column(String(16), default="PENDING")
+    approval_status: Mapped[str] = mapped_column(cs_string(16), default="PENDING")
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     approved_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
@@ -200,7 +200,7 @@ class StoreApprovalRequest(Base):
 
     id: Mapped[str] = _id()
     store_id: Mapped[str] = mapped_column(ForeignKey("stores.id"), unique=True)
-    status: Mapped[str] = mapped_column(String(16), default="PENDING")
+    status: Mapped[str] = mapped_column(cs_string(16), default="PENDING")
     submitted_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     approved_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
@@ -230,7 +230,7 @@ class JobPosting(Base):
     created_by_owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     title: Mapped[str] = mapped_column(String(100))
     duty_description: Mapped[str] = mapped_column(Text)
-    work_part: Mapped[str] = mapped_column(String(16))
+    work_part: Mapped[str] = mapped_column(cs_string(16))
     work_date: Mapped[date] = mapped_column(Date)  # Asia/Seoul calendar date
     start_time: Mapped[time] = mapped_column(Time)  # Asia/Seoul wall clock
     end_time: Mapped[time] = mapped_column(Time)
@@ -239,9 +239,9 @@ class JobPosting(Base):
     min_experience_months: Mapped[int] = mapped_column(Integer, default=0)
     extra_requirements: Mapped[str | None] = mapped_column(Text)
     hourly_wage_krw: Mapped[int] = mapped_column(Integer)
-    payment_timing: Mapped[str] = mapped_column(String(16))
+    payment_timing: Mapped[str] = mapped_column(cs_string(16))
     pay_note: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(16), default="RECRUITING")
+    status: Mapped[str] = mapped_column(cs_string(16), default="RECRUITING")
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     closed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     revision: Mapped[int] = mapped_column(Integer, default=1)
@@ -267,12 +267,12 @@ class JobApplication(Base):
     job_id: Mapped[str] = mapped_column(ForeignKey("job_postings.id"))
     worker_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     introduction: Mapped[str] = mapped_column(String(500))
-    status: Mapped[str] = mapped_column(String(16), default="APPLIED")
+    status: Mapped[str] = mapped_column(cs_string(16), default="APPLIED")
     applied_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     withdrawn_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     applicant_name: Mapped[str] = mapped_column(String(100))
     age_at_submission: Mapped[int] = mapped_column(Integer)
-    experience_level: Mapped[str] = mapped_column(String(16))
+    experience_level: Mapped[str] = mapped_column(cs_string(16))
     revision: Mapped[int] = mapped_column(Integer, default=1)
     active_worker_id: Mapped[str | None] = mapped_column(
         CHAR(36),
@@ -330,7 +330,7 @@ class WorkRequest(Base):
     id: Mapped[str] = _id()
     application_id: Mapped[str] = mapped_column(ForeignKey("job_applications.id"))
     requested_by_owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
-    status: Mapped[str] = mapped_column(String(32), default="PENDING")
+    status: Mapped[str] = mapped_column(cs_string(32), default="PENDING")
     requested_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     responded_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
@@ -375,7 +375,7 @@ class ApplicationSelectionEffect(Base):
     application_id: Mapped[str] = mapped_column(
         ForeignKey("job_applications.id"), primary_key=True,
     )
-    previous_status: Mapped[str] = mapped_column(String(16))
+    previous_status: Mapped[str] = mapped_column(cs_string(16))
     applied_revision: Mapped[int] = mapped_column(Integer)
     restored_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
@@ -405,7 +405,7 @@ class StoreInvitation(Base):
     store_id: Mapped[str] = mapped_column(ForeignKey("stores.id"))
     inviter_owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     invited_email: Mapped[str] = mapped_column(String(320))
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # hex SHA-256 only
+    token_hash: Mapped[str] = mapped_column(cs_string(64), unique=True)  # hex SHA-256 only
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     last_sent_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)

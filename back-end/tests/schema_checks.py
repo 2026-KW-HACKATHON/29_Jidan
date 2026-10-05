@@ -99,3 +99,63 @@ def check_differences(
                 f"CHECK {key[0]}.{key[1]} differs: models {expected!r} vs database {actual!r}"
             )
     return problems
+
+
+# --- collation -------------------------------------------------------------------------------
+#
+# `compare_metadata` does not compare collations either, so a column declared case-sensitive in
+# the models but created case-insensitive by the migration (or the reverse) goes unnoticed.
+
+ENUM_CHECK = re.compile(r"^(\w+) IN \('")
+
+
+def enum_columns(metadata) -> list[tuple[str, str]]:
+    """(table, column) of every enum-like CHECK (`col IN ('A', 'B')`), derived from the models."""
+    found = set()
+    for (table, _name), sql in model_checks(metadata).items():
+        match = ENUM_CHECK.match(sql)
+        if match:
+            found.add((table, match.group(1)))
+    return sorted(found)
+
+
+def model_collations(metadata) -> dict[tuple[str, str], str | None]:
+    """{(table, column): collation the models ask for on MySQL, None for the default}."""
+    from sqlalchemy import String
+    from sqlalchemy.dialects import mysql
+
+    dialect = mysql.dialect()
+    collations = {}
+    for table in metadata.tables.values():
+        for column in table.columns:
+            if isinstance(column.type, String):  # CHAR is a String subclass
+                collations[(table.name, column.name)] = column.type.dialect_impl(dialect).collation
+    return collations
+
+
+def database_collations(connection) -> dict[tuple[str, str], str]:
+    """{(table, column): COLLATION_NAME} for every character column of the current database."""
+    from sqlalchemy import text
+
+    rows = connection.execute(text(
+        "SELECT TABLE_NAME, COLUMN_NAME, COLLATION_NAME FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND COLLATION_NAME IS NOT NULL"
+    ))
+    return {(row[0], row[1]): row[2] for row in rows}
+
+
+def collation_differences(
+    model: dict[tuple[str, str], str | None], database: dict[tuple[str, str], str],
+) -> list[str]:
+    """Explicit model collations must match exactly; the default must never be a case-sensitive (`_bin`/`_cs`) one."""
+    problems = []
+    for key in sorted(model):
+        if key not in database:
+            problems.append(f"{key[0]}.{key[1]} is in the models but has no collation in the database")
+            continue
+        expected, actual = model[key], database[key]
+        if expected is None and actual.endswith(("_bin", "_cs")):
+            problems.append(f"{key[0]}.{key[1]} is {actual} in the database, default in the models")
+        elif expected is not None and expected != actual:
+            problems.append(f"{key[0]}.{key[1]} is {actual} in the database, {expected} in the models")
+    return problems

@@ -10,6 +10,12 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
+
+# Case-sensitive on MySQL (default utf8mb4_0900_ai_ci would accept 'worker' for 'WORKER').
+def cs_string(length):
+    return sa.String(length).with_variant(sa.String(length, collation="utf8mb4_0900_as_cs"), "mysql")
+
+
 UTC_DATETIME = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql")
 
 revision = "0001"
@@ -21,11 +27,11 @@ depends_on = None
 def upgrade() -> None:
     op.create_table('users',
     sa.Column('id', sa.CHAR(length=36), nullable=False),
-    sa.Column('google_sub', sa.String(length=255), nullable=False),
+    sa.Column('google_sub', cs_string(255), nullable=False),
     sa.Column('google_email', sa.String(length=320), nullable=False),
     sa.Column('email_verified', sa.Boolean(), nullable=False),
-    sa.Column('role', sa.String(length=16), nullable=False),
-    sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('role', cs_string(16), nullable=False),
+    sa.Column('status', cs_string(16), nullable=False),
     sa.Column('name', sa.String(length=100), nullable=False),
     sa.Column('phone_number', sa.String(length=20), nullable=False),
     sa.Column('created_at', UTC_DATETIME, nullable=False),
@@ -45,7 +51,7 @@ def upgrade() -> None:
     sa.Column('detail_address', sa.String(length=255), nullable=True),
     sa.Column('business_registration_number', sa.String(length=10), nullable=False),
     sa.Column('phone_number', sa.String(length=20), nullable=False),
-    sa.Column('approval_status', sa.String(length=16), nullable=False),
+    sa.Column('approval_status', cs_string(16), nullable=False),
     sa.Column('created_at', UTC_DATETIME, nullable=False),
     sa.Column('approved_at', UTC_DATETIME, nullable=True),
     sa.CheckConstraint("(approval_status = 'PENDING' AND approved_at IS NULL) OR (approval_status = 'APPROVED' AND approved_at IS NOT NULL)", name=op.f('ck_stores_approval_consistency')),
@@ -59,8 +65,8 @@ def upgrade() -> None:
     op.create_table('worker_profiles',
     sa.Column('user_id', sa.CHAR(length=36), nullable=False),
     sa.Column('birth_date', sa.Date(), nullable=False),
-    sa.Column('gender', sa.String(length=8), nullable=False),
-    sa.Column('experience_level', sa.String(length=16), nullable=False),
+    sa.Column('gender', cs_string(8), nullable=False),
+    sa.Column('experience_level', cs_string(16), nullable=False),
     sa.CheckConstraint("experience_level IN ('NEW', 'EXPERIENCED')", name=op.f('ck_worker_profiles_experience_level')),
     sa.CheckConstraint("gender IN ('MALE', 'FEMALE')", name=op.f('ck_worker_profiles_gender')),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], name=op.f('fk_worker_profiles_user_id_users')),
@@ -85,7 +91,7 @@ def upgrade() -> None:
     sa.Column('created_by_owner_id', sa.CHAR(length=36), nullable=False),
     sa.Column('title', sa.String(length=100), nullable=False),
     sa.Column('duty_description', sa.Text(), nullable=False),
-    sa.Column('work_part', sa.String(length=16), nullable=False),
+    sa.Column('work_part', cs_string(16), nullable=False),
     sa.Column('work_date', sa.Date(), nullable=False),
     sa.Column('start_time', sa.Time(), nullable=False),
     sa.Column('end_time', sa.Time(), nullable=False),
@@ -94,9 +100,9 @@ def upgrade() -> None:
     sa.Column('min_experience_months', sa.Integer(), nullable=False),
     sa.Column('extra_requirements', sa.Text(), nullable=True),
     sa.Column('hourly_wage_krw', sa.Integer(), nullable=False),
-    sa.Column('payment_timing', sa.String(length=16), nullable=False),
+    sa.Column('payment_timing', cs_string(16), nullable=False),
     sa.Column('pay_note', sa.Text(), nullable=True),
-    sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('status', cs_string(16), nullable=False),
     sa.Column('created_at', UTC_DATETIME, nullable=False),
     sa.Column('closed_at', UTC_DATETIME, nullable=True),
     sa.Column('revision', sa.Integer(), nullable=False),
@@ -118,7 +124,7 @@ def upgrade() -> None:
     op.create_table('store_approval_requests',
     sa.Column('id', sa.CHAR(length=36), nullable=False),
     sa.Column('store_id', sa.CHAR(length=36), nullable=False),
-    sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('status', cs_string(16), nullable=False),
     sa.Column('submitted_at', UTC_DATETIME, nullable=False),
     sa.Column('approved_at', UTC_DATETIME, nullable=True),
     sa.CheckConstraint("(status = 'PENDING' AND approved_at IS NULL) OR (status = 'APPROVED' AND approved_at IS NOT NULL)", name=op.f('ck_store_approval_requests_approval_consistency')),
@@ -132,7 +138,7 @@ def upgrade() -> None:
     sa.Column('store_id', sa.CHAR(length=36), nullable=False),
     sa.Column('inviter_owner_id', sa.CHAR(length=36), nullable=False),
     sa.Column('invited_email', sa.String(length=320), nullable=False),
-    sa.Column('token_hash', sa.String(length=64), nullable=False),
+    sa.Column('token_hash', cs_string(64), nullable=False),
     sa.Column('created_at', UTC_DATETIME, nullable=False),
     sa.Column('last_sent_at', UTC_DATETIME, nullable=False),
     sa.Column('expires_at', UTC_DATETIME, nullable=False),
@@ -176,7 +182,7 @@ def upgrade() -> None:
     op.create_table('availability_days',
     sa.Column('id', sa.CHAR(length=36), nullable=False),
     sa.Column('rule_id', sa.CHAR(length=36), nullable=False),
-    sa.Column('weekday', sa.String(length=3), nullable=False),
+    sa.Column('weekday', cs_string(3), nullable=False),
     sa.CheckConstraint("weekday IN ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')", name=op.f('ck_availability_days_weekday')),
     sa.ForeignKeyConstraint(['rule_id'], ['availability_rules.id'], name=op.f('fk_availability_days_rule_id_availability_rules')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_availability_days')),
@@ -187,12 +193,12 @@ def upgrade() -> None:
     sa.Column('job_id', sa.CHAR(length=36), nullable=False),
     sa.Column('worker_id', sa.CHAR(length=36), nullable=False),
     sa.Column('introduction', sa.String(length=500), nullable=False),
-    sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('status', cs_string(16), nullable=False),
     sa.Column('applied_at', UTC_DATETIME, nullable=False),
     sa.Column('withdrawn_at', UTC_DATETIME, nullable=True),
     sa.Column('applicant_name', sa.String(length=100), nullable=False),
     sa.Column('age_at_submission', sa.Integer(), nullable=False),
-    sa.Column('experience_level', sa.String(length=16), nullable=False),
+    sa.Column('experience_level', cs_string(16), nullable=False),
     sa.Column('revision', sa.Integer(), nullable=False),
     sa.Column('active_worker_id', sa.CHAR(length=36), sa.Computed("CASE WHEN status IN ('APPLIED', 'REQUESTED', 'CONFIRMED') THEN worker_id END", persisted=True), nullable=True),
     sa.CheckConstraint("(status = 'WITHDRAWN') = (withdrawn_at IS NOT NULL)", name=op.f('ck_job_applications_withdrawn_consistency')),
@@ -228,7 +234,7 @@ def upgrade() -> None:
     sa.Column('id', sa.CHAR(length=36), nullable=False),
     sa.Column('application_id', sa.CHAR(length=36), nullable=False),
     sa.Column('requested_by_owner_id', sa.CHAR(length=36), nullable=False),
-    sa.Column('status', sa.String(length=32), nullable=False),
+    sa.Column('status', cs_string(32), nullable=False),
     sa.Column('requested_at', UTC_DATETIME, nullable=False),
     sa.Column('expires_at', UTC_DATETIME, nullable=False),
     sa.Column('responded_at', UTC_DATETIME, nullable=True),
@@ -249,7 +255,7 @@ def upgrade() -> None:
     op.create_table('application_selection_effects',
     sa.Column('request_id', sa.CHAR(length=36), nullable=False),
     sa.Column('application_id', sa.CHAR(length=36), nullable=False),
-    sa.Column('previous_status', sa.String(length=16), nullable=False),
+    sa.Column('previous_status', cs_string(16), nullable=False),
     sa.Column('applied_revision', sa.Integer(), nullable=False),
     sa.Column('restored_at', UTC_DATETIME, nullable=True),
     sa.CheckConstraint("previous_status IN ('APPLIED', 'REQUESTED', 'CONFIRMED', 'WITHDRAWN', 'NOT_SELECTED', 'COMPLETED')", name=op.f('ck_application_selection_effects_previous_status')),
