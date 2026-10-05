@@ -59,6 +59,19 @@ it('재시도 불가 conflict는 최신 초안 조회를 요구하고 게시 성
  vi.spyOn(service,'call').mockImplementation(async(...args)=>{if(args[0]==='publishManualDraft')throw new ManualError('REVISION_CONFLICT');return original(...args)})
  render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={onReload}/>);await screen.findByText('먼저 들어온 제품을 앞쪽에 진열하세요.');fireEvent.click(screen.getByRole('button',{name:'확인하고 게시'}));await screen.findByRole('alert');fireEvent.click(screen.getByRole('button',{name:'최신 작성 상태 다시 불러오기'}));expect(onReload).toHaveBeenCalled();expect(screen.queryByRole('heading',{name:'매뉴얼을 게시했어요'})).not.toBeInTheDocument()
 })
+it('실제 내용 변경 성공은 서버가 초기화한 부족 항목을 다시 확인하게 하고 무변경은 확인을 유지한다',async()=>{
+ for(const scenario of ['missing','noop-missing']){
+  const {call}=setup(scenario);await screen.findByRole('checkbox',{name:'야간조 종료 시간 확인 필요'});fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'부족한 내용을 확인했어요'}));await waitFor(()=>expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeEnabled())
+  fireEvent.click(screen.getByRole('button',{name:'재고 정리 수정할게요'}));fireEvent.click(screen.getByRole('button',{name:'테스트 음성 정정'}));await waitFor(()=>expect(call.mock.calls.some(c=>c[0]==='getManualDraftCorrection')).toBe(true));await waitFor(()=>expect(screen.getByRole('button',{name:'수정할게요'})).toBeEnabled())
+  if(scenario==='missing'){expect(screen.getByRole('checkbox')).not.toBeChecked();expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeDisabled();expect(screen.getByText('물품의 유통기한을 먼저 확인하세요.')).toBeInTheDocument()}
+  else{expect(screen.getByRole('checkbox')).toBeChecked();expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeEnabled()}
+  cleanup()
+ }
+})
+it('생성 실패를 같은 session revision으로 재시도하여 저장된 초안 검토로 복구한다',async()=>{
+ const {call}=setup('generation-error');fireEvent.click(await screen.findByRole('button',{name:'매뉴얼 생성 다시 시도'}));await screen.findAllByText('먼저 들어온 제품을 앞쪽에 진열하세요.')
+ const request=call.mock.calls.find(c=>c[0]==='retryManualInterviewProcessing');expect(request?.[1]).toEqual({sessionId:draftFixture.interviewSessionId});expect(request?.[2]).toMatchObject({expectedRevision:expect.any(Number)})
+})
 
 it('숨겨진 화면의 대기 중 이탈은 요청 없이 취소되며 처리되지 않은 오류를 만들지 않는다',async()=>{
  vi.spyOn(document,'visibilityState','get').mockReturnValue('hidden');const service=createManualPreviewService(true,'draft'),call=vi.spyOn(service,'call')
