@@ -24,6 +24,6 @@ export function ManualReviewPhotos({service,sessionId,review,target,onUpdate,onC
    <Button intent="secondary" busy={task.busy} disabled={photos.length>=20} onClick={()=>input.current?.click()}>＋사진 추가</Button>
    <p className="manual-muted">사진은 연결된 업무 내용과 함께 표시돼요. JPG·PNG·WebP, 10 MiB 이하 사진을 20장까지 첨부할 수 있어요.</p>
   </>}
-  {(validation||task.error)&&<p role="alert">{validation||task.error}</p>}{task.error&&<Button intent="secondary" onClick={task.retry}>첨부 요청 다시 시도</Button>}
+  {(validation||task.error)&&<p role="alert">{validation||task.error}</p>}{task.canRetry&&<Button intent="secondary" onClick={task.retry}>첨부 요청 다시 시도</Button>}
  </div></ManualFrame>
 }
