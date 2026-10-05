@@ -1,6 +1,6 @@
 # 업무 매뉴얼·AI 인터뷰·질의응답 ERD
 
-점주 인터뷰의 필수 질문·추가 탐문 분기는 [AI 인터뷰 실행 흐름](ai-interview-flow.md)을 따른다.
+점주 인터뷰의 필수 질문·추가 탐문 분기는 [AI 인터뷰 실행 흐름](ai-interview-flow.md)을 따른다. 근무자 대화·질문·사진·인용은 [업무 질문 ERD](qa.md)를 따른다.
 
 ```mermaid
 erDiagram
@@ -41,10 +41,6 @@ erDiagram
     INTERVIEW_INTENTS ||--o{ INTERVIEW_EVALUATIONS : checks
     INTERVIEW_PROBE_BATCHES o|--o{ INTERVIEW_EVALUATIONS : evaluated_after
     INTERVIEW_TURNS ||--o{ INTERVIEW_EVALUATIONS : evaluated_through
-    MANUAL_VERSIONS ||--o{ MANUAL_QA : grounds
-    USERS ||--o{ MANUAL_QA : asks
-    MANUAL_QA ||--o{ MANUAL_QA_CITATIONS : cites
-    MANUAL_SECTIONS ||--o{ MANUAL_QA_CITATIONS : sourced_by
 
     STORES {
         uuid id PK
@@ -223,20 +219,6 @@ erDiagram
         datetime created_at
         datetime applied_at
     }
-    MANUAL_QA {
-        uuid id PK
-        uuid published_version_id FK
-        uuid worker_id FK
-        text question
-        text answer
-        datetime asked_at
-        datetime answered_at
-    }
-    MANUAL_QA_CITATIONS {
-        uuid id PK
-        uuid qa_id FK
-        uuid section_id FK
-    }
 ```
 
 ## 테이블과 제약
@@ -259,7 +241,6 @@ erDiagram
 | `interview_probe_batches` | 같은 인텐트의 추가 질문 한 개에 대한 생성 단위. API batchId에 대응하며 READY마다 질문은 정확히 한 개. `depth`는 기본 질문 이후 1부터 시작하고 최대 5. `(session_id, intent_id, depth)` UNIQUE. `status`는 `GENERATING`/`READY`/`ERROR`; 재시도와 fallback이 모두 실패하면 `ERROR`와 오류 코드를 기록하고 세션도 `ERROR`로 표시. 인텐트는 세션의 질문 셋에 속해야 함 |
 | `interview_turns` | AI 질문과 점주 답변을 순서대로 저장. `speaker`는 `AI`/`OWNER`, `turn_kind`는 `QUESTION`/`ANSWER`/`CORRECTION`/`OTHER`, AI 질문의 `question_kind`는 `BASE`/`PROBE`. `intent_id`는 세션의 질문 셋에 속해야 함. `BASE` 질문은 인텐트마다 한 번이고 묶음이 없으며, `PROBE` 질문은 `probe_batch_id` 필수이며 묶음과 질문의 세션·인텐트가 일치해야 함. 답변에 묶음 참조를 기록하면 원 질문과 같은 묶음을 참조. 점주 답변의 `reply_to_question_turn_id`는 같은 세션·인텐트의 AI 질문을 참조. 현재 질문 한 개의 답변을 저장할 때마다 즉시 누적 문맥으로 재평가. 답변은 질문당 한 개이며 재시도는 같은 답변을 재사용. 정정은 별도 CORRECTION 턴으로 보존. 답변 방식은 `VOICE`/`TEXT`, 저장 내용은 텍스트. `(session_id, turn_no)` UNIQUE |
 | `interview_evaluations` | 기본 질문 답변 평가의 `depth`는 0이고 `probe_batch_id`는 NULL. 추가 질문 답변 평가는 해당 생성 단위의 `depth`와 `probe_batch_id`를 사용. Jev와 fallback 호출의 `provider`, `attempt_no`, 성공·실패 `status`, 판단값과 오류 코드를 기록. `(session_id, intent_id, depth, attempt_no)` UNIQUE. `probe_batch_id`가 있으면 평가와 묶음의 세션·인텐트·depth가 일치해야 함. `evaluated_through_turn_id`는 같은 세션·인텐트에서 평가에 포함한 마지막 점주 답변을 참조. `input_snapshot`은 실제 전달한 질문·답변의 ID와 텍스트, 인텐트·문맥 및 typed question을 보존. `evaluation_config_version`은 provider별 모델·질문 구성·판단 임계값을 포함한 불변 설정의 버전. 입력 범위와 재시도 규칙은 아래 실행 제약을 따름. 적용한 성공 결과의 `applied_at`을 기록하고 같은 depth의 결과는 한 건만 적용. 재시도·fallback까지 실패하면 세션을 `ERROR`로 표시 |
-| `manual_qa`, `manual_qa_citations` | 질문에는 당시 게시 버전을 고정하고 출처 섹션은 같은 버전이어야 함. 답변 근거가 없는 경우 사용자에게 근거 부족을 알리는 정책 필요 |
 
 - AI가 필수 질문 셋의 인텐트를 순서대로 확인 → 점주가 답변 → Jev가 추가 질문 필요 여부 판단 → 필요한 경우 같은 인텐트의 질문 한 개와 답변·평가를 depth별로 반복 → 모든 필수 인텐트를 진행한 뒤 매뉴얼 초안을 구조화 → 점주 수정·확인 → 게시 순서다. depth 5에서도 부족하면 해당 항목을 `NEEDS_DETAIL`(검수중)로 남기고 점주 확인 대기 없이 다음 인텐트로 이동한다. 마지막 항목도 초안 생성을 막지 않는다. 부족 항목 확인은 최종 초안 검토에서 수행하며 점주 확인만으로 게시할 수 있다. 기본 질문 문구는 문맥에 맞게 달라질 수 있으며 필수 인텐트는 모두 진행한다. 이 질문 셋은 점주의 암묵지를 수집하는 인텐트 레이어다. AI가 만든 초안은 `DRAFT`이고 근무자에게 공개하지 않는다. 게시 시 새 버전을 고정하고 `current_published_version_id`를 원자적으로 바꾼다. 이전 게시 버전과 그 출처는 당시 질의응답의 근거로 유지한다.
 
