@@ -12,7 +12,7 @@ it('경력 시작, 종료와 재직 중 상태를 검증한다', () => {
   const c={...emptyCareer,industry:'카페' as const,duties:'응대',start:'2024-03',end:'2025-02'}
   expect(validateCareer(c,'2000-01-01','2026-09-24')).toEqual({})
   expect(validateCareer({...c,end:'2024-02'},'2000-01-01').end).toBeTruthy()
-  expect(validateCareer({...c,start:'1999-01'},'2000-01-01').start).toBeTruthy()
+  expect(validateCareer({...c,start:'0000-01'},'2000-01-01').start).toBeTruthy()
   expect(validateCareer({...c,current:true,end:''},'2000-01-01')).toEqual({})
 })
 it('30분 단위, 빈 요일, 같은 시간, 24시간 초과를 거부한다', () => {
@@ -43,4 +43,12 @@ it('정확히 24시간은 허용하고 초과·0시간·역순은 구분한다',
   expect(validateAvailability({ ...a, end: 570 }).time).toBe('근무 가능 시간은 하루 24시간을 초과할 수 없어요.')
   expect(validateAvailability({ ...a, overnight: false }).time).toBe('종료 시간과 다음 날 종료 여부를 확인해 주세요.')
   expect(validateAvailability({ ...a, end: 510, overnight: false }).time).toBe('종료 시간과 다음 날 종료 여부를 확인해 주세요.')
+})
+
+it('명세의 휴대전화와 담당 업무 길이 및 배열 상한을 적용한다',()=>{
+ for(const phone of ['01112345678','0101234567'])expect(validateWorker({...emptyWorker,phone},1).phone).toBeTruthy()
+ const career={...emptyCareer,industry:'카페' as const,duties:'a'.repeat(300),start:'2024-01',current:true}
+ expect(validateCareer(career,'2000-01-01').duties).toBeUndefined();expect(validateCareer({...career,duties:'a'.repeat(301)},'2000-01-01').duties).toBeTruthy()
+ expect(validateWorker({...emptyWorker,experience:'경력 있음',careers:Array(21).fill(career)},2).careers).toBeTruthy()
+ expect(validateWorker({...emptyWorker,availability:Array(101).fill({id:'a',days:[0],start:0,end:30,overnight:false})},3).availability).toBeTruthy()
 })

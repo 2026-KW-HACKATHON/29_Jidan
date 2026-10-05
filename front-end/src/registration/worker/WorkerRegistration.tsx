@@ -1,3 +1,4 @@
+import { saveWorkerDraft, restoreWorkerDraft, clearWorkerDraft } from './draft'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../ui/Button'
 import { Modal } from '../../ui/Modal'
@@ -14,15 +15,16 @@ type Page = 1|2|3|'review'|'complete'|'profile'
 type Editor = {kind:'career'|'time';index:number}|null
 export function WorkerRegistration({ service=workerService, onBack, onExpired, onHome, initialDraft=emptyWorker, initialPage=1, profileService }: { profileService?:ProfileService;service?:WorkerService;onBack:()=>void;onExpired:()=>void;onHome:()=>void;initialDraft?:WorkerDraft;initialPage?:Page }) {
   const [draft,setDraft]=useState(initialDraft),[page,setPage]=useState<Page>(initialPage),[editor,setEditor]=useState<Editor>(null),[editing,setEditing]=useState(false)
-  const [email,setEmail]=useState(''),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[errors,setErrors]=useState<Errors>({}),[message,setMessage]=useState(''),[expired,setExpired]=useState(false),[loadVersion,setLoadVersion]=useState(0)
+  const [email,setEmail]=useState(''),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[errors,setErrors]=useState<Errors>({}),[message,setMessage]=useState(''),[expired,setExpired]=useState(false),[loadVersion,setLoadVersion]=useState(0),[scope,setScope]=useState('')
   const editSnapshot=useRef<{draft:WorkerDraft;key:string;dirty:boolean}|null>(null)
   const lock=useRef(false), request=useRef<AbortController|null>(null), key=useRef<string>(crypto.randomUUID()), alive=useRef(true),dirty=useRef(false)
   useEffect(()=>{
     alive.current=true;const controller=new AbortController();request.current=controller
     const timer=setTimeout(()=>{controller.abort();if(alive.current)setMessage('가입 정보를 불러오지 못했어요. 다시 시도해 주세요.')},10000)
-    void service.identity(controller.signal).then(identity=>{if(controller.signal.aborted||!alive.current)return;if(!identity.email)throw new WorkerFailure('unavailable');setEmail(identity.email);setReady(true)}).catch(e=>{if(controller.signal.aborted||!alive.current)return;setExpired(e instanceof WorkerFailure&&e.code==='expired');setMessage('가입 정보를 불러오지 못했어요. 다시 로그인하거나 잠시 후 시도해 주세요.')}).finally(()=>clearTimeout(timer))
+    void service.identity(controller.signal).then(identity=>{if(controller.signal.aborted||!alive.current)return;if(!identity.email)throw new WorkerFailure('unavailable');setEmail(identity.email);if(identity.draftScope){setScope(identity.draftScope);const saved=restoreWorkerDraft(identity.draftScope);if(saved){setDraft(saved.draft);key.current=saved.requestKey}}setReady(true)}).catch(e=>{if(controller.signal.aborted||!alive.current)return;setExpired(e instanceof WorkerFailure&&e.code==='expired');setMessage(e instanceof WorkerFailure&&e.message!==e.code?e.message:'가입 정보를 불러오지 못했어요. 다시 로그인하거나 잠시 후 시도해 주세요.')}).finally(()=>clearTimeout(timer))
     return()=>{alive.current=false;clearTimeout(timer);request.current?.abort()}
   },[service,loadVersion])
+  useEffect(()=>{if(scope&&ready&&page!=='complete'&&page!=='profile')saveWorkerDraft(scope,draft,key.current)},[scope,ready,draft,page])
   useEffect(()=>{const warn=(e:BeforeUnloadEvent)=>{if(dirty.current&&page!=='complete'&&page!=='profile'){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[page])
   useEffect(()=>{document.querySelector('.worker-signup .ds-mobile-body')?.scrollTo?.(0,0)},[page,editor])
   function change(patch:Partial<WorkerDraft>) {if(lock.current)return;setDraft(d=>({...d,...patch}));key.current=crypto.randomUUID();dirty.current=true;setErrors({})}
@@ -35,8 +37,8 @@ export function WorkerRegistration({ service=workerService, onBack, onExpired, o
     if(page!=='review'){if(editing){setEditing(false);setPage('review')}else setPage(page===1?2:page===2?3:'review');return}
     lock.current=true;setBusy(true);const controller=new AbortController();request.current=controller
     const timer=setTimeout(()=>{controller.abort();if(alive.current){lock.current=false;setBusy(false);setMessage('등록 응답이 지연되고 있어요. 같은 내용으로 다시 시도해 주세요.')}},15000)
-    try {const receipt=await service.submit(normalizedWorker(draft),key.current,controller.signal);if(!alive.current||controller.signal.aborted)return;if(!isWorkerReceipt(receipt))throw new WorkerFailure('network');dirty.current=false;setPage('complete')}
-    catch(e){if(!alive.current||controller.signal.aborted)return;if(e instanceof WorkerFailure&&e.code==='expired'){setExpired(true);setReady(false);setEmail('');setDraft(emptyWorker);setEditor(null);setErrors({});dirty.current=false}if(e instanceof WorkerFailure&&e.code==='validation'){setErrors(e.fields);setEditing(true);setPage(Object.keys(e.fields).some(k=>['name','phone','birth','gender'].includes(k))?1:Object.keys(e.fields).some(k=>['experience','careers'].includes(k))?2:3)}setMessage(e instanceof WorkerFailure&&e.code==='expired'?'가입 세션이 만료됐어요. 다시 로그인해 주세요.':'프로필을 등록하지 못했어요. 입력 내용을 확인하고 다시 시도해 주세요.')}
+    try {const receipt=await service.submit(normalizedWorker(draft),key.current,controller.signal);if(!alive.current||controller.signal.aborted)return;if(!isWorkerReceipt(receipt))throw new WorkerFailure('network');dirty.current=false;clearWorkerDraft();setPage('complete')}
+    catch(e){if(!alive.current||controller.signal.aborted)return;if(e instanceof WorkerFailure&&e.code==='expired'){setExpired(true);setReady(false);setEmail('');setEditor(null);setErrors({});dirty.current=false}if(e instanceof WorkerFailure&&e.code==='validation'){setErrors(e.fields);setEditing(true);setPage(Object.keys(e.fields).some(k=>['name','phone','birth','gender'].includes(k))?1:Object.keys(e.fields).some(k=>['experience','careers'].includes(k))?2:3)}setMessage(e instanceof WorkerFailure&&e.message!==e.code?e.message:e instanceof WorkerFailure&&e.code==='expired'?'가입 세션이 만료됐어요. 다시 로그인해 주세요.':'프로필을 등록하지 못했어요. 입력 내용을 확인하고 다시 시도해 주세요.')}
     finally {clearTimeout(timer);if(alive.current&&!controller.signal.aborted){lock.current=false;setBusy(false)}}
   }
   const modal=<Modal open={!!message} state="error" title="가입을 계속할 수 없어요" description={message} confirmLabel={expired?'다시 로그인':'확인'} cancelLabel="닫기" onClose={()=>setMessage('')} onConfirm={expired?onExpired:undefined}/>
