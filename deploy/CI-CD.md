@@ -94,6 +94,39 @@ Cloudflare Tunnel → Nginx 80 → 환경별 localhost 포트로 전달한다. `
 
 Nginx 설정 원본은 `deploy/nginx/`에 있고, 서버에서는 `/etc/nginx/sites-available/jidan-dev`, `jidan-production`을 사용한다. 프록시 변경은 앱 배포와 별도로 `nginx -t` 후 reload한다.
 
+## backend Origin 환경 설정
+
+비공개 `backend/runtime.env`에는 아래 값을 **따옴표 없이 한 번만** 설정한다.
+
+| 환경 | 설정 |
+| --- | --- |
+| dev | `ALLOWED_ORIGINS=https://dev-jidan.leehyowon14.dev` |
+| production | `ALLOWED_ORIGINS=https://jidan.leehyowon14.dev` |
+
+Compose의 `env_file`은 `format: raw`로 값을 주입한다. 와일드카드, 두 환경의 도메인 혼합, localhost 추가, 따옴표, 변수 치환, 중복 키를 사용하지 않는다. 프론트엔드는 각 환경의 동일 출처 `/api`를 유지한다. 설정 변경 시 다른 값은 유지하고 파일 권한은 `600`으로 보존한다. 파일 내용 전체나 다른 환경 변수, 세션·CSRF 토큰을 Git/Actions/이슈에 출력하지 않는다.
+
+배포 서버에서 파일을 수정한 뒤, 해당 배포 커밋의 검사기로 컨테이너 변경 없이 사전 점검한다. 성공 시 출력이 없고 실패 시 값이 포함되지 않은 안내와 종료 코드 `2`를 반환한다.
+
+```bash
+python3 deploy/scripts/check_runtime_env.py dev /home/ubuntu/apps/jidan/dev/backend/runtime.env
+python3 deploy/scripts/check_runtime_env.py production /home/ubuntu/apps/jidan/production/backend/runtime.env
+```
+
+배포 스크립트는 권한 `600`으로 복사한 릴리즈의 환경 파일을 이미지 pull 전에 검사한다. 누락·빈 값·다른 Origin은 배포를 중단한다. 컨테이너 시작 뒤에는 `ALLOWED_ORIGINS`만 검사하며 값은 출력하지 않는다. 주입된 값이 환경과 다르면 `current`를 확정하지 않고 기존 롤백 절차를 따른다. frontend 배포에는 이 검사를 적용하지 않는다.
+
+파일 수정만으로 실행 컨테이너의 환경 변수는 바뀌지 않는다. 적용은 기존 backend GitHub Actions에서 `back-end/dev` 또는 `main`의 Run workflow로 수행하며 서버에서 직접 Compose를 재배포하지 않는다. PR은 테스트·빌드만 수행하므로 검사 코드도 각 배포 브랜치에 병합되어야 적용된다.
+
+배포 성공 후 환경 파일과 릴리즈 사본의 권한 `600`, 컨테이너의 환경별 단일 Origin, 공개 `/api/health`를 확인한다. 인증 구현이 포함된 환경에서는 유효한 세션·CSRF 토큰과 자신의 Origin이 통과하고, 반대 환경·임의·누락 Origin 및 누락·오류 토큰이 `403 CSRF_INVALID`인지 확인한다. 인증 코드가 아직 없는 production 이미지에서는 설정 주입과 헬스체크만 검증 가능하며, 정상 인증 릴리즈 후 요청 검증을 별도로 수행한다. 실제 OAuth·가입→홈→로그아웃 E2E는 사용자 검증 결과와 함께 기록하고 자동 테스트로 대체했다고 보고하지 않는다.
+
+검증 명령(Linux):
+
+```bash
+bash -n deploy/scripts/deploy.sh
+python3 -m unittest discover -s deploy/tests -v
+```
+
+설정 복구도 비공개 파일을 권한 `600`으로 수정한 뒤 GitHub Actions로 적용한다. 이전 릴리즈 사본에 값이 누락되어 있으면 이미지 롤백만으로 설정 문제가 다시 나타날 수 있다. 설정 복구와 이전 코드의 인증 지원 여부를 함께 확인한다.
+
 ## 배포 및 복구
 
 1. RPi4에서 테스트 단계와 런타임 이미지를 각각 빌드한다.
