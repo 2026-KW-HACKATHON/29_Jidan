@@ -693,6 +693,7 @@ paths:
         **관리자 인증**
 
         - JSON body의 password를 매 요청 검증합니다. 회원 쿠키·Bearer 토큰은 사용하지 않습니다.
+        - 허용 Origin이 필요하며 누락·불일치는 403 CSRF_INVALID입니다. 세션 CSRF 토큰은 요구하지 않습니다.
         - password 누락·빈 값·형식 오류는 422, 잘못된 비밀번호는 401 ADMIN_PASSWORD_INVALID입니다.
         - OpenAPI security는 body 인증을 표현하지 못하므로 빈 배열로 재정의합니다. 무인증 공개 API를 의미하지 않습니다.
         - 비밀번호 검증이 끝나기 전에는 신청 목록·건수·개인정보를 반환하지 않습니다.
@@ -774,6 +775,12 @@ paths:
                     totalPages: 0
         '401':
           $ref: '#/components/responses/AdminPasswordUnauthorized'
+        '403':
+          description: 허용 Origin 누락 또는 불일치(CSRF_INVALID). 관리자 요청에는 세션 CSRF 토큰을 요구하지 않습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '422':
           $ref: '#/components/responses/Unprocessable'
         '429':
@@ -793,6 +800,7 @@ paths:
         **관리자 인증과 조회**
 
         - JSON body의 password를 매 요청 검증합니다. 회원 쿠키·Bearer 토큰은 사용하지 않습니다.
+        - 허용 Origin이 필요하며 누락·불일치는 403 CSRF_INVALID입니다. 세션 CSRF 토큰은 요구하지 않습니다.
         - password 누락·빈 값·형식 오류는 422, 잘못된 비밀번호는 401 ADMIN_PASSWORD_INVALID입니다.
         - 신청의 존재 여부를 조회하기 전에 비밀번호를 검증합니다. 인증 실패에는 신청 정보가 포함되지 않습니다.
         - 비밀번호가 유효하고 신청이 존재하지 않으면 404 STORE_APPROVAL_REQUEST_NOT_FOUND입니다.
@@ -865,6 +873,12 @@ paths:
                 approvedAt: '2026-10-02T11:00:00Z'
         '401':
           $ref: '#/components/responses/AdminPasswordUnauthorized'
+        '403':
+          description: 허용 Origin 누락 또는 불일치(CSRF_INVALID). 관리자 요청에는 세션 CSRF 토큰을 요구하지 않습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: 매장 승인 신청을 찾을 수 없습니다.
           content:
