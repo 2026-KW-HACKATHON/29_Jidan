@@ -29,7 +29,7 @@ section{background:white;padding:24px;border-radius:16px;margin:20px 0}button,se
 </section>
 <section><h2>응답</h2><pre id="result" aria-live="polite">계정을 선택하거나 요청을 실행하세요.</pre></section>
 <section><h2>DB 확인</h2><p>터미널에서 아래 명령으로 같은 MySQL DB를 조회할 수 있습니다. 저장 상태는 응답과 별도로 확인하세요.</p>
-<pre>docker compose -p jidan-sandbox -f back-end/testing/compose.yml exec mysql sh -c 'MYSQL_PWD=$MYSQL_PASSWORD mysql -u "$MYSQL_USER" "$MYSQL_DATABASE"'
+<pre>docker compose -p jidan-sandbox -f back-end/testing/compose.yml exec mysql sh -c 'MYSQL_PWD=$MYSQL_PASSWORD mysql --default-character-set=utf8mb4 -u "$MYSQL_USER" "$MYSQL_DATABASE"'
 
 SELECT id, role, name, phone_number FROM users;
 SELECT * FROM worker_profiles;
