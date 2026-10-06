@@ -71,7 +71,8 @@ services:
     environment:
       <<: *e2e-env
       JIDAN_REQUIRE_MYSQL: '1'
-    command: [python, -m, pytest, -m, mysql, tests, -q, -rs]
+      JIDAN_E2E_BASE_URL: http://e2e-api:8000
+    command: [sh, -c, 'python -m ruff check . && python -m pytest testing/test_sandbox.py -q && python -m pytest -m mysql tests -q -rs && python -m pytest e2e -q']
     depends_on:
       e2e-api: {condition: service_healthy}
     networks: [isolated]
