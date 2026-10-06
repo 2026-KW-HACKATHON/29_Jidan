@@ -14,3 +14,7 @@ htmlcov
 # Dependencies and artifacts are built inside CI stages.
 docs/node_modules
 swagger-static
+
+# Dedicated test environments never ship in the application image.
+testing
+e2e
