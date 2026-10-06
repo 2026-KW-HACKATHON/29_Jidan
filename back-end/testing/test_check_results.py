@@ -28,9 +28,9 @@ def test_successful_reports_and_multiple_suites(tmp_path):
     "<testsuites/>", "<testsuite tests='1'/>", "<broken",
     "<unknown><testsuite tests='1' failures='0' errors='0' skipped='0'><testcase/></testsuite></unknown>",
     "<testsuites><testcase/></testsuites>",
-    "<testsuites><testsuite tests='1' failures='0' errors='0' skipped='1'>"
-    "<testcase><skipped/></testcase><testsuite tests='1' failures='0' errors='0' skipped='0'>"
-    "<testcase/></testsuite></testsuite></testsuites>",
+    ("<testsuites><testsuite tests='1' failures='0' errors='0' skipped='1'>"
+     "<testcase><skipped/></testcase><testsuite tests='1' failures='0' errors='0' skipped='0'>"
+     "<testcase/></testsuite></testsuite></testsuites>"),
 ])
 def test_incomplete_reports_fail(tmp_path, xml):
     path = tmp_path / "result.xml"
