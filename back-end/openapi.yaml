@@ -15006,6 +15006,17 @@ paths:
                 message: 처리에 실패했습니다.
                 requestId: req_profile_001
                 fieldErrors: []
+        '503':
+          description: 정정 작업 예약 실패. 변경 전체 rollback.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: JOB_QUEUE_UNAVAILABLE
+                message: 잠시 후 다시 시도해 주세요.
+                requestId: req_manual_correction_001
+                fieldErrors: []
   /api/stores/{storeId}/manual/draft/corrections/{correctionId}:
     get:
       tags:
@@ -15372,6 +15383,17 @@ paths:
                 code: INTERNAL_ERROR
                 message: 처리에 실패했습니다.
                 requestId: req_profile_001
+                fieldErrors: []
+        '503':
+          description: 정정 작업 예약 실패. 변경 전체 rollback.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: JOB_QUEUE_UNAVAILABLE
+                message: 잠시 후 다시 시도해 주세요.
+                requestId: req_manual_correction_001
                 fieldErrors: []
 components:
   securitySchemes:

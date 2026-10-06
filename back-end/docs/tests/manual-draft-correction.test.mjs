@@ -101,3 +101,18 @@ test('멱등성과 재시도는 오래된 작업·교체된 초안·변경된 re
   assert.deepEqual(read.security,[{SessionCookie:[]}]);
   assert.match(read.description,/현재 소유권·APPROVED/);
 });
+
+for (const [label, operation] of [['접수', create], ['재시도', retry]]) {
+  test(`초안 정정 ${label}: 작업 예약 실패는 503 공통 오류 계약으로 반환`, () => {
+    const response = operation.responses['503'];
+    assert.ok(response, '설명에 명시된 작업 예약 실패 응답이 필요합니다.');
+    assert.match(response.description, /rollback/);
+    const { schema, example } = response.content['application/json'];
+    assert.equal(schema.$ref, '#/components/schemas/Error');
+    assert.equal(example.code, 'JOB_QUEUE_UNAVAILABLE');
+    const validateError = validator('Error');
+    assert.ok(validateError(example), JSON.stringify(validateError.errors));
+    assert.deepEqual(example.fieldErrors, []);
+    assert.equal(validateError({ ...example, fieldErrors: null }), false);
+  });
+}
