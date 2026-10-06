@@ -64,3 +64,14 @@ Redocly 경고 14개는 남아 있다. 대상 component 예시 4개는 YAML 1.2�
 - 등록 세션만 있는 기존 sandbox DB도 검사 시작 전에 거부한다. 기본 profile/availability의 실제 DB 저장, Origin/역할 거부, 양쪽 role의 동시 첫 로그인, 쿠키 전환, 가입/프로필 저장과 API 재조회를 확인했다.
 - runtime-source 실제 Docker build 단계에서도 tests/testing/e2e 디렉터리 제외를 확인했다. 이는 운영 최종 이미지의 실제 배포/프록시 검증과 구분한다.
 - 상세 실행 방법/fixture·미검증 경계는 [원형을 보존한 하네스 문서](../testing/README.md)에 있다. 브라우저·외부 Google/Kakao·유료 AI·운영 배포는 이 추가 하네스 검증에서 실행하지 않았다.
+
+## PR #157 리뷰 대응 검증 (2026-10-07)
+
+- 관리자 검색은 OpenAPI·매장 승인 설계대로 page 상한을 제거하고 totalItems 이상의 offset을 DB에 전달하지 않는다. status 생략은 허용하며 명시적 null은 422로 거부한다.
+- 작업 실행기의 workers는 양의 정수, poll은 유한한 양수로 API 시작 시 검증한다. background off/수동 모드에서도 잘못된 설정은 거부한다.
+- SMTP timeout은 유한한 1~60초만 허용한다. 기존 `not 1 <= timeout <= 60`도 NaN을 거부했으며, `math.isfinite` 추가는 의도 명시와 회귀 방지다.
+- 격리 Compose/MySQL에서 Ruff, 도구 검사 62건, 관련 Python 310건(실제 MySQL 127건), 실제 HTTP 171건을 통과했다. 실패·오류·skip 0. 기존 HTTP 148건에 검색/설정 시작 검증 23건을 추가했다. 전체 Python suite를 반복한 결과는 아니다.
+- HTTP 검사는 실제 Uvicorn `app.main:app`, 별도 MySQL 연결의 행 보존 및 API 재조회, 큰 page·잘못된 page/status, 설정 실패 시 startup 종료를 확인한다. 정상 workers/poll 및 SMTP 하한 1·상한 60의 startup도 확인한다.
+- 테스트 작성에 참여하지 않은 독립 에이전트가 코드·계약·테스트를 점검했다. 세션 종료 후 owner.id 접근을 수정했고, 입력 경계와 빈 설정을 보완했다. 422 연속 요청의 IP 실패 제한은 실제 성공 인증 요청으로 정책대로 초기화한다. 보완 후 재점검에서 추가 필수 누락이 없었다.
+- 증거: `.local/test-results/jidan-e2e-1791322013-41485/`의 tooling/checks/http JUnit과 services.log. 초기 HTTP의 제한 충돌 2건을 보완한 최종 실행 결과이며, skip된 검증은 없다.
+- 외부 Google/Kakao/유료 AI, 실제 외부 SMTP 수신 및 운영 배포는 이번 검증에 포함하지 않는다. 이번 변경은 병합·배포하지 않는다.

@@ -329,7 +329,7 @@ FastAPI lifespan에서 시작한 작업이 시작 시 한 번, 이후 5분마다
 | `SMTP_HOST` / `SMTP_PORT` | SMTP 서버. 포트 기본값은 보안 방식별 587(starttls)·465(ssl)·25(none) |
 | `SMTP_SECURITY` | `starttls`(기본)·`ssl`(암묵적 TLS)·`none`(평문, `APP_ENV=local`만). TLS는 인증서·호스트 이름을 검증 |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | SMTP AUTH 계정. 둘 다 있거나 둘 다 없어야 하며 평문 연결에서는 거부. 비밀번호는 로그·repr에 남기지 않음 |
-| `SMTP_TIMEOUT_SECONDS` | 연결·응답 타임아웃 1~60초(기본 10) |
+| `SMTP_TIMEOUT_SECONDS` | 연결·응답 타임아웃 유한한 1~60초(기본 10), NaN/무한대는 시작 시 거부 |
 | `MAIL_FROM` | 발신 주소(예: `Jidan <no-reply@jidan.example.com>`) |
 | `FRONTEND_ORIGIN` | 초대 링크의 고정 frontend origin(인증에서 쓰는 값과 같음) |
 
@@ -510,7 +510,7 @@ runtime 이미지에는 `tests/`와 `e2e/`가 들어가지 않는다(`runtime-so
 | `OPENAI_MODEL` / `OPENAI_FALLBACK_MODEL` / `OPENAI_TRANSCRIBE_MODEL` | 기본 `gpt-6-luna` / 없음 / `gpt-transcribe` |
 | `OPENAI_REASONING_EFFORT`, `OPENAI_TIMEOUT_SECONDS`, `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 기본 `low`, 60, 120 |
 | `MEDIA_ROOT` | 미디어 저장 디렉터리 |
-| `TASK_RUNNER_MODE`, `TASK_RUNNER_WORKERS`, `TASK_RUNNER_POLL_SECONDS` | `background`(기본)/`manual`, 2, 2. 실행기 스레드는 `BACKGROUND_JOBS=off`여도 뜨지 않음 |
+| `TASK_RUNNER_MODE`, `TASK_RUNNER_WORKERS`, `TASK_RUNNER_POLL_SECONDS` | `background`(기본)/`manual`, 양의 정수(기본 2), 유한한 양수 초(기본 2). 잘못된 숫자 설정은 시작 시 거부. 실행기 스레드는 `BACKGROUND_JOBS=off`여도 뜨지 않음 |
 
 ## 점주 AI 인터뷰 (#120)
 
