@@ -73,7 +73,7 @@ services:
       JIDAN_REQUIRE_MYSQL: '1'
       JIDAN_E2E_BASE_URL: http://e2e-api:8000
     volumes: ['${JIDAN_E2E_REPORT_DIR:-../../.local/test-results}:/results']
-    command: [sh, -c, 'python -m ruff check . && python -m pytest testing -q --junitxml=/results/tooling.xml && python -m pytest -m mysql tests -q -rs --junitxml=/results/mysql.xml && python -m pytest e2e -q --junitxml=/results/http-e2e.xml']
+    command: [sh, -c, 'python -m ruff check . && python -m pytest testing -q --junitxml=/results/tooling.xml && python -m testing.check_results /results/tooling.xml && python -m pytest -m mysql tests -q -rs --junitxml=/results/mysql.xml && python -m testing.check_results /results/mysql.xml && python -m pytest e2e -q --junitxml=/results/http-e2e.xml && python -m testing.check_results /results/http-e2e.xml']
     depends_on:
       e2e-api: {condition: service_healthy}
     networks: [isolated]
