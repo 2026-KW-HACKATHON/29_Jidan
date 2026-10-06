@@ -53,3 +53,27 @@ def test_bad_configuration_fails_closed(monkeypatch, configured):
 
 def test_salts_are_unique():
     assert password_hash("same") != password_hash("same")
+
+
+@pytest.mark.parametrize("value", [
+    chr(0xD800), chr(0xDBFF), chr(0xDC00), chr(0xDFFF),
+    "before" + chr(0xD800) + "after", chr(0xDFFF) + "abc", chr(0xD800) + chr(0xDC00),
+])
+def test_unencodable_password_settles_failure_without_derivation(monkeypatch, admin_hash, value):
+    monkeypatch.setenv("ADMIN_PASSWORD_HASH", admin_hash)
+    monkeypatch.setattr("hashlib.pbkdf2_hmac", lambda *args: pytest.fail("Invalid UTF-8 must not derive passwords"))
+    attempt, results = attempt_result()
+    with pytest.raises(ApiError) as exc:
+        verify_password(AdminPasswordInput(password=value).password, attempt)
+    assert exc.value.status_code == 401
+    assert exc.value.code == "ADMIN_PASSWORD_INVALID"
+    assert results == ["failed"]
+    assert exc.value.__cause__ is None
+
+
+@pytest.mark.parametrize("value", ["비밀번호🙂", "e\u0301", "a\x00b"])
+def test_valid_unicode_password_is_preserved_and_authenticated(monkeypatch, value):
+    monkeypatch.setenv("ADMIN_PASSWORD_HASH", password_hash(value))
+    attempt, results = attempt_result()
+    verify_password(AdminPasswordInput(password=value).password, attempt)
+    assert results == ["succeeded"]

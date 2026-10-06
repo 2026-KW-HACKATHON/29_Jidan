@@ -36,7 +36,12 @@ def verify_password(password: SecretStr, attempt) -> None:
     except (KeyError, ValueError):
         attempt.failed()
         raise ApiError(500, ErrorCode.INTERNAL_ERROR) from None
-    actual = hashlib.pbkdf2_hmac("sha256", password.get_secret_value().encode(), salt, rounds)
+    try:
+        encoded_password = password.get_secret_value().encode("utf-8")
+    except UnicodeEncodeError:
+        attempt.failed()
+        raise ApiError(401, ErrorCode.ADMIN_PASSWORD_INVALID) from None
+    actual = hashlib.pbkdf2_hmac("sha256", encoded_password, salt, rounds)
     if not hmac.compare_digest(actual, expected):
         attempt.failed()
         raise ApiError(401, ErrorCode.ADMIN_PASSWORD_INVALID)
