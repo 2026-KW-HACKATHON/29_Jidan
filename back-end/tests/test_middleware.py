@@ -1,11 +1,14 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
 from app.errors import ApiError, ErrorCode, install_error_handlers
 from app.main import app as main_app
 from app.middleware import install_middleware
+from app.request_id import request_id_for
 
 
 def build_app() -> FastAPI:
@@ -16,6 +19,10 @@ def build_app() -> FastAPI:
     @app.get("/api/ok")
     def ok() -> dict:
         return {"ok": True}
+
+    @app.get("/api/context")
+    def context(request: Request):
+        return {"first": request_id_for(request), "second": request_id_for(request)}
 
     @app.get("/api/forbidden")
     def forbidden() -> None:
@@ -78,3 +85,32 @@ def test_real_app_covers_health_and_unknown_api():
     client = TestClient(main_app)
     assert client.get("/api/health").headers["Cache-Control"] == "no-store"
     assert client.get("/api/nope").headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("method,path", [
+    ("GET", "/api/forbidden"), ("GET", "/api/boom"),
+    ("GET", "/api/missing"), ("POST", "/api/ok"),
+])
+def test_error_body_and_header_share_request_id(client, method, path):
+    response = client.request(method, path)
+    assert response.headers["X-Request-ID"] == response.json()["requestId"]
+
+
+def test_concurrent_requests_have_distinct_server_generated_ids(client):
+    def run(_):
+        return client.get("/api/context", headers={"X-Request-ID": "untrusted-id"})
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        responses = list(pool.map(run, range(10)))
+    ids = set()
+    for response in responses:
+        request_id = response.headers["X-Request-ID"]
+        assert request_id.startswith("req_") and request_id != "untrusted-id"
+        assert response.json() == {"first": request_id, "second": request_id}
+        ids.add(request_id)
+    assert len(ids) == 10
+
+
+def test_stream_and_success_carry_request_id_and_non_api_stays_untouched(client):
+    for path in ("/api/ok", "/api/stream"):
+        assert client.get(path).headers["X-Request-ID"].startswith("req_")
+    assert "X-Request-ID" not in client.get("/other").headers

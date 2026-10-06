@@ -119,7 +119,7 @@ Cloudflare Tunnel → Nginx 80 → 환경별 localhost 포트로 전달한다. `
 
 Nginx 설정 원본은 `deploy/nginx/`에 있고, 서버에서는 `/etc/nginx/sites-available/jidan-dev`, `jidan-production`을 사용한다. 프록시 변경은 앱 배포와 별도로 `nginx -t` 후 reload한다.
 
-## backend Origin 환경 설정
+## backend Origin 및 관리자 비밀번호 환경 설정
 
 비공개 `backend/runtime.env`에는 아래 값을 **따옴표 없이 한 번만** 설정한다.
 
@@ -130,6 +130,8 @@ Nginx 설정 원본은 `deploy/nginx/`에 있고, 서버에서는 `/etc/nginx/si
 
 Compose의 `env_file`은 `format: raw`로 값을 주입한다. 와일드카드, 두 환경의 도메인 혼합, localhost 추가, 따옴표, 변수 치환, 중복 키를 사용하지 않는다. 프론트엔드는 각 환경의 동일 출처 `/api`를 유지한다. 설정 변경 시 다른 값은 유지하고 파일 권한은 `600`으로 보존한다. 파일 내용 전체나 다른 환경 변수, 세션·CSRF 토큰을 Git/Actions/이슈에 출력하지 않는다.
 
+같은 파일에 `ADMIN_PASSWORD_HASH`도 따옴표 없이 한 번만 설정한다. `back-end`의 Python 환경에서 `python -m app.admin_password`를 실행해 비밀번호를 숨김 입력하고, 출력된 PBKDF2-SHA256 해시를 보호된 파일에 저장한다. 평문 비밀번호는 저장하지 않는다. 해시 형식은 `pbkdf2_sha256$iterations$base64-salt$base64-digest`이며 iterations는 600,000~2,000,000, salt는 16~64바이트, digest는 32바이트다. `format: raw`가 `$`를 보존하므로 따옴표나 escaping을 추가하지 않는다. production에도 릴리즈 전에 별도로 설정해야 한다.
+
 배포 서버에서 파일을 수정한 뒤, 해당 배포 커밋의 검사기로 컨테이너 변경 없이 사전 점검한다. 성공 시 출력이 없고 실패 시 값이 포함되지 않은 안내와 종료 코드 `2`를 반환한다.
 
 ```bash
@@ -137,11 +139,11 @@ python3 deploy/scripts/check_runtime_env.py dev /home/ubuntu/apps/jidan/dev/back
 python3 deploy/scripts/check_runtime_env.py production /home/ubuntu/apps/jidan/production/backend/runtime.env
 ```
 
-배포 스크립트는 권한 `600`으로 복사한 릴리즈의 환경 파일을 이미지 pull 전에 검사한다. 누락·빈 값·다른 Origin은 배포를 중단한다. 컨테이너 시작 뒤에는 `ALLOWED_ORIGINS`만 검사하며 값은 출력하지 않는다. 주입된 값이 환경과 다르면 `current`를 확정하지 않고 기존 롤백 절차를 따른다. frontend 배포에는 이 검사를 적용하지 않는다.
+배포 스크립트는 권한 `600`으로 복사한 릴리즈의 환경 파일을 이미지 pull 전에 검사한다. 누락·빈 값·다른 Origin 및 누락·중복·잘못된 형식의 관리자 해시는 이미지 pull과 migration 전에 배포를 중단한다. 검사기는 같은 checkout의 `back-end/app/admin_password_config.py`를 사용하므로 전체 소스 checkout에서 실행한다. 컨테이너 시작 뒤에도 `ALLOWED_ORIGINS`와 관리자 해시 형식을 검사하며 값은 출력하지 않는다. 해시 검증을 지원하는 backend 이미지를 배포해야 한다. 주입된 값이 환경과 다르거나 해시 검증에 실패하면 `current`를 확정하지 않고 기존 롤백 절차를 따른다. frontend 배포에는 이 검사를 적용하지 않는다.
 
 파일 수정만으로 실행 컨테이너의 환경 변수는 바뀌지 않는다. 적용은 기존 backend GitHub Actions에서 `back-end/dev` 또는 `main`의 Run workflow로 수행하며 서버에서 직접 Compose를 재배포하지 않는다. PR은 테스트·빌드만 수행하므로 검사 코드도 각 배포 브랜치에 병합되어야 적용된다.
 
-배포 성공 후 환경 파일과 릴리즈 사본의 권한 `600`, 컨테이너의 환경별 단일 Origin, 공개 `/api/health`를 확인한다. 인증 구현이 포함된 환경에서는 유효한 세션·CSRF 토큰과 자신의 Origin이 통과하고, 반대 환경·임의·누락 Origin 및 누락·오류 토큰이 `403 CSRF_INVALID`인지 확인한다. 인증 코드가 아직 없는 production 이미지에서는 설정 주입과 헬스체크만 검증 가능하며, 정상 인증 릴리즈 후 요청 검증을 별도로 수행한다. 실제 OAuth·가입→홈→로그아웃 E2E는 사용자 검증 결과와 함께 기록하고 자동 테스트로 대체했다고 보고하지 않는다.
+배포 성공 후 환경 파일과 릴리즈 사본의 권한 `600`, 컨테이너의 환경별 단일 Origin, 공개 `/api/health`를 확인한다. dev·production의 health는 관리자 해시가 누락되거나 형식이 잘못되면 비밀값 없이 503을 반환한다. 인증 구현이 포함된 환경에서는 유효한 세션·CSRF 토큰과 자신의 Origin이 통과하고, 반대 환경·임의·누락 Origin 및 누락·오류 토큰이 `403 CSRF_INVALID`인지 확인한다. 인증 코드가 아직 없는 production 이미지에서는 설정 주입과 헬스체크만 검증 가능하며, 정상 인증 릴리즈 후 요청 검증을 별도로 수행한다. 실제 OAuth·가입→홈→로그아웃 E2E는 사용자 검증 결과와 함께 기록하고 자동 테스트로 대체했다고 보고하지 않는다.
 
 검증 명령(Linux):
 
