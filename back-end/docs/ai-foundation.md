@@ -28,7 +28,7 @@
 | `OPENAI_FALLBACK_MODEL` | 없음 | 지정하면 재시도 가능 실패 뒤 이 모델로 한 번 더 시도(fallback) |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | OpenAI 파일 전사 모델 |
 | `OPENAI_REASONING_EFFORT` | `low` | `none/low/medium/high/xhigh/max`, 빈 값이면 미지정 |
-| `OPENAI_TIMEOUT_SECONDS` / `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 60 / 120 | 호출당 타임아웃(1~600). 핸들러 lease보다 길면 시작 거부(§ lease와 장시간 호출) |
+| `OPENAI_TIMEOUT_SECONDS` / `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 60 / 120 | 호출당 타임아웃(유한한 1~600초, NaN·무한대 거부). 핸들러 lease보다 길면 시작 거부(§ lease와 장시간 호출) |
 
 전사 기본값 근거(OpenAI speech-to-text 가이드, 2026-10 확인): `gpt-transcribe`는 녹음 파일 전사의 권장 모델이고 다국어 힌트(`languages`)와 용어 힌트(`keywords`)를 받는다. 지원 형식 mp3·mp4·m4a·wav·webm은 우리 4개 형식을 모두 포함하고 파일 상한 25 MB는 20 MiB보다 크며 길이 제한은 문서에 없다(우리 상한 120초). `gpt-4o-transcribe`·`gpt-4o-mini-transcribe`·`whisper-1`로 바꾸면 `language`/`prompt`로 보낸다. 한국어 합성 음성 실키 테스트로 확인했다.
 

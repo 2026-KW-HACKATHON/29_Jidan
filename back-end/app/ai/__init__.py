@@ -15,6 +15,7 @@ Configuration (environment):
 """
 
 import logging
+import math
 import os
 import threading
 
@@ -35,7 +36,7 @@ def _seconds(name: str, default: float) -> float:
     if not raw:
         return default
     value = float(raw)
-    if not 1 <= value <= 600:
+    if not math.isfinite(value) or not 1 <= value <= 600:
         raise ValueError(f"{name} must be between 1 and 600 seconds")
     return value
 

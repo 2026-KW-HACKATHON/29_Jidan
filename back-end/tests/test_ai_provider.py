@@ -448,3 +448,26 @@ def test_provider_from_environment(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     with pytest.raises(ValueError):
         build_provider_from_env()
+
+
+@pytest.mark.parametrize("name", ["OPENAI_TIMEOUT_SECONDS", "OPENAI_TRANSCRIBE_TIMEOUT_SECONDS"])
+@pytest.mark.parametrize("value", ["nan", "NaN", "inf", "-inf", "0.5", "601"])
+def test_timeout_settings_reject_nonfinite_and_out_of_range(monkeypatch, name, value):
+    from app.ai import build_provider_from_env
+
+    monkeypatch.setenv("AI_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-used")
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=name):
+        build_provider_from_env()
+
+
+@pytest.mark.parametrize("name,default", [
+    ("OPENAI_TIMEOUT_SECONDS", 60.0), ("OPENAI_TRANSCRIBE_TIMEOUT_SECONDS", 120.0),
+])
+@pytest.mark.parametrize("value,expected", [("1", 1.0), ("600", 600.0), ("", None)])
+def test_timeout_settings_accept_boundaries_and_default(monkeypatch, name, default, value, expected):
+    from app.ai import _seconds
+
+    monkeypatch.setenv(name, value)
+    assert _seconds(name, default) == (default if expected is None else expected)
