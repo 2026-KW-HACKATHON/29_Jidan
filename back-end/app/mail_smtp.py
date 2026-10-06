@@ -13,6 +13,7 @@ Nothing here logs. smtplib's debug output stays off, and callers must not log th
 it raises: they can contain addresses or server replies.
 """
 
+import math
 import os
 import re
 import smtplib
@@ -78,7 +79,7 @@ def smtp_settings() -> SmtpSettings:
         timeout = float(raw_timeout) if raw_timeout else DEFAULT_TIMEOUT_SECONDS
     except ValueError:
         raise ConfigurationError("SMTP_TIMEOUT_SECONDS must be a number") from None
-    if not 1 <= timeout <= MAX_TIMEOUT_SECONDS:
+    if not math.isfinite(timeout) or not 1 <= timeout <= MAX_TIMEOUT_SECONDS:
         raise ConfigurationError("SMTP_TIMEOUT_SECONDS must be 1-60")
     mail_from = _env("MAIL_FROM")
     _, address = parseaddr(mail_from)

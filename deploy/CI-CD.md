@@ -132,7 +132,7 @@ FE는 같은 출처의 `/api`로 백엔드를 부르므로 브라우저가 보�
 | `SMTP_HOST`, `SMTP_PORT` | 메일 제공자의 SMTP 주소·포트 |
 | `SMTP_SECURITY` | `starttls`(587) 또는 `ssl`(465). `none`은 local 전용이라 dev·운영에서는 시작 실패 |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | SMTP AUTH 계정(앱 비밀번호 권장). 둘 다 설정 |
-| `SMTP_TIMEOUT_SECONDS` | 1~60, 기본 10 |
+| `SMTP_TIMEOUT_SECONDS` | 유한한 1~60, 기본 10. NaN·무한대는 시작 시 거부 |
 | `MAIL_FROM` | 제공자에서 인증한 발신 주소 |
 
 비밀번호·키는 `runtime.env`(권한 600)에만 두고 출력하거나 기록하지 않는다. 앱은 메일 주소·링크·비밀번호를 로그에 남기지 않는다.

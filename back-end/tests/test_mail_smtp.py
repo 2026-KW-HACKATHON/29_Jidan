@@ -263,6 +263,7 @@ BASE = {"SMTP_HOST": "smtp.example.com", "MAIL_FROM": "no-reply@jidan.test"}
 
 @pytest.mark.parametrize("env,expected", [
     ({}, ("smtp.example.com", 587, "starttls", None, 10.0)),
+    ({"SMTP_TIMEOUT_SECONDS": "1"}, ("smtp.example.com", 587, "starttls", None, 1.0)),
     ({"SMTP_SECURITY": "SSL"}, ("smtp.example.com", 465, "ssl", None, 10.0)),
     ({"SMTP_SECURITY": "none"}, ("smtp.example.com", 25, "none", None, 10.0)),
     ({"SMTP_PORT": "2525", "SMTP_USERNAME": "u", "SMTP_PASSWORD": " p w ", "SMTP_TIMEOUT_SECONDS": "60"},
@@ -283,6 +284,7 @@ def test_valid_settings(monkeypatch, env, expected):
     {"SMTP_PORT": "70000"}, {"SMTP_PORT": "abc"}, {"SMTP_USERNAME": "u"}, {"SMTP_PASSWORD": "p"},
     {"SMTP_SECURITY": "none", "SMTP_USERNAME": "u", "SMTP_PASSWORD": "p"},
     {"SMTP_TIMEOUT_SECONDS": "0.5"}, {"SMTP_TIMEOUT_SECONDS": "61"}, {"SMTP_TIMEOUT_SECONDS": "x"},
+    *({"SMTP_TIMEOUT_SECONDS": value} for value in ("nan", "NaN", "inf", "-inf")),
     {"MAIL_FROM": ""}, {"MAIL_FROM": "not-an-address"}, {"MAIL_FROM": "a@b.test\r\nBcc: x@y.test"},
     {"SMTP_SECURITY": "none", "APP_ENV": "production"}, {"SMTP_SECURITY": "none", "APP_ENV": "dev"},
 ])
