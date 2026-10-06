@@ -44,6 +44,8 @@ class RuntimeEnvTests(unittest.TestCase):
                 f'ALLOWED_ORIGINS={origin}.evil.example.com',
                 f'ALLOWED_ORIGINS="{origin}"', f"ALLOWED_ORIGINS='{origin}'",
                 'ALLOWED_ORIGINS=${ORIGIN}', f'export ALLOWED_ORIGINS={origin}',
+                *[f'ALLOWED_ORIGINS={origin}{separator}UNRELATED=value'
+                  for separator in ('\v', '\f', '\x1c', '\x85', '\u2028', '\u2029')],
                 f'ALLOWED_ORIGINS= {origin}', f'ALLOWED_ORIGINS={origin} ',
                 f'ALLOWED_ORIGINS={origin} # comment',
                 f'ALLOWED_ORIGINS={origin}\nALLOWED_ORIGINS={origin}',

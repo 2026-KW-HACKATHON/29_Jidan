@@ -14,7 +14,8 @@ def valid_allowed_origins(environment, path):
     if expected is None:
         return False
     try:
-        lines = Path(path).read_text(encoding='utf-8').splitlines()
+        # Raw env lines use newlines; Unicode separators remain part of the value.
+        lines = Path(path).read_text(encoding='utf-8').split('\n')
     except (OSError, UnicodeError):
         return False
     values = []
