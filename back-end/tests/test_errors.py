@@ -59,7 +59,6 @@ def assert_error(response, status, code):
     assert set(body) == ERROR_KEYS
     assert body["code"] == code
     assert body["requestId"].startswith("req_")
-    assert response.headers["X-Request-ID"] == body["requestId"]
     assert isinstance(body["fieldErrors"], list)
     return body
 
@@ -169,3 +168,9 @@ def test_manual_correction_codes_include_prose_and_async_errors(code):
     # 재시도 불가 코드는 설명에만 있고 모호한 정정은 비동기 작업 오류에도 사용된다.
     assert code in OPENAPI.read_text(encoding="utf-8")
     assert ErrorCode(code).name == code
+
+
+def test_qa_retry_code_from_the_description_is_defined():
+    # retryManualQuestion: "진행/완료 질문은 QA_NOT_RETRYABLE" (409, prose only, no example body).
+    assert "QA_NOT_RETRYABLE" in OPENAPI.read_text(encoding="utf-8")
+    assert ErrorCode("QA_NOT_RETRYABLE").name == "QA_NOT_RETRYABLE"

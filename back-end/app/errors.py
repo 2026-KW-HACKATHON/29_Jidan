@@ -13,7 +13,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.log_privacy import install_log_privacy
-from app.request_id import new_request_id, request_id_for
+from app.request_id import HEADER as REQUEST_ID_HEADER
+from app.request_id import current_request_id, install_request_logging
 
 logger = logging.getLogger("jidan.errors")
 
@@ -82,6 +83,13 @@ class ErrorCode(StrEnum):
     INVALID_WORK_INTERVAL = "INVALID_WORK_INTERVAL"
     CALENDAR_RANGE_TOO_LARGE = "CALENDAR_RANGE_TOO_LARGE"
     DELIVERY_UNAVAILABLE = "DELIVERY_UNAVAILABLE"
+    # Named only in the job operations' 409 descriptions (apply / request / respond)
+    JOB_NOT_RECRUITING = "JOB_NOT_RECRUITING"
+    JOB_STARTED = "JOB_STARTED"
+    JOB_FILLED = "JOB_FILLED"
+    JOB_CLOSED = "JOB_CLOSED"
+    APPLICATION_WITHDRAWN = "APPLICATION_WITHDRAWN"
+    APPLICATION_NOT_ACTIVE = "APPLICATION_NOT_ACTIVE"
     # Manuals, AI interview and Q&A
     MANUAL_RESOURCE_NOT_FOUND = "MANUAL_RESOURCE_NOT_FOUND"
     MANUAL_NOT_READY = "MANUAL_NOT_READY"
@@ -107,6 +115,8 @@ class ErrorCode(StrEnum):
     QA_BUSY = "QA_BUSY"
     QA_INPUT_EXPIRED = "QA_INPUT_EXPIRED"
     QA_MEDIA_EXPIRED = "QA_MEDIA_EXPIRED"
+    # Named only in retryManualQuestion's description ("진행/완료 질문은 QA_NOT_RETRYABLE").
+    QA_NOT_RETRYABLE = "QA_NOT_RETRYABLE"
     # Media
     MEDIA_INVALID = "MEDIA_INVALID"
     MEDIA_IN_USE = "MEDIA_IN_USE"
@@ -128,6 +138,7 @@ DEFAULT_MESSAGES: dict[str, str] = {
     ErrorCode.STATE_CONFLICT: "현재 상태에서는 요청을 처리할 수 없습니다.",
     ErrorCode.IDEMPOTENCY_KEY_REUSED: "같은 Idempotency-Key로 다른 요청을 보낼 수 없습니다.",
     ErrorCode.RATE_LIMITED: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.JOB_QUEUE_UNAVAILABLE: "잠시 후 다시 시도해 주세요.",
     ErrorCode.ADMIN_PASSWORD_INVALID: "관리자 인증에 실패했습니다.",
     ErrorCode.INTERNAL_ERROR: "처리에 실패했습니다.",
 }
@@ -166,6 +177,21 @@ class ApiError(Exception):
         super().__init__(f"{status_code} {self.code}")
 
 
+class ServiceUnavailable(Exception):
+    """A dependency the request needs is unavailable right now: 503 JOB_QUEUE_UNAVAILABLE.
+
+    Raised only at two boundaries, never by catching broad exceptions: media storage writes
+    (`app.media.storage.StorageUnavailable`, an OSError from the filesystem) and task
+    reservation (`app.tasks.TaskQueueUnavailable`, an OperationalError of the task INSERT whose
+    driver code means unavailability, `app.db.availability`). The request's transaction is
+    rolled back by the caller as for any error (`run_idempotent` also releases the key), so the
+    client retries the same request.
+    `boundary` is a fixed tag for the log; it never holds data.
+    """
+
+    boundary = "service"
+
+
 class UnstructuredHTTPException(StarletteHTTPException):
     """Keeps FastAPI's `{"detail": ...}` body for contracts that predate this error format.
 
@@ -180,16 +206,16 @@ def error_response(
     *,
     field_errors: list[dict[str, str]] | None = None,
     headers: dict[str, str] | None = None,
-    request_id: str | None = None,
 ) -> JSONResponse:
-    request_id = request_id or new_request_id()
+    request_id = current_request_id()  # the ID this request's log records carry
     body = {
         "code": str(code),
         "message": message,
         "requestId": request_id,
         "fieldErrors": (field_errors or [])[:MAX_FIELD_ERRORS],
     }
-    response_headers = {"Cache-Control": "no-store", **(headers or {}), "X-Request-ID": request_id}
+    # The header is set here too: the unhandled-500 response bypasses every user middleware.
+    response_headers = {"Cache-Control": "no-store", **(headers or {}), REQUEST_ID_HEADER: request_id}
     return JSONResponse(body, status_code=status_code, headers=response_headers)
 
 
@@ -218,7 +244,6 @@ def _field_error(error: dict) -> dict[str, str]:
 async def handle_api_error(_request: Request, exc: ApiError) -> JSONResponse:
     return error_response(
         exc.status_code, exc.code, exc.message, field_errors=exc.field_errors, headers=exc.headers,
-        request_id=request_id_for(_request),
     )
 
 
@@ -227,12 +252,10 @@ async def handle_validation_error(_request: Request, exc: RequestValidationError
     # Malformed JSON is a 400 (the request itself is unreadable); anything that parsed but
     # failed field rules is a 422 with per-field details.
     if any(error["type"] == "json_invalid" for error in errors):
-        return error_response(400, ErrorCode.INVALID_REQUEST, "JSON 요청 형식을 확인해 주세요.",
-                              request_id=request_id_for(_request))
+        return error_response(400, ErrorCode.INVALID_REQUEST, "JSON 요청 형식을 확인해 주세요.")
     return error_response(
         422, ErrorCode.VALIDATION_ERROR, DEFAULT_MESSAGES[ErrorCode.VALIDATION_ERROR],
         field_errors=[_field_error(error) for error in errors],
-        request_id=request_id_for(_request),
     )
 
 
@@ -240,7 +263,6 @@ async def handle_http_exception(_request: Request, exc: StarletteHTTPException) 
     if exc.status_code >= 500:
         return error_response(
             exc.status_code, ErrorCode.INTERNAL_ERROR, DEFAULT_MESSAGES[ErrorCode.INTERNAL_ERROR],
-            request_id=request_id_for(_request),
         )
     code = _STATUS_CODES.get(exc.status_code, ErrorCode.INVALID_REQUEST)
     if exc.status_code == 405:
@@ -248,8 +270,7 @@ async def handle_http_exception(_request: Request, exc: StarletteHTTPException) 
     else:
         message = DEFAULT_MESSAGES[code]
     # Keep protocol headers such as Allow; the detail text is never forwarded.
-    return error_response(exc.status_code, code, message, headers=dict(exc.headers or {}),
-                          request_id=request_id_for(_request))
+    return error_response(exc.status_code, code, message, headers=dict(exc.headers or {}))
 
 
 async def handle_unstructured_http_exception(
@@ -258,16 +279,24 @@ async def handle_unstructured_http_exception(
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
 
 
+async def handle_service_unavailable(_request: Request, exc: ServiceUnavailable) -> JSONResponse:
+    # The class of the cause only (log privacy): its text may hold paths or SQL.
+    cause = type(exc.__cause__).__name__ if exc.__cause__ is not None else "-"
+    logger.warning("Service unavailable boundary=%s cause=%s", exc.boundary, cause)
+    return error_response(503, ErrorCode.JOB_QUEUE_UNAVAILABLE, DEFAULT_MESSAGES[ErrorCode.JOB_QUEUE_UNAVAILABLE])
+
+
 async def handle_unexpected_error(_request: Request, exc: Exception) -> JSONResponse:
     # The logging filter removes exception payloads; log only the exception class.
     logger.error("Unhandled error", exc_info=(type(exc), exc, exc.__traceback__))
-    return error_response(500, ErrorCode.INTERNAL_ERROR, DEFAULT_MESSAGES[ErrorCode.INTERNAL_ERROR],
-                          request_id=request_id_for(_request))
+    return error_response(500, ErrorCode.INTERNAL_ERROR, DEFAULT_MESSAGES[ErrorCode.INTERNAL_ERROR])
 
 
 def install_error_handlers(app: FastAPI) -> None:
     install_log_privacy()
+    install_request_logging()
     app.add_exception_handler(ApiError, handle_api_error)
+    app.add_exception_handler(ServiceUnavailable, handle_service_unavailable)
     app.add_exception_handler(RequestValidationError, handle_validation_error)
     app.add_exception_handler(UnstructuredHTTPException, handle_unstructured_http_exception)
     app.add_exception_handler(StarletteHTTPException, handle_http_exception)

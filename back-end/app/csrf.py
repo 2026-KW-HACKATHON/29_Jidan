@@ -45,8 +45,8 @@ def normalize_origin(value: str) -> str | None:
     so `https://app.example.com.evil.com` or `https://evil.com/https://app.example.com` can never
     be confused with an allowed origin by prefix or substring matching.
     """
-    if value != value.strip() or not value:
-        return None
+    if value != value.strip() or not value or not value.isascii():
+        return None  # browsers send IDN hosts as punycode, so a Unicode entry never matches
     try:
         parts = urlsplit(value)
         port = parts.port

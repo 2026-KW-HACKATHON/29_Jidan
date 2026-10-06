@@ -1,3 +1,4 @@
+import itertools
 from datetime import UTC, date, datetime, time, timedelta
 
 from app.db.models import (
@@ -12,7 +13,9 @@ from app.db.models import (
 )
 
 NOW = datetime(2026, 10, 5, 3, 0, tzinfo=UTC)
-_counter = iter(range(1, 10_000))
+# Unbounded: the full suite creates more than 10,000 factory rows, and a bounded range raised
+# StopIteration in whichever tests happened to run last.
+_counter = itertools.count(1)
 
 
 def make_user(session, role="WORKER", **overrides) -> User:
@@ -112,3 +115,144 @@ def make_invitation(session, store, **overrides) -> StoreInvitation:
     session.add(invitation)
     session.flush()
     return invitation
+
+
+# --- store domain (#107) ---------------------------------------------------------------------
+
+def make_store_with_request(session, owner=None, *, approved_at=None, submitted_at=None, **overrides):
+    """A store and its approval request, PENDING or (with `approved_at`) APPROVED on both rows."""
+    from app.db.models import StoreApprovalRequest
+
+    status = "APPROVED" if approved_at is not None else "PENDING"
+    store = make_store(session, owner, approval_status=status, approved_at=approved_at, **overrides)
+    request = StoreApprovalRequest(
+        store_id=store.id, status=status, approved_at=approved_at,
+        submitted_at=submitted_at or store.created_at,
+    )
+    session.add(request)
+    session.flush()
+    return store, request
+
+
+def make_regular_grant(session, store, worker, *, granted_at=NOW, **overrides):
+    """A REGULAR access grant from an invitation `worker` accepted at `granted_at`."""
+    from app.db.models import StoreAccessGrant
+
+    created = granted_at - timedelta(hours=1)
+    invitation = make_invitation(
+        session, store, invited_email=worker.google_email, created_at=created, last_sent_at=created,
+        expires_at=created + timedelta(days=7), accepted_by_worker_id=worker.id, accepted_at=granted_at,
+        access_expires_at=overrides.get("valid_until"),
+    )
+    grant = StoreAccessGrant(
+        store_id=store.id, worker_id=worker.id, invitation_id=invitation.id, granted_at=granted_at,
+    )
+    for key, value in overrides.items():
+        setattr(grant, key, value)
+    session.add(grant)
+    session.flush()
+    return grant
+
+def make_notification(session, recipient, **overrides):
+    """A WORK_REQUEST_RECEIVED notification through the real recording function."""
+    from app.notifications import NotificationType, WorkRequestTarget, record_notification
+
+    n = next(_counter)
+    arguments = {
+        "recipient_user_id": recipient.id, "type": NotificationType.WORK_REQUEST_RECEIVED,
+        "target": WorkRequestTarget(
+            request_id=f"00000000-0000-4000-8000-{n:012d}", store_id=f"00000000-0000-4000-9000-{n:012d}",
+            job_id=f"00000000-0000-4000-a000-{n:012d}",
+        ),
+        "event_key": f"event-{n}", "body": "월계 카페 10월 10일 18:00–22:00", "created_at": NOW,
+    }
+    arguments.update(overrides)
+    return record_notification(session, **arguments)
+
+
+def make_temporary_grant(session, store, worker, *, granted_at=NOW, valid_until, title="저녁 대타", **overrides):
+    """A TEMPORARY access grant from a confirmed shift of a job posting titled `title`."""
+    from app.db.models import StoreAccessGrant
+
+    job = make_job(session, store, title=title)
+    application = make_application(session, job, worker)
+    request = make_request(session, application, store.owner_id, status="ACCEPTED", responded_at=NOW,
+                           ended_at=NOW)
+    shift = make_shift(session, job, request, worker.id)
+    grant = StoreAccessGrant(
+        store_id=store.id, worker_id=worker.id, assignment_id=shift.id, granted_at=granted_at,
+        valid_until=valid_until,
+    )
+    for key, value in overrides.items():
+        setattr(grant, key, value)
+    session.add(grant)
+    session.flush()
+    return grant
+# --- manuals and AI interviews (ai-core) ---------------------------------------------------------
+
+DEFAULT_INTENTS = (
+    ("work_structure", "WORK_STRUCTURE", "근무조와 근무 시간을 알려 주세요."),
+    ("common_tasks", "COMMON_TASKS", "모든 근무조가 공통으로 하는 일을 알려 주세요."),
+    ("closing_tasks", "SHIFT_TASKS", "마감할 때 어떤 일을 하나요?"),
+)
+
+
+def make_question_set(session, intents=DEFAULT_INTENTS, revision_no=None):
+    """A question set and its ordered intents: (InterviewQuestionSet, [InterviewIntent])."""
+    from app.db.models import InterviewIntent, InterviewQuestionSet
+
+    # Above the versions seeded by migrations (0040 seeds revision 1).
+    question_set = InterviewQuestionSet(revision_no=revision_no or 1000 + next(_counter))
+    session.add(question_set)
+    session.flush()
+    rows = []
+    for order, (key, stage, question) in enumerate(intents):
+        rows.append(InterviewIntent(
+            question_set_id=question_set.id, sort_order=order, intent_key=key, stage=stage,
+            base_question=question, coverage_criteria=f"{key}의 순서, 기준, 예외",
+        ))
+    session.add_all(rows)
+    session.flush()
+    return question_set, rows
+
+
+def make_manual_draft(session, store, **overrides):
+    """The store's manual row (created on first use) and a new DRAFT version of it."""
+    from sqlalchemy import func, select
+
+    from app.db.models import ManualVersion, StoreManual
+
+    manual = session.scalars(select(StoreManual).where(StoreManual.store_id == store.id)).first()
+    if manual is None:
+        manual = StoreManual(store_id=store.id)
+        session.add(manual)
+        session.flush()
+    number = session.scalar(
+        select(func.coalesce(func.max(ManualVersion.revision_no), 0)).where(ManualVersion.manual_id == manual.id))
+    version = ManualVersion(
+        manual_id=manual.id, revision_no=number + 1, created_by_owner_id=store.owner_id,
+    )
+    for key, value in overrides.items():
+        setattr(version, key, value)
+    session.add(version)
+    session.flush()
+    return version
+
+
+def make_interview(session, version, question_set, intents, **overrides):
+    """An IN_PROGRESS session on `version` with a PENDING progress row per intent."""
+    from app.db.models import InterviewSession, InterviewSessionIntent, Store, StoreManual
+
+    manual = session.get(StoreManual, version.manual_id)
+    owner_id = session.get(Store, manual.store_id).owner_id
+    interview = InterviewSession(
+        manual_version_id=version.id, owner_id=owner_id, question_set_id=question_set.id,
+        current_intent_id=intents[0].id,
+    )
+    for key, value in overrides.items():
+        setattr(interview, key, value)
+    session.add(interview)
+    session.flush()
+    session.add_all([InterviewSessionIntent(session_id=interview.id, intent_id=i.id) for i in intents])
+    session.flush()
+    return interview

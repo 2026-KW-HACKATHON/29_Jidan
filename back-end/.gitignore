@@ -5,3 +5,6 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Uploaded manual/Q&A media stored locally (MEDIA_ROOT default)
+.media/

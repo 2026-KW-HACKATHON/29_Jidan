@@ -99,20 +99,13 @@ def test_failure_after_rule_insert_rolls_back_children(profile_api, monkeypatch)
     from app import worker_profile
 
     before = profile_api.get(PATH).json()
-    original = worker_profile.AvailabilityDay
-    def fail(*args, **kwargs):
+    original = worker_profile.rewrite
+    def fail(db, *args):
+        original(db, *args)
+        db.flush()  # stale days were deleted and the rules rewritten before the failure
         raise RuntimeError("private availability detail")
-    monkeypatch.setattr(worker_profile, "AvailabilityDay", fail)
-    # profile_body needs the model, so inject only after it read the old list.
-    original_body = worker_profile.profile_body
-    def read_then_fail(*args, **kwargs):
-        monkeypatch.setattr(worker_profile, "AvailabilityDay", original)
-        result = original_body(*args, **kwargs)
-        monkeypatch.setattr(worker_profile, "AvailabilityDay", fail)
-        return result
-    monkeypatch.setattr(worker_profile, "profile_body", read_then_fail)
-    response = profile_api.put(AVAILABLE, json={"availabilities": [NIGHT]}, headers=headers(profile_api))
-    assert response.status_code == 500
-    monkeypatch.setattr(worker_profile, "AvailabilityDay", original)
-    monkeypatch.setattr(worker_profile, "profile_body", original_body)
+    monkeypatch.setattr(worker_profile, "rewrite", fail)
+    response = profile_api.put(AVAILABLE, json={"availabilities": [NIGHT, GROUP | {"days": ["TUE"]}]},
+                               headers=headers(profile_api))
+    assert response.status_code == 500 and "private availability detail" not in response.text
     assert profile_api.get(PATH).json() == before

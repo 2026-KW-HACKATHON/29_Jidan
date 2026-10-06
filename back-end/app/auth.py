@@ -27,6 +27,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.db import SessionDep, session_scope, utcnow
+from app.db.keyed import update_by_key
 from app.db.models import AuthSession, RegistrationSession, User
 from app.errors import ApiError, ErrorCode
 
@@ -176,14 +177,16 @@ def revoke_session(token: str, *, db: Session | None = None) -> bool:
 
 
 def revoke_user_sessions(user_id: str, *, db: Session | None = None) -> int:
-    """Revoke every live session of a user, e.g. when the account is suspended."""
+    """Revoke every live session of a user, e.g. when the account is suspended.
+
+    Sessions are found by a plain read and revoked by primary key: a range UPDATE on the user_id
+    index would take gap locks that other users' logins (session INSERTs) wait on. A session
+    created after the read belongs to a login that re-checks the account status itself."""
     with _transaction(db) as session:
-        result = session.execute(
-            update(AuthSession)
-            .where(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
-            .values(revoked_at=utcnow())
-        )
-        return result.rowcount
+        live = session.scalars(select(AuthSession.id).where(
+            AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None)))
+        return update_by_key(session, AuthSession, live, {"revoked_at": utcnow()},
+                             AuthSession.revoked_at.is_(None))
 
 
 def create_registration_session(

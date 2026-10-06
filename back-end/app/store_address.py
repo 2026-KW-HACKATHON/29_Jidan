@@ -5,6 +5,11 @@ import httpx
 
 from app.errors import ApiError, ErrorCode
 
+# The only administrative dong (행정동) a store may be in. Every store row passed this check, and
+# the stored address is Kakao's road address, which does not name the dong. So the dong of any
+# stored store is this value; it cannot be derived from `stores.address` itself.
+SERVICE_NEIGHBORHOOD = "월계1동"
+
 
 def address_error(field: str):
     return ApiError(422, ErrorCode.VALIDATION_ERROR, field_errors=[
@@ -50,7 +55,7 @@ def verify_store_address(store) -> str:
                 raise address_error("address")
             region = administrative[0]
             if (region.get("region_1depth_name"), region.get("region_2depth_name"), region.get("region_3depth_name")) != (
-                "서울특별시", "노원구", "월계1동",
+                "서울특별시", "노원구", SERVICE_NEIGHBORHOOD,
             ):
                 raise ApiError(422, ErrorCode.STORE_OUTSIDE_SERVICE_AREA)
             return road["address_name"]

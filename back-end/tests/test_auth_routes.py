@@ -188,3 +188,24 @@ def test_suspended_google_account_cannot_login(auth_api, engine, monkeypatch):
     assert auth.SESSION_COOKIE_NAME not in auth_api.cookies
     with Session(engine) as db:
         assert db.scalar(select(AuthSession)).revoked_at
+
+
+def test_suspended_member_cannot_read_a_csrf_token(api, db_engine):
+    """getCsrfToken 403: a live cookie of an account suspended after login is refused with
+    ACCOUNT_SUSPENDED and its session is revoked (no token for a suspended account)."""
+    from app.db.models import User
+    from tests.api_contract import login
+
+    with Session(db_engine) as db:
+        user_id = make_user(db, "WORKER").id
+        db.commit()
+    member = login(api, user_id)
+    assert api.get("/api/auth/csrf").json()["csrfToken"] == member.csrf_token
+    with Session(db_engine) as db:
+        db.get(User, user_id).status = "SUSPENDED"
+        db.commit()
+    response = api.get("/api/auth/csrf")
+    assert (response.status_code, response.json()["code"]) == (403, "ACCOUNT_SUSPENDED")
+    assert "csrfToken" not in response.json()
+    with Session(db_engine) as db:
+        assert db.scalars(select(AuthSession).where(AuthSession.user_id == user_id)).one().revoked_at is not None

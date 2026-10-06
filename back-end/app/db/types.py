@@ -10,6 +10,16 @@ def new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def iso_utc(value: datetime | None) -> str | None:
+    """The API notation of an instant: RFC 3339 in UTC with `+00:00` (`isoformat()`), e.g.
+    `2026-10-05T03:00:00+00:00`. Every response time goes through this; naive values are a bug."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        raise ValueError("response times must be timezone-aware")
+    return value.astimezone(UTC).isoformat()
+
+
 def normalize_optional_text(value: str | None) -> str | None:
     """Trim optional free text; omitted, empty and whitespace-only values are stored as NULL."""
     if value is None:
@@ -27,10 +37,21 @@ def cs_string(length: int) -> String:
     MySQL's default collation (utf8mb4_0900_ai_ci) is case- and accent-insensitive, so
     `role IN ('WORKER')` would accept 'worker' and UNIQUE would treat 'Ab' and 'ab' as equal.
     Use it for enum-like CHECK columns and opaque identifiers (google_sub, token_hash).
-    Emails stay on the default collation on purpose. Never use it on a FK/PK column unless
-    both sides match.
+    Emails use `email_string` instead. Never use it on a FK/PK column unless both sides match.
     """
     return String(length).with_variant(String(length, collation="utf8mb4_0900_as_cs"), "mysql")
+
+
+def email_string(length: int) -> String:
+    """E-mail VARCHAR: case-insensitive but accent-sensitive on MySQL (utf8mb4_0900_as_ci, NO PAD).
+
+    The default utf8mb4_0900_ai_ci also folds accents and ligatures, so 'josé@x.com' = 'jose@x.com'
+    and 'straße@x.com' = 'strasse@x.com' in SQL. as_ci keeps those apart while 'JOSE@x.com' still
+    equals 'jose@x.com'. It still treats full-width letters and zero-width characters as equal to
+    their plain forms, so callers keep comparing exactly in Python (`app.email_match.email_is`).
+    SQLite compares bytes; services store and compare lower-cased values (`normalize_email`).
+    """
+    return String(length).with_variant(String(length, collation="utf8mb4_0900_as_ci"), "mysql")
 
 
 def cs_char(length: int) -> CHAR:

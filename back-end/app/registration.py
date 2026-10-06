@@ -3,7 +3,7 @@ from datetime import time
 
 from fastapi import APIRouter
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import auth
 from app.auth_views import session_body
@@ -20,11 +20,14 @@ from app.db.models import (
     WorkerProfile,
 )
 from app.errors import ApiError, ErrorCode
-from app.idempotency import IdempotencyKey, IdempotentResult, run_idempotent
+from app.idempotency import IdempotencyKey, IdempotentResult, is_lock_contention, run_idempotent
 from app.registration_inputs import OwnerInput, WorkerInput
 from app.store_address import verify_store_address
 
 router = APIRouter(prefix="/api/auth/registrations")
+
+# Attempts of the whole signup transaction when MySQL picks it as a deadlock victim.
+REGISTRATION_ATTEMPTS = 3
 
 
 def new_user(db, principal, body, role):
@@ -47,7 +50,6 @@ def new_user(db, principal, body, role):
 
 
 def register(db, principal, key, path, body, create):
-    issued = None
     def work():
         nonlocal issued
         user = create()
@@ -61,19 +63,29 @@ def register(db, principal, key, path, body, create):
         if user is None or user.status != "ACTIVE":
             raise ApiError(403, ErrorCode.ACCOUNT_SUSPENDED)
 
-    try:
-        response = run_idempotent(db=db, principal=principal, key=key, method="POST",
-                                  path=path, body=body, handler=work, revalidate=revalidate)
-    except IntegrityError:
-        # run_idempotent rolled back before this fresh read. Only known unique conflicts map
-        # to public codes; unrelated database errors are never presented as duplicate accounts.
-        if db.scalar(select(User.id).where(User.google_sub == principal.google_sub)) is not None:
-            raise ApiError(409, ErrorCode.ALREADY_REGISTERED) from None
-        if hasattr(body, "store") and db.scalar(select(Store.id).where(
-            Store.business_registration_number == body.store.businessRegistrationNumber,
-        )) is not None:
-            raise ApiError(409, ErrorCode.STORE_ALREADY_REGISTERED) from None
-        raise ApiError(500, ErrorCode.INTERNAL_ERROR) from None
+    for attempt in range(1, REGISTRATION_ATTEMPTS + 1):
+        issued = None
+        try:
+            response = run_idempotent(db=db, principal=principal, key=key, method="POST",
+                                      path=path, body=body, handler=work, revalidate=revalidate)
+            break
+        except OperationalError as error:
+            # Signups waiting on the same new business number hold shared locks on it; when the
+            # one that inserted it rolls back they deadlock and MySQL kills all but one (1213).
+            # run_idempotent rolled everything back (registration session included) and
+            # released the key, so the whole signup runs again and sees the survivor (409).
+            if not is_lock_contention(error) or attempt == REGISTRATION_ATTEMPTS:
+                raise
+        except IntegrityError:
+            # run_idempotent rolled back before this fresh read. Only known unique conflicts map
+            # to public codes; unrelated database errors are never presented as duplicate accounts.
+            if db.scalar(select(User.id).where(User.google_sub == principal.google_sub)) is not None:
+                raise ApiError(409, ErrorCode.ALREADY_REGISTERED) from None
+            if hasattr(body, "store") and db.scalar(select(Store.id).where(
+                Store.business_registration_number == body.store.businessRegistrationNumber,
+            )) is not None:
+                raise ApiError(409, ErrorCode.STORE_ALREADY_REGISTERED) from None
+            raise ApiError(500, ErrorCode.INTERNAL_ERROR) from None
     if issued is not None:
         # A replay deliberately does not rotate/create sessions or replay Set-Cookie.
         auth.set_session_cookie(response, issued)
@@ -110,13 +122,17 @@ def register_worker(body: WorkerInput, principal: CsrfMemberOrRegistration,
 @router.post("/owners")
 def register_owner(body: OwnerInput, principal: CsrfMemberOrRegistration,
                    db: SessionDep, key: IdempotencyKey):
+    verified: list[str] = []
+
     def create():
-        # Only the first idempotent execution reaches the provider. No account write or
-        # registration-row lock is held while waiting for the external service.
+        # Only the first idempotent execution reaches the provider (a deadlock retry reuses its
+        # answer). No account write or registration-row lock is held while waiting for it.
         if not isinstance(principal, auth.RegistrationPrincipal):
             raise ApiError(409, ErrorCode.ALREADY_REGISTERED)
         store = body.store
-        canonical_address = verify_store_address(store)
+        if not verified:
+            verified.append(verify_store_address(store))
+        canonical_address = verified[0]
         user = new_user(db, principal, body, "OWNER")
         if db.scalar(select(Store.id).where(
             Store.business_registration_number == store.businessRegistrationNumber,

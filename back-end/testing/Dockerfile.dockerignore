@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.env
+.env.*
+*.log
+.coverage
+htmlcov
+docs/node_modules
+swagger-static
+.media

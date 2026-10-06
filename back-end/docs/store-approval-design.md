@@ -1,6 +1,6 @@
 # 매장 승인 신청 관리 API 설계
 
-사용자가 요청한 관리자 기능의 계약이며 #107에서 검색·승인 API를 구현했다. [OpenAPI 원본](../openapi.yaml)과 [Swagger](http://127.0.0.1:5500)에서 확인한다. 실제 비밀번호 인증과 DB 처리는 `app/admin_password.py`와 `app/store_approvals.py`에서 제공한다.
+관리자 매장 승인 기능의 계약과 구현 설명이다. 요청·응답 계약은 [OpenAPI 원본](../openapi.yaml)과 [Swagger](http://127.0.0.1:5500)에서 확인한다. 구현은 `app/store_approvals.py`(검색·승인, Origin 검사, 운영 기록)와 `app/admin_password.py`(원격 PBKDF2_SHA256·기존 scrypt 비밀번호 검증)이며, 시험은 `tests/test_store_approvals.py`에 있다.
 
 ## 전체 신청 조회
 
@@ -25,6 +25,8 @@
 
 기존 Google 회원 세션과 별도로 관리자 공용 password를 body로 받는다. OpenAPI 보안 scheme은 body 인증을 표현할 수 없으므로 operation의 security=[]로 기존 쿠키 조건을 해제하고, requestBody의 password 필수 조건으로 표현한다. 이는 공개 조회를 허용한다는 뜻이 아니다.
 
+- 허용 Origin 필수: `Origin` 헤더가 `ALLOWED_ORIGINS`의 scheme/host/port와 정확히 같아야 한다. 누락·불일치·중복·형식 오류(경로 포함, `null` 등)는 403 CSRF_INVALID다. 회원 세션이 없으므로 세션 CSRF 토큰(`X-CSRF-Token`)은 요구하지 않는다.
+- 처리 순서: JSON 본문 해석(실패 시 400) → Origin(403) → 인증 시도 제한 예약(429) → 본문·경로 검증(422) → 비밀번호(401) → 신청 조회(404/409). Origin 거부는 비밀번호를 확인하지 않으므로 인증 시도 횟수에 포함하지 않고, 운영 기록에는 경로와 결과(CSRF_INVALID)만 남긴다(Origin 값·본문 제외).
 - 비밀번호 누락/빈 값/형식 오류: 422. 잘못된 비밀번호: 401 ADMIN_PASSWORD_INVALID.
 - 비밀번호 검증 전에는 신청 목록·건수·개인정보를 반환하지 않는다.
 - 운영 HTTPS와 서버 설정의 비밀번호 해시 검증을 전제로 한다. 비밀번호를 trim/축약/잘라내기 하지 않는다.
@@ -37,7 +39,7 @@
 
 ## 검증 범위
 
-OpenAPI 구조·예시 및 password/페이지/상태 입력 경계, 승인 상태와 시각 일치, 응답의 password 제외를 Schema로 확인한다. 실제 비밀번호 대조·인증 전 데이터 비노출·429/Retry-After·DB 페이지 수 계산·정렬을 SQLite와 MySQL 통합 테스트로 검증한다.
+OpenAPI 구조·예시 및 password/페이지/상태 입력 경계, 승인 상태와 시각 일치, 응답의 password 제외를 Schema로 확인한다. 실제 비밀번호 대조·Origin 검사·인증 시도 제한·DB 페이지 수 계산·정렬은 `tests/test_store_approvals.py`의 통합 시험(SQLite·MySQL)으로 검증한다.
 
 ## 승인 처리
 
@@ -52,38 +54,16 @@ requestId는 조회 결과 `items[].id`의 신청 UUID다. store.id와 구분한
 ```
 
 - 비밀번호 검증 후 신청을 조회한다. 인증 실패는 401이며, 올바른 비밀번호로 없는 신청에 접근하면 404 STORE_APPROVAL_REQUEST_NOT_FOUND다.
-- 신청자 OWNER와 현재 매장 관리 관계가 일치하지 않으면 409 STORE_APPROVAL_NOT_ALLOWED다.
+- 신청자가 현재 매장의 점주이면서 OWNER·ACTIVE가 아니면(정지 계정 포함) 409 STORE_APPROVAL_NOT_ALLOWED다. 이미 승인된 신청도 같다.
+- 신청과 매장의 승인 상태·approvedAt은 함께 바뀌므로 서로 다르면(매장만 APPROVED, 신청만 APPROVED, 시각 불일치) API 밖에서 바뀐 것이다. 승인하거나 승인 완료로 답하면 그 불일치를 가리므로 409 STORE_APPROVAL_NOT_ALLOWED이며 신청·매장·알림을 바꾸지 않는다.
+- 잠금 순서는 신청 → 매장 → 신청자(공유 잠금)다. 신청자 행을 잠금 읽기로 확인하므로 승인 중 다른 트랜잭션이 계정 상태를 바꾸면 승인이 끝날 때까지 기다리고, 승인이 그 변경을 기다렸다면 최신 상태(예: SUSPENDED)를 보고 409로 거부한다. 공유 잠금이라 같은 점주의 다른 매장 승인끼리는 서로 막지 않는다.
+- 승인 트랜잭션이 교착 희생자(1213)가 되거나 잠금 대기 시간 초과(1205)가 나면 전체가 rollback되므로, 짧은 간격(0.05초·0.1초)으로 승인 전체를 최대 3회까지 다시 실행한다(가입의 사업자번호 경합 재시도와 같은 방식). 예: 운영자 트랜잭션이 점주 → 매장 역순으로 잠근 경우. 3회 모두 실패하면 이미 명세된 500 INTERNAL_ERROR이며 아무것도 바뀌지 않는다. 409 STORE_APPROVAL_NOT_ALLOWED는 신청 자체를 승인할 수 없다는 뜻이라 일시적인 잠금 경합에 쓰지 않고, 관리 API에는 503이 명세되어 있지 않다. 승인은 멱등이라 관리자가 다시 요청하면 된다.
 - PENDING 신청과 연결 매장 상태를 APPROVED로 바꾸고 서버의 최초 승인 시각을 approvedAt에 저장한다.
 - 승인 상태·매장 상태·해당 매장의 점주 운영 권한을 같은 트랜잭션으로 적용한다. 실패 시 전체 rollback한다.
-- 이미 APPROVED인 신청은 200으로 기존 결과를 반환한다. 최초 승인 시각과 권한을 중복 변경하지 않는다. 동시 승인은 잠금 또는 조건부 갱신으로 한 번만 반영한다.
+- 이미 APPROVED인 신청은 매장도 같은 approvedAt으로 APPROVED일 때 200으로 기존 결과를 반환한다(알림 추가 없음). 최초 승인 시각과 권한을 중복 변경하지 않는다. 동시 승인은 잠금 또는 조건부 갱신으로 한 번만 반영한다.
 - 서버가 상태·시각·권한을 결정하며, 요청에는 password 이외 필드를 받지 않는다. 별도 Idempotency-Key는 필요하지 않다.
 - 기존 점주 세션의 다음 `/api/auth/session` 조회에서 승인된 매장 권한과 OWNER_HOME을 확인한다. 다른 매장의 승인은 영향을 받지 않는다.
 
-Schema 검사는 비밀번호 필수·외부 상태/시각/권한/승인자 주입 거절·승인 응답의 APPROVED 및 승인 시각 필수를 확인한다. 비밀번호 검증 우선순위, 실제 404/409 처리, MySQL 동시 승인, 최초 시각 유지, commit 실패 시 두 행 rollback과 기존 점주 세션 권한 반영을 통합 테스트로 검증한다.
+Schema 검사는 비밀번호 필수·외부 상태/시각/권한/승인자 주입 거절·승인 응답의 APPROVED 및 승인 시각 필수를 확인한다. 비밀번호 검증 우선순위, 실제 404/409 처리, 중복·동시 승인, 트랜잭션 rollback과 세션 권한 반영은 `tests/test_store_approvals.py`·`tests/test_notification_wiring_store.py`의 통합 시험(동시 승인은 MySQL)으로 검증한다.
 
-
-## #107 구현과 운영 설정
-
-관리자 요청에는 `ALLOWED_ORIGINS`에 등록된 정확한 Origin이 필요하다. 누락·불일치는 403 `CSRF_INVALID`이며 회원 쿠키·세션 CSRF 토큰·Idempotency-Key는 요구하지 않는다. 입력 검증 오류는 입력값을 응답하지 않고, password는 `SecretStr`로 표현한다.
-
-서버 환경변수 `ADMIN_PASSWORD_HASH`에 PBKDF2-SHA256 해시를 설정한다. 평문 비밀번호 환경변수는 지원하지 않는다. 형식은 `pbkdf2_sha256$iterations$base64-salt$base64-digest`이며 600,000~2,000,000회, salt 16~64바이트, digest 32바이트다. 누락·잘못된 형식은 조회·승인을 허용하지 않고 내부 정보 없는 500을 반환한다. dev·production의 `/api/health`도 이 설정을 검사하며 오류 시 503을 반환한다. local은 관리자 API를 사용하지 않는 개발 환경을 위해 health에서 해시를 필수로 요구하지 않는다. 해시 생성은 터미널에서 다음 명령을 실행해 비밀번호를 숨김 입력한다. 명령행 인자에 비밀번호를 넣지 않는다.
-
-```bash
-cd back-end
-python -m app.admin_password
-```
-
-출력된 해시를 서버의 보호된 `runtime.env`에 설정하고 CI/CD로 적용한다. Compose는 이 파일을 `format: raw`로 읽으므로 `$`를 보존한다. 배포 전 환경 파일에서 누락·중복·잘못된 형식을 차단하고, 배포 후 실제 컨테이너에서도 같은 형식 검증을 수행한다. 검사 실패 시 정상 릴리즈로 확정하지 않는다. 파일 변경만으로 실행 컨테이너에 반영되지 않으므로 CI/CD 적용과 배포된 API 인증 검증은 별도로 수행해야 한다. #146은 DB 마이그레이션 자동 적용 PR이며 관리자 해시 설정을 대신하지 않는다.
-
-승인은 신청→매장→현재 점주 순서로 `SELECT FOR UPDATE`를 수행한다. 현재 ACTIVE OWNER 관계와 신청/매장 상태·시각의 일치를 확인한다. 최초 승인만 두 행을 변경하고, commit 이후에 성공 응답을 반환한다. 운영 권한은 매장 상태에서 계산하므로 별도 권한 행을 생성하지 않는다. 이번 범위에는 소유권 이전 API가 없다. 신청자는 기존 ERD대로 매장의 `owner_id`에서 조회한다.
-
-비밀번호가 틀리거나 UTF-8로 변환할 수 없는 유니코드 문자열이면 401 `ADMIN_PASSWORD_INVALID`를 반환하고 기존 관리자 레이트 리미터의 실패 슬롯을 정산한다. 변환할 수 없는 입력은 PBKDF2와 신청 조회 전에 거절하며 비밀번호를 응답·로그에 노출하지 않는다. 정상 유니코드 비밀번호는 원문 그대로 대조하고, 맞으면 성공 정산한다. 성공한 IP의 완료된 실패 기록만 초기화한다. 제한은 IP별 10분 5회·프로세스 전체 10분 50회이며 여러 프로세스 사이에는 공유하지 않는다. 성공 승인과 재승인 및 업무 오류에는 비밀번호·연락 정보를 제외한 요청 ID·신청 ID·작업·시각·결과를 기록한다.
-
-요청 ID는 요청마다 서버가 하나만 생성한다. 모든 API 응답의 `X-Request-ID` 헤더와 오류 본문의 `requestId`, 승인 감사 로그의 `request_id`가 같은 값을 사용한다. 클라이언트가 보낸 `X-Request-ID`는 신뢰하지 않는다. 인증 실패와 저장 실패도 같은 ID로 기록하며, 재시도와 동시 요청은 각각 별도 ID를 가진다.
-
-```bash
-cd back-end
-python -m pytest tests/test_admin_password.py tests/test_store_approval_search.py tests/test_store_approval_approve.py
-```
-
-MySQL의 실제 행 잠금 검증에는 별도 `_test` DB의 `DB_*`와 `JIDAN_REQUIRE_MYSQL=1`이 필요하다. MySQL 동시 승인 5회에서 같은 응답·최초 승인 시각과 두 상태 행의 1회 변경을 확인한다. SQLite 변형은 해당 행 잠금 테스트를 건너뛴다. 신규 테이블·컬럼·마이그레이션은 없다.
+운영 해시 형식과 오류 구분은 [백엔드 오류 계약](backend-error-contract.md) 및 [배포 설정](../../deploy/CI-CD.md#backend-origin-및-관리자-비밀번호-환경-설정)을 따른다.

@@ -36,7 +36,9 @@ def settings() -> tuple[str, str, str, str]:
         raise ApiError(500, ErrorCode.INTERNAL_ERROR)
     for value in values[2:]:
         parsed = urlsplit(value)
-        if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username
+        # Redirect targets go into Location headers and must equal the browser's ASCII Origin;
+        # an IDN or other non-ASCII value is a misconfiguration, not something to re-encode.
+        if (not value.isascii() or parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username
                 or parsed.password or parsed.query or parsed.fragment
                 or (parsed.scheme != "https" and os.getenv("APP_ENV", "local") != "local")):
             raise ApiError(500, ErrorCode.INTERNAL_ERROR)

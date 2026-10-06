@@ -5,3 +5,6 @@ sqlalchemy>=2,<3
 alembic
 httpx
 google-auth[requests]
+openai
+pillow
+python-multipart

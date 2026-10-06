@@ -26,7 +26,7 @@ npm test      # 명세가 없어도 문서 서버 테스트 실행 가능
 
 [화면별 챕터와 추가 endpoint 전체 목록](remaining-api-inventory.md)에서 Figma와 OpenAPI 대응을 확인합니다. 현재 `openapi.yaml` 0.10.0은 102개 operation이며, 실제 인증·DB·AI·알림·파일 저장 구현을 뜻하지 않습니다. 챕터별 설계 문서에 화면 근거와 보완 제안을 구분했습니다.
 
-계약 테스트는 요청/응답 형식과 예시, 권한·상태·참조 규칙을 검사합니다. 날짜 간 비교, 트랜잭션 경합, 실제 AI 근거 충실도는 향후 백엔드 구현에서 검증해야 합니다. Redocly lint에는 작업 전부터 있던 매뉴얼 조합/예시 경고 20개가 남아 있으며 Ajv 계약 테스트와 구분해 확인합니다. OAuth 302 응답 2개의 기존 lint 예외는 유지합니다.
+이 폴더의 계약 테스트는 요청/응답 형식과 예시, 권한·상태·참조 규칙을 검사합니다. 로컬 통합 백엔드는 날짜 경계와 실제 MySQL 트랜잭션 경합 검사, AI 구조 검증과 opt-in 실키 검사를 별도로 제공합니다([백엔드 README](../README.md)). 실제 AI 답변의 근거 충실도와 배포 환경 검증은 실행 대상과 표본별로 판정합니다. Redocly lint에는 작업 전부터 있던 매뉴얼 조합/예시 경고 20개가 남아 있으며 Ajv 계약 테스트와 구분해 확인합니다. OAuth 302 응답 2개의 기존 lint 예외는 유지합니다.
 
 현재 검수 기준은 사용자 확정 정책인 수락 시 자동 마감·확정 철회 시 모집 재개, 시작 전 확정 철회 제한, 철회 후 재지원, 전체 매장 대타 월별 캘린더, 시간 일치 우선 추천입니다. `npm run check --prefix back-end/docs`에서 계약/문서 서버·정적 빌드를 검증합니다.
 
@@ -42,7 +42,7 @@ npm test      # 명세가 없어도 문서 서버 테스트 실행 가능
 | OpenAPI YAML | `https://dev-jidan.leehyowon14.dev/api/swagger/openapi.yaml` |
 | 명세 버전·빌드 커밋·해시 | `https://dev-jidan.leehyowon14.dev/api/swagger/build-info.json` |
 
-각 업무 endpoint 경로에 이미 `/api`가 있습니다. 예를 들어 `GET /api/users/me/home`의 개발 계약 주소는 `https://dev-jidan.leehyowon14.dev/api/users/me/home`입니다. 서버 base URL에 `/api`를 추가해 `/api/api/...`로 만들지 않습니다. 업무 API는 구현 전이고 Swagger 요청 실행은 비활성화합니다.
+각 업무 endpoint 경로에 이미 `/api`가 있습니다. 예를 들어 `GET /api/users/me/home`의 개발 계약 주소는 `https://dev-jidan.leehyowon14.dev/api/users/me/home`입니다. 서버 base URL에 `/api`를 추가해 `/api/api/...`로 만들지 않습니다. 로컬 통합 코드의 업무 API 구현 범위는 백엔드 README에 기록하며, 개발 서버 반영 여부는 배포 SHA로 확인합니다. Swagger 요청 실행은 비활성화합니다.
 
 문서 파일은 CI에서 생성하여 이미지에 포함합니다. 앱은 `APP_ENV=dev`에서만 `/api/swagger/`를 등록하고 production/local에서는 등록하지 않습니다. 기존 Nginx의 `/api/` 전달과 BE 3021 포트를 그대로 사용합니다. 개발 CD는 로컬 및 공개 Swagger UI/JSON 응답도 확인하며 실패하면 기존 이미지로 복구합니다.
 
