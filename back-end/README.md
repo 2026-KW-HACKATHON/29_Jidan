@@ -84,7 +84,7 @@ MySQL 테스트는 시작할 때 `*_test` 가드를 확인하고 DB의 모든 �
 JIDAN_REQUIRE_MYSQL=1 DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=jidan_test DB_USER=... DB_PASSWORD=... python -m pytest
 ```
 
-Docker test 단계에는 MySQL이 없으므로 CI에서는 SQLite 테스트만 실행된다. 실제 MySQL 검증은 개발 서버에서 한다.
+Docker image의 test 단계는 SQLite를 사용한다. CI의 별도 `Backend HTTP E2E` 작업은 격리된 MySQL에서 전체 Python 테스트와 실제 서버 HTTP E2E를 실행하며, 실패·오류·skip이 있으면 이미지 빌드로 진행하지 않는다. 로컬에서도 [API·DB 테스트 안내](testing/README.md)의 같은 실행 스크립트를 사용한다.
 
 ## 공통 API 계층
 
