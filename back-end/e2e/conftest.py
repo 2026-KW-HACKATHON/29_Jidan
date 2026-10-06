@@ -5,6 +5,7 @@ use the actual server. These fixtures never replace app dependencies or API hand
 """
 import os
 import uuid
+from contextlib import ExitStack
 from copy import deepcopy
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
@@ -87,17 +88,25 @@ class RegistrationCase:
 
 
 @pytest.fixture
-def registration(base_url, real_db):
-    subject = f"http-e2e-{uuid.uuid4()}"
-    with Session(real_db) as db:
-        issued = auth.create_registration_session(subject, f"{subject}@e2e.test", db=db)
-        db.commit()
-    with httpx.Client(base_url=base_url, timeout=10, trust_env=False) as client:
-        # Match CookieJar's host-only domain so the server's deletion removes the seed.
-        host = urlsplit(base_url).hostname
-        domain = host if "." in host else f"{host}.local"
-        client.cookies.set(auth.REGISTRATION_COOKIE_NAME, issued.token, domain=domain, path="/api/auth")
-        yield RegistrationCase(client, subject, issued.token)
+def registrations(base_url, real_db):
+    with ExitStack() as clients:
+        def create():
+            subject = f"http-e2e-{uuid.uuid4()}"
+            with Session(real_db) as db:
+                issued = auth.create_registration_session(subject, f"{subject}@e2e.test", db=db)
+                db.commit()
+            client = clients.enter_context(httpx.Client(base_url=base_url, timeout=10, trust_env=False))
+            # Match CookieJar's host-only domain so the server's deletion removes the seed.
+            host = urlsplit(base_url).hostname
+            domain = host if "." in host else f"{host}.local"
+            client.cookies.set(auth.REGISTRATION_COOKIE_NAME, issued.token, domain=domain, path="/api/auth")
+            return RegistrationCase(client, subject, issued.token)
+        yield create
+
+
+@pytest.fixture
+def registration(registrations):
+    return registrations()
 
 
 @pytest.fixture
