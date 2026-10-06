@@ -60,7 +60,8 @@ docker compose run --rm --no-deps -T --name <프로젝트>-migrate-<릴리즈> b
 
 - 같은 이미지·`runtime.env`·`shared-mysql_default` 네트워크를 쓰며 포트는 열지 않는다. 대상 DB는 `jidan_dev`다.
 - 실패하면 배포를 즉시 중단한다. 실행 중인 이전 릴리즈와 `current`는 그대로 두고 새 컨테이너를 띄우지 않는다. 트랜잭션 DDL이 없는 MySQL 특성상 일부 리비전만 적용됐을 수 있으므로 `alembic current`와 실제 테이블을 확인해 정리한 뒤 다시 배포한다.
-- SIGINT·SIGTERM으로 중단되면 실행 중인 명령과 일회성 컨테이너를 정리하고 이전 릴리즈를 유지한다.
+- 실행 전에 컨테이너 이름을 권한 `600`의 `migration.pending`에 원자적으로 기록한다. SIGINT·SIGTERM으로 중단되면 실행 중인 명령과 일회성 컨테이너를 정리하고 이전 릴리즈를 유지한다. SIGKILL로 즉시 정리할 수 없으면 다음 배포가 같은 `deploy.lock`을 확보한 뒤 기록된 컨테이너부터 제거한다.
+- Docker 조회·제거 실패 또는 제거 후 컨테이너가 남아 있으면 `migration.pending`을 유지하고 새 마이그레이션·배포를 차단한다. 이미 종료되어 컨테이너가 없는 경우는 기록만 정리한다. 이 복구는 컨테이너 교체용 `pending`과 별도로 처리하며, 강제 중단 후에도 MySQL 부분 DDL 적용 여부는 확인해야 한다.
 - 마이그레이션 출력은 Actions 로그에 남는다. 연결 정보는 `DB_*`에서 읽어 출력하지 않으며, 실패한 SQL의 바인딩 값도 출력하지 않는다(`hide_parameters=True`).
 
 **production과 frontend는 자동 실행하지 않는다.** production은 dev에서 적용·검증된 리비전만 RPi5의 `production/backend` 현재 릴리즈 디렉터리에서 수동으로 적용한다.
