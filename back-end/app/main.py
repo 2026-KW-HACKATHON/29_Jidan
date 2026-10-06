@@ -15,6 +15,7 @@ from app.oauth import router as oauth_router
 from app.oauth_cleanup import oauth_cleanup_lifespan
 from app.owner_stores import router as owner_stores_router
 from app.registration import router as registration_router
+from app.store_approvals import router as store_approvals_router
 from app.store_summary import router as store_summary_router
 from app.worker_profile import router as worker_profile_router
 
@@ -29,6 +30,7 @@ app.include_router(logout_router)
 app.include_router(worker_profile_router)
 app.include_router(owner_stores_router)
 app.include_router(store_summary_router)
+app.include_router(store_approvals_router)
 
 
 @app.get("/api/health")
