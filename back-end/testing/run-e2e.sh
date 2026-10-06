@@ -9,6 +9,18 @@ mkdir -p "$JIDAN_E2E_REPORT_DIR"
 JIDAN_E2E_REPORT_DIR=$(cd "$JIDAN_E2E_REPORT_DIR" && pwd)
 export JIDAN_E2E_REPORT_DIR
 compose() { docker compose -p "$project" -f compose.yml --profile e2e "$@"; }
+child_pid=
+run_compose() {
+  docker compose -p "$project" -f compose.yml --profile e2e "$@" &
+  child_pid=$!
+  wait "$child_pid"
+  child_pid=
+}
+interrupted() {
+  # wait is interruptible; stop the Docker CLI before cleaning up its containers.
+  if [ -n "$child_pid" ]; then kill -TERM "$child_pid" 2>/dev/null || true; fi
+  exit "$1"
+}
 cleanup() {
   result=$?
   trap - EXIT INT TERM
@@ -21,7 +33,7 @@ cleanup() {
   exit "$result"
 }
 trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-compose up --build --detach --wait --wait-timeout 180 e2e-api
-compose run --build --rm --no-deps e2e
+trap 'interrupted 130' INT
+trap 'interrupted 143' TERM
+run_compose up --build --detach --wait --wait-timeout 180 e2e-api
+run_compose run --build --rm --no-deps e2e
