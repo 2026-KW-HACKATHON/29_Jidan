@@ -88,6 +88,16 @@ container=$(compose "$release" ps -q "$component")
 expected=$(docker image inspect "$image" --format '{{.Id}}')
 actual=$(docker inspect "$container" --format '{{.Image}}')
 [[ -n "$container" && "$expected" == "$actual" ]]
+if [[ "$component" == backend ]]; then
+  if [[ "$environment" == dev ]]; then
+    origin=https://dev-jidan.leehyowon14.dev
+  else
+    origin=https://jidan.leehyowon14.dev
+  fi
+  # Inspect only this setting and report no container environment values.
+  run docker exec "$container" python -c \
+    'import os, sys; sys.exit(os.getenv("ALLOWED_ORIGINS") != sys.argv[1])' "$origin"
+fi
 if [[ "$component" == backend ]]; then health=/api/health; else health=/healthz; fi
 run curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$port$health" >/dev/null
 run curl --fail --silent --show-error --max-time 20 --retry 3 "$url" >/dev/null
