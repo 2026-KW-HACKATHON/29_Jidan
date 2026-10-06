@@ -132,8 +132,10 @@ def test_invalid_availability_is_atomic(member, real_db, groups):
 def test_profile_write_guards_preserve_db(member, real_db, guard):
     case, user_id = member
     headers = case.headers()
-    if guard == "csrf": headers.pop("X-CSRF-Token")
-    if guard == "origin": headers["Origin"] = "http://evil.test"
+    if guard == "csrf":
+        headers.pop("X-CSRF-Token")
+    if guard == "origin":
+        headers["Origin"] = "http://evil.test"
     if guard == "owner":
         with Session(real_db) as db:
             db.get(User, user_id).role = "OWNER"
