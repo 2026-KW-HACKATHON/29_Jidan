@@ -72,6 +72,10 @@ python -m alembic revision --autogenerate -m "변경 설명"  # 새 리비전 �
 
 ### 테스트
 
+직접 API를 호출하고 MySQL 데이터를 확인하는 로컬 환경과 실제 HTTP·MySQL 자동 검증은
+[수동 API·DB 및 HTTP E2E 실행 안내](testing/README.md)를 참고합니다.
+
+
 기본 테스트는 테스트마다 마이그레이션으로 만든 SQLite 인메모리 DB를 쓰므로 DB 없이 `python -m pytest`가 통과한다. SQLite로 확인할 수 없는 MySQL 동작(잠금, 동시성, 실제 CHECK/생성 컬럼)은 `@pytest.mark.mysql`로 표시한다. `DB_*`가 없으면 건너뛰고, 설정되어 있어도 `DB_NAME`이 `_test`로 끝나지 않으면 건너뛴다(마이그레이션 테스트가 테이블을 지우기 때문이다). 스키마 테스트(`tests/test_schema.py`)는 SQLite와 MySQL 양쪽에서 같은 케이스를 실행한다.
 
 MySQL 테스트는 시작할 때 `*_test` 가드를 확인하고 DB의 모든 테이블을 지운 뒤 마이그레이션으로 head까지 새로 만들므로, 빈 DB에서 개별 테스트만 실행해도 통과하고 끝나면 데이터가 남지 않는다. **SQLite 통과나 mysql skip은 MySQL 검증이 아니다.** pytest 요약 끝의 `mysql: ran=N passed=N failed=0 error=0 skipped=0`을 확인하고, skip이 있으면 경고가 출력된다. `JIDAN_REQUIRE_MYSQL=1`이면 mysql 테스트를 건너뛰는 대신 실행을 중단한다.
