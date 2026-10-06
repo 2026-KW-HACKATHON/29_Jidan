@@ -64,16 +64,39 @@ docker compose run --rm --no-deps -T --name <프로젝트>-migrate-<릴리즈> b
 - Docker 조회·제거 실패 또는 제거 후 컨테이너가 남아 있으면 `migration.pending`을 유지하고 새 마이그레이션·배포를 차단한다. 이미 종료되어 컨테이너가 없는 경우는 기록만 정리한다. 이 복구는 컨테이너 교체용 `pending`과 별도로 처리하며, 강제 중단 후에도 MySQL 부분 DDL 적용 여부는 확인해야 한다.
 - 마이그레이션 출력은 Actions 로그에 남는다. 연결 정보는 `DB_*`에서 읽어 출력하지 않으며, 실패한 SQL의 바인딩 값도 출력하지 않는다(`hide_parameters=True`).
 
-**production과 frontend는 자동 실행하지 않는다.** production은 dev에서 적용·검증된 리비전만 RPi5의 `production/backend` 현재 릴리즈 디렉터리에서 수동으로 적용한다.
+**production과 frontend는 자동 실행하지 않는다.** production은 dev에서 적용·검증된 리비전을 포함한 **새 이미지**를 일회성 컨테이너로 실행해 수동 적용한다. 현재 실행 중인 backend 이미지는 새 리비전을 포함하지 않을 수 있으므로 배포 전 `compose exec backend ... upgrade head`의 대상으로 사용하지 않는다.
 
-1. 새 리비전이 이전 버전 코드와 호환되면(아래 정책) 새 이미지 배포 전에 실행한다.
+1. CI가 GHCR에 게시했고 dev에서 검증한 새 backend 이미지 digest를 선택한다. 그 이미지의 리비전이 운영에 배포할 릴리즈와 동일하고 이전 코드와 호환되는지 확인한다(아래 정책). production CI/CD를 시작하기 전에 RPi5의 해당 소스 checkout에서 다음을 실행한다. `image`의 placeholder는 검증한 실제 digest로 바꾼다.
+
    ```bash
-   docker compose exec backend python -m alembic current
-   docker compose exec backend python -m alembic upgrade head
+   (
+     set -euo pipefail
+     umask 077
+     image='ghcr.io/2026-kw-hackathon/29_jidan-backend@sha256:<검증한 새 이미지 digest>'
+     root=/home/ubuntu/apps/jidan/production/backend
+     exec 9>"$root/deploy.lock"
+     flock -w 300 9
+     migration_release=$(mktemp -d "$root/releases/migration.XXXXXXXX")
+     cp deploy/backend/compose.yml "$migration_release/compose.yml"
+     install -m 600 "$root/runtime.env" "$migration_release/runtime.env"
+     printf 'IMAGE_REF=%s\nAPP_PORT=3023\n' "$image" > "$migration_release/.env"
+     python3 deploy/scripts/check_runtime_env.py production "$migration_release/runtime.env"
+     compose=(docker compose -p jidan-production-backend
+       --env-file "$migration_release/.env" -f "$migration_release/compose.yml")
+     "${compose[@]}" config --quiet
+     "${compose[@]}" pull backend
+     "${compose[@]}" run --rm --no-deps -T \
+       --name "jidan-production-backend-migrate-${migration_release##*.}" \
+       backend python -m alembic upgrade head
+     "${compose[@]}" run --rm --no-deps -T backend python -m alembic current
+     "${compose[@]}" run --rm --no-deps -T backend python -m alembic heads
+     rm -rf -- "$migration_release"
+   )
    ```
-   컨테이너에는 `runtime.env`의 `DB_*`가 이미 주입되어 있다. 자격 증명은 출력하거나 기록하지 않는다.
-2. 적용 뒤 `current`가 head 리비전이고 `GET /api/health`가 `database: ok`인지 확인한다.
-3. 실패하면 일부만 적용될 수 있다. 새 배포를 진행하지 말고 `alembic current`와 실제 테이블을 확인해 수동으로 정리한다.
+
+   일회성 컨테이너에는 production `runtime.env`의 `DB_*`가 주입된다. 포트를 열지 않고 `shared-mysql_default`로 production DB에만 연결한다. 실행 중인 앱과 `current`는 바꾸지 않으며 자격 증명은 출력하지 않는다.
+2. 새 이미지에서 조회한 `current`와 `heads`가 같은 리비전인지 확인한 뒤 production CI/CD로 앱을 배포한다. 배포 후 `GET /api/health`의 `database: ok`와 새 이미지 적용을 확인한다.
+3. 실패·중단 시 일부만 적용될 수 있다. 새 배포를 진행하지 말고 이름으로 남은 일회성 컨테이너를 확인·정리한다. 새 이미지로 `alembic current`와 실제 테이블을 확인한 뒤 수동으로 복구한다. 실패 시 남은 `migration.*` 디렉터리에는 비공개 환경 파일 사본이 있으므로 복구 완료 후 삭제한다.
 
 **expand-only 정책과 롤백 한계**: 이미지 롤백(배포 스크립트의 자동 복구, 커밋 revert 후 재배포)은 DB 스키마를 되돌리지 않는다. dev는 마이그레이션이 성공한 뒤 새 컨테이너 시작·헬스체크가 실패하면 이전 이미지가 새 스키마에서 다시 실행된다. 따라서 리비전은 이전 버전 코드와 호환되는 변경(테이블·nullable 또는 기본값 있는 컬럼·인덱스 추가)만 한다. 컬럼·테이블 삭제, 이름 변경, 타입 축소 같은 비호환 변경은 추가 → 코드 전환 → 제거의 별도 릴리즈로 나눈다. 스키마를 되돌려야 하면 이전 이미지로 복구하기 전에 `alembic downgrade -1`을 수동으로 실행하며, 데이터를 삭제하는 downgrade는 사전에 백업한 뒤에만 수행한다.
 
