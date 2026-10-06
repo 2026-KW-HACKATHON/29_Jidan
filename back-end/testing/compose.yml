@@ -49,6 +49,8 @@ services:
   e2e-mysql:
     <<: *db
     profiles: [e2e]
+    # Conditional failure triggers belong only to this disposable test database.
+    command: [--log-bin-trust-function-creators=ON]
     environment:
       MYSQL_ROOT_PASSWORD: e2e-root
       MYSQL_DATABASE: jidan_e2e_test
