@@ -79,6 +79,8 @@ python -m app.admin_password
 
 비밀번호가 틀리면 기존 관리자 레이트 리미터의 실패 슬롯을 정산하고, 맞으면 성공 정산한다. 성공한 IP의 완료된 실패 기록만 초기화한다. 제한은 IP별 10분 5회·프로세스 전체 10분 50회이며 여러 프로세스 사이에는 공유하지 않는다. 성공 승인과 재승인 및 업무 오류에는 비밀번호·연락 정보를 제외한 요청 ID·신청 ID·작업·시각·결과를 기록한다.
 
+요청 ID는 요청마다 서버가 하나만 생성한다. 모든 API 응답의 `X-Request-ID` 헤더와 오류 본문의 `requestId`, 승인 감사 로그의 `request_id`가 같은 값을 사용한다. 클라이언트가 보낸 `X-Request-ID`는 신뢰하지 않는다. 인증 실패와 저장 실패도 같은 ID로 기록하며, 재시도와 동시 요청은 각각 별도 ID를 가진다.
+
 ```bash
 cd back-end
 python -m pytest tests/test_admin_password.py tests/test_store_approval_search.py tests/test_store_approval_approve.py
