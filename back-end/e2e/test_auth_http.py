@@ -76,10 +76,14 @@ def test_invalid_registration_preserves_db_and_can_retry(registration, real_db, 
                                          ("wrong-csrf", 403), ("malformed-key", 422)])
 def test_registration_guards_do_not_consume_session(registration, real_db, guard, status):
     headers = registration.headers()
-    if guard == "wrong-origin": headers["Origin"] = "http://evil.test"
-    elif guard == "wrong-csrf": headers["X-CSRF-Token"] = "invalid"
-    elif guard == "malformed-key": headers["Idempotency-Key"] = "invalid"
-    else: headers.pop(guard)
+    if guard == "wrong-origin":
+        headers["Origin"] = "http://evil.test"
+    elif guard == "wrong-csrf":
+        headers["X-CSRF-Token"] = "invalid"
+    elif guard == "malformed-key":
+        headers["Idempotency-Key"] = "invalid"
+    else:
+        headers.pop(guard)
     response = registration.client.post("/api/auth/registrations/workers",
                                         json=registration.worker, headers=headers)
     assert response.status_code == status
