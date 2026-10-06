@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jidan API 테스트</title>
+<style>
+body{font:16px system-ui;margin:40px auto;padding:0 24px;max-width:960px;background:#f5f6f8;color:#20242b}
+section{background:white;padding:24px;border-radius:16px;margin:20px 0}button,select,input,textarea{font:inherit;padding:10px;border:1px solid #ccd1da;border-radius:8px}button{cursor:pointer;background:#edf3ff}button:disabled{opacity:.5}textarea{box-sizing:border-box;width:100%;height:210px;margin:16px 0;font:14px monospace}input{width:65%}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:14px monospace}a{color:#2454b8}.note{color:#5a6474}#result{min-height:140px}
+</style>
+<h1>Jidan API 테스트</h1>
+<p>테스트 계정으로 API를 직접 호출하고 응답을 확인하세요. 이 환경의 MySQL 데이터는 재시작 후에도 유지됩니다.</p>
+<section><h2>테스트 계정</h2>
+<button data-login="worker">근무자로 로그인</button>
+<button data-login="owner">점주로 로그인</button>
+<button id="registration">새 가입 세션 만들기</button>
+<p class="note">근무자·점주 계정은 다시 로그인해도 기존 데이터를 보존합니다. 새 가입 세션은 매번 다른 계정으로 시작합니다. Google 인증 단계는 이 환경에서 생략됩니다.</p>
+<a href="/docs" target="_blank" rel="noopener">구현된 API의 Swagger 열기</a>
+</section>
+<section><h2>API 요청</h2>
+<select id="preset">
+<option value="session">현재 세션 조회</option><option value="profile">근무자 프로필 조회</option>
+<option value="basic">기본 정보 변경</option><option value="careers">경력 전체 교체</option>
+<option value="availability">가용 시간 전체 교체</option><option value="signup">근무자 가입</option>
+<option value="logout">로그아웃</option><option value="health">API·DB 상태</option>
+</select><p><select id="method"><option>GET</option><option>POST</option><option>PATCH</option><option>PUT</option></select> <input id="path" aria-label="API 경로" value="/api/auth/session"></p>
+<textarea id="body" aria-label="JSON 요청 본문" spellcheck="false"></textarea>
+<label><input id="reuse" type="checkbox" style="width:auto"> 이전 Idempotency-Key 재사용</label>
+<p><button id="send">요청 실행</button></p>
+<p class="note">변경 요청에 현재 쿠키의 CSRF 토큰과 Idempotency-Key를 자동으로 붙입니다. 로그아웃 전후에는 자동으로 세션을 재사용하지 않습니다.</p>
+</section>
+<section><h2>응답</h2><pre id="result" aria-live="polite">계정을 선택하거나 요청을 실행하세요.</pre></section>
+<section><h2>DB 확인</h2><p>터미널에서 아래 명령으로 같은 MySQL DB를 조회할 수 있습니다. 저장 상태는 응답과 별도로 확인하세요.</p>
+<pre>docker compose -p jidan-sandbox -f back-end/testing/compose.yml exec mysql sh -c 'MYSQL_PWD=$MYSQL_PASSWORD mysql -u "$MYSQL_USER" "$MYSQL_DATABASE"'
+
+SELECT id, role, name, phone_number FROM users;
+SELECT * FROM worker_profiles;
+SELECT * FROM worker_careers;
+SELECT * FROM availability_rules;
+SELECT * FROM availability_days;</pre>
+<p class="note">현재 구현: Health, Auth, 근무자 프로필. 매장·공고·매뉴얼은 아직 이 서버에 구현되지 않았습니다.</p></section>
+<script>
+const $ = id => document.getElementById(id);
+const worker={name:'테스트 근무자',phoneNumber:'01012345678',birthDate:'2001-03-14',gender:'FEMALE',experienceLevel:'NEW',careers:[],availabilities:[{days:['MON'],startTime:'09:00',endTime:'14:00',endsNextDay:false}]};
+const presets={session:['GET','/api/auth/session'],profile:['GET','/api/users/me/profile'],basic:['PATCH','/api/users/me/profile/basic',{name:'변경한 근무자'}],careers:['PUT','/api/users/me/profile/careers',{experienceLevel:'EXPERIENCED',careers:[{industry:'CAFE',duties:'음료 제조',startMonth:'2024-03',endMonth:null,isCurrent:true,storeName:'테스트 카페'}]}],availability:['PUT','/api/users/me/profile/availabilities',{availabilities:[{days:['SUN'],startTime:'22:00',endTime:'02:00',endsNextDay:true}]}],signup:['POST','/api/auth/registrations/workers',worker],logout:['POST','/api/auth/logout'],health:['GET','/api/health']};
+let lastKey;
+function preset(){const [method,path,body]=presets[$('preset').value];$('method').value=method;$('path').value=path;$('body').value=body?JSON.stringify(body,null,2):'';lastKey=null;$('reuse').checked=false;}
+$('preset').onchange=preset;preset();
+async function perform(task){document.querySelectorAll('button').forEach(b=>b.disabled=true);try{await task();}catch(e){$('result').textContent=e.message;}finally{document.querySelectorAll('button').forEach(b=>b.disabled=false);}}
+async function request(path, options={}){const r=await fetch(path,{credentials:'same-origin',...options});const text=await r.text();let body=text;try{body=JSON.parse(text);}catch{}$('result').textContent=JSON.stringify({status:r.status,requestId:r.headers.get('X-Request-Id'),replayed:r.headers.get('Idempotent-Replayed'),body},null,2);return r;}
+document.querySelectorAll('[data-login]').forEach(b=>b.onclick=()=>perform(async()=>{const r=await request('/sandbox/login/'+b.dataset.login,{method:'POST'});if(r.ok){$('preset').value='session';preset();await request('/api/auth/session');}}));
+$('registration').onclick=()=>perform(async()=>{const r=await request('/sandbox/registration',{method:'POST'});if(r.ok){$('preset').value='signup';preset();}});
+$('send').onclick=()=>perform(async()=>{const path=$('path').value;if(!path.startsWith('/api/')||path.includes('://')||path.includes('\\'))throw Error('같은 서버의 /api/ 경로를 입력하세요.');const method=$('method').value;const options={method,headers:{}};if(method!=='GET'){if($('body').value.trim()){options.body=JSON.stringify(JSON.parse($('body').value));options.headers['Content-Type']='application/json';}const csrf=await fetch('/api/auth/csrf');if(csrf.ok)options.headers['X-CSRF-Token']=(await csrf.json()).csrfToken;if(!$('reuse').checked||!lastKey)lastKey=crypto.randomUUID();options.headers['Idempotency-Key']=lastKey;}$('result').textContent='요청 중…';await request(path,options);});
+</script>
+</html>

@@ -1,0 +1,91 @@
+"""Sandbox guard tests run without importing the wrapper into production app.main."""
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, sessionmaker
+
+from app import auth
+from app.auth_views import router
+from app.db.models import AuthSession, User, WorkerProfile
+from app.errors import install_error_handlers
+from app.middleware import install_middleware
+from testing.sandbox import create_app, install_tools, validate_environment
+from tests.conftest import migrated_sqlite_engine
+
+
+@pytest.fixture
+def environment(monkeypatch):
+    for key, value in {"APP_ENV": "local", "DB_NAME": "jidan_sandbox", "DB_HOST": "mysql",
+                       "COOKIE_SECURE": "false", "ALLOWED_ORIGINS": "http://testserver"}.items():
+        monkeypatch.setenv(key, value)
+
+
+@pytest.mark.parametrize("key,value", [
+    ("APP_ENV", "dev"), ("APP_ENV", "production"), ("APP_ENV", ""),
+    ("DB_NAME", "jidan_dev"), ("DB_NAME", "jidan_production"), ("DB_NAME", "jidan_e2e_test"),
+    ("DB_HOST", "shared-mysql"), ("COOKIE_SECURE", "true"),
+])
+def test_wrapper_rejects_other_environments(environment, monkeypatch, key, value):
+    monkeypatch.setenv(key, value)
+    with pytest.raises(RuntimeError, match="dedicated local"):
+        create_app()
+
+
+def test_guard_accepts_only_sandbox(environment):
+    validate_environment()
+
+
+@pytest.fixture
+def api(environment, monkeypatch):
+    engine = migrated_sqlite_engine()
+    monkeypatch.setattr("app.db.session.get_session_factory",
+                        lambda: sessionmaker(engine, expire_on_commit=False))
+    app = FastAPI()
+    install_middleware(app)
+    install_error_handlers(app)
+    app.include_router(router)
+    install_tools(app)
+    with TestClient(app) as client:
+        yield client, engine
+    engine.dispose()
+
+
+def test_login_reuses_account_and_commits_before_cookie(api):
+    client, engine = api
+    for _ in range(2):
+        response = client.post("/sandbox/login/worker", headers={"Origin": "http://testserver"})
+        assert response.status_code == 204 and "HttpOnly" in response.headers["set-cookie"]
+        assert client.get("/api/auth/session").status_code == 200
+    with Session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(User)) == 1
+        assert db.scalar(select(func.count()).select_from(WorkerProfile)) == 1
+        assert db.scalar(select(func.count()).select_from(AuthSession)) == 2
+
+
+@pytest.mark.parametrize("origin", [None, "http://evil.test", "http://testserver.evil.test"])
+def test_login_requires_exact_origin(api, origin):
+    client, engine = api
+    response = client.post("/sandbox/login/owner", headers={"Origin": origin} if origin else {})
+    assert response.status_code == 403
+    with Session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(User)) == 0
+
+
+def test_role_validation_and_registration_switch(api):
+    client, _ = api
+    headers = {"Origin": "http://testserver"}
+    assert client.post("/sandbox/login/admin", headers=headers).status_code == 422
+    assert client.post("/sandbox/login/owner", headers=headers).status_code == 204
+    assert client.post("/sandbox/registration", headers=headers).status_code == 204
+    assert auth.SESSION_COOKIE_NAME not in client.cookies
+    assert auth.REGISTRATION_COOKIE_NAME in client.cookies
+    assert client.get("/api/auth/csrf").status_code == 200
+    assert client.post("/sandbox/login/worker", headers=headers).status_code == 204
+    assert auth.REGISTRATION_COOKIE_NAME not in client.cookies
+
+
+def test_production_app_has_no_sandbox_routes(environment):
+    from app.main import app
+
+    assert not any(path.startswith("/sandbox") for path in app.openapi()["paths"])
