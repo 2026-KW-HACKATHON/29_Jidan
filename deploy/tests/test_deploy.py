@@ -27,6 +27,7 @@ if args[0] == 'compose':
         Path(os.environ['READY']).touch()
         time.sleep(60)
     if 'ps' in args: print('container-id')
+elif args[0] == 'exec': sys.exit(1 if mode == 'runtime' else 0)
 elif args[:2] == ['image', 'inspect']: print('expected-id')
 elif args[0] == 'inspect': print('wrong-id' if mode == 'image' else 'expected-id')
 '''
@@ -69,8 +70,11 @@ class DeployTests(unittest.TestCase):
         (self.base / 'deploy/backend').mkdir(parents=True, exist_ok=True)
         (self.base / 'deploy/backend/compose.yml').write_text('services: {}\n')
         self.root = self.base / f'apps/{environment}/backend'
-        self.root.mkdir(parents=True)
-        (self.root / 'runtime.env').write_text(f'APP_ENV={environment}\n')
+        self.root.mkdir(parents=True, exist_ok=True)
+        origin = ('https://dev-jidan.leehyowon14.dev' if environment == 'dev'
+                  else 'https://jidan.leehyowon14.dev')
+        (self.root / 'runtime.env').write_text(f'APP_ENV={environment}\nALLOWED_ORIGINS={origin}\n')
+        (self.root / 'runtime.env').chmod(0o600)
         return IMAGE.replace('-frontend@', '-backend@')
 
     def test_development_backend_verifies_public_and_local_swagger_before_commit(self):
@@ -104,6 +108,69 @@ class DeployTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertTrue(any('down' in c for c in calls))
         self.assertFalse((self.root / 'current').exists())
+
+    def test_backend_validates_snapshot_and_running_value_before_commit(self):
+        for environment in ('dev', 'production'):
+            with self.subTest(environment=environment):
+                image = self.backend(environment)
+                result, calls = self.run_deploy(environment=environment, component='backend', image=image)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                current = (self.root / 'current').resolve()
+                snapshot = current / 'runtime.env'
+                self.assertEqual(snapshot.read_bytes(), (self.root / 'runtime.env').read_bytes())
+                self.assertEqual(snapshot.stat().st_mode & 0o777, 0o600)
+                checks = [c for c in calls if c[:2] == ['docker', 'exec']]
+                origin = ('https://dev-jidan.leehyowon14.dev' if environment == 'dev'
+                          else 'https://jidan.leehyowon14.dev')
+                self.assertEqual(checks[-1][-1], origin)
+                self.assertTrue((current / 'verified').exists())
+
+    def test_invalid_backend_origin_never_pulls_or_changes_containers(self):
+        for environment in ('dev', 'production'):
+            image = self.backend(environment)
+            prev = self.previous()
+            path = self.root / 'runtime.env'
+            for content in ('APP_ENV=' + environment,
+                            'ALLOWED_ORIGINS=', 'ALLOWED_ORIGINS=*',
+                            'ALLOWED_ORIGINS=https://wrong.example.com',
+                            'ALLOWED_ORIGINS=https://dev-jidan.leehyowon14.dev,https://jidan.leehyowon14.dev'):
+                with self.subTest(environment=environment, content=content):
+                    self.calls.write_text('')
+                    path.write_text(content + '\nDB_PASSWORD=private-do-not-print\n')
+                    result, calls = self.run_deploy(environment=environment, component='backend', image=image)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(calls, [])
+                    self.assertEqual((self.root / 'current').resolve(), prev)
+                    self.assertFalse((self.root / 'pending').exists())
+                    self.assertNotIn('private-do-not-print', result.stdout + result.stderr)
+                    self.assertNotIn('https://wrong.example.com', result.stdout + result.stderr)
+            path.unlink()
+            self.calls.write_text('')
+            result, calls = self.run_deploy(environment=environment, component='backend', image=image)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(calls, [])
+            self.assertEqual((self.root / 'current').resolve(), prev)
+
+    def test_backend_runtime_mismatch_restores_previous_release(self):
+        for environment in ('dev', 'production'):
+            with self.subTest(environment=environment):
+                image = self.backend(environment)
+                prev = self.previous()
+                self.calls.write_text('')
+                result, calls = self.run_deploy('runtime', environment=environment, component='backend', image=image)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual((self.root / 'current').resolve(), prev)
+                self.assertTrue(any('up' in c and str(prev / 'compose.yml') in c for c in calls))
+                self.assertFalse((self.root / 'pending').exists())
+                self.assertFalse(any(p.exists() for p in (self.root / 'releases').glob('*/verified')))
+
+    def test_first_backend_runtime_mismatch_removes_failed_container(self):
+        image = self.backend()
+        result, calls = self.run_deploy('runtime', component='backend', image=image)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(any('down' in c for c in calls))
+        self.assertFalse((self.root / 'current').exists())
+        self.assertFalse((self.root / 'pending').exists())
 
     def test_success_updates_pointer(self):
         prev = self.previous()
