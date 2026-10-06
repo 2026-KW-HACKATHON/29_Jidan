@@ -49,7 +49,7 @@ def test_missing_report_arguments_and_files_fail(tmp_path):
 
 def test_allow_skipped_accepts_deliberate_skips_only(tmp_path):
     path = tmp_path / "python.xml"
-    path.write_text(report(tests=2, skipped=1, case="<testcase/><testcase><skipped/></testcase>"))
+    path.write_text(report(tests=2, skipped=1, case="<testcase name='case[mysql]'/><testcase name='case[sqlite]'><skipped/></testcase>"))
     assert main([str(path)]) == 1
     assert main(["--allow-skipped", str(path)]) == 0
 
@@ -69,3 +69,15 @@ def test_allow_skipped_still_rejects_failures_and_empty_runs(tmp_path, xml):
 
 def test_allow_skipped_needs_a_report(tmp_path):
     assert main(["--allow-skipped"]) == 2
+
+
+@pytest.mark.parametrize("case", [
+    "<testcase name='case[mysql]'/><testcase name='other[sqlite]'><skipped/></testcase>",
+    "<testcase name='other[mysql]'/><testcase name='case[mysql]'><skipped/></testcase>",
+    "<testcase name='case[mysql]'/><testcase name='case[sqlite]'><skipped type='pytest.xfail'/></testcase>",
+    "<testcase name='case[mysql]' classname='A'/><testcase name='case[sqlite]' classname='B'><skipped/></testcase>",
+])
+def test_full_suite_skip_exception_requires_a_passed_mysql_counterpart(tmp_path, case):
+    path = tmp_path / "python.xml"
+    path.write_text(report(tests=2, skipped=1, case=case))
+    assert main(["--allow-skipped", str(path)]) == 1

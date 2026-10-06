@@ -1,21 +1,55 @@
-# Disposable isolated test stack only: fixed credentials never reach dev/production databases,
-# and nothing here publishes a host port. Ported from the remote PR #154 harness without its
-# manual sandbox (local developers use e2e.serve and e2e.browser_login instead).
+# Local fixtures only: fixed credentials have no access to dev/production databases.
 x-build: &build
   context: ..
   dockerfile: testing/Dockerfile
+x-db: &db
+  image: mysql:8.4
+  environment:
+    MYSQL_ROOT_PASSWORD: sandbox-root
+    MYSQL_DATABASE: jidan_sandbox
+    MYSQL_USER: jidan
+    MYSQL_PASSWORD: sandbox-only
+  healthcheck:
+    test: [CMD-SHELL, 'MYSQL_PWD=$$MYSQL_PASSWORD mysql -h 127.0.0.1 -u $$MYSQL_USER -D $$MYSQL_DATABASE -e "SELECT 1"']
+    interval: 2s
+    timeout: 3s
+    retries: 60
+  networks: [isolated]
 x-env: &env
   APP_ENV: local
+  # Paid AI remains opt-in; manual and automatic fixtures use the local fake provider.
+  AI_PROVIDER: fake
   COOKIE_SECURE: 'false'
-  DB_HOST: e2e-mysql
+  DB_HOST: mysql
   DB_PORT: '3306'
-  DB_NAME: jidan_e2e_test
+  DB_NAME: jidan_sandbox
   DB_USER: jidan
   DB_PASSWORD: sandbox-only
-  ALLOWED_ORIGINS: http://e2e-api:8000
+  ALLOWED_ORIGINS: 'http://127.0.0.1:${JIDAN_SANDBOX_PORT:-18000}'
+x-api: &api
+  build: *build
+  command: [sh, -c, 'python -m alembic upgrade head && exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000']
+  healthcheck:
+    test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
+    interval: 2s
+    timeout: 3s
+    retries: 60
+  networks: [isolated]
 services:
+  mysql:
+    <<: *db
+    profiles: [manual]
+    volumes: [sandbox-data:/var/lib/mysql]
+  api:
+    <<: *api
+    profiles: [manual]
+    command: [sh, -c, 'python -m alembic upgrade head && exec python -m uvicorn testing.sandbox:create_app --factory --host 0.0.0.0 --port 8000']
+    environment: *env
+    depends_on:
+      mysql: {condition: service_healthy}
+    ports: ['127.0.0.1:${JIDAN_SANDBOX_PORT:-18000}:8000']
   e2e-mysql:
-    image: mysql:8.4
+    <<: *db
     profiles: [e2e]
     # Conditional failure triggers belong only to this disposable test database.
     command: [--log-bin-trust-function-creators=ON]
@@ -25,38 +59,25 @@ services:
       MYSQL_USER: jidan
       MYSQL_PASSWORD: sandbox-only
     tmpfs: [/var/lib/mysql]
-    healthcheck:
-      test: [CMD-SHELL, 'MYSQL_PWD=$$MYSQL_PASSWORD mysql -h 127.0.0.1 -u $$MYSQL_USER -D $$MYSQL_DATABASE -e "SELECT 1"']
-      interval: 2s
-      timeout: 3s
-      retries: 60
-    networks: [isolated]
   e2e-api:
-    build: *build
+    <<: *api
     profiles: [e2e]
-    command: [sh, -c, 'python -m alembic upgrade head && exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000']
-    environment:
+    environment: &e2e-env
       <<: *env
-      # Real AI calls stay opt-in: the server never receives a key here, and the
-      # `openai`-marked Python tests are deselected in `checks`.
-      AI_PROVIDER: fake
-    healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
-      interval: 2s
-      timeout: 3s
-      retries: 60
+      DB_HOST: e2e-mysql
+      DB_NAME: jidan_e2e_test
+      ALLOWED_ORIGINS: http://e2e-api:8000
     depends_on:
       e2e-mysql: {condition: service_healthy}
-    networks: [isolated]
   e2e:
     build: *build
     profiles: [e2e]
     environment:
-      <<: *env
+      <<: *e2e-env
       JIDAN_REQUIRE_MYSQL: '1'
       JIDAN_E2E_BASE_URL: http://e2e-api:8000
     volumes: &reports ['${JIDAN_E2E_REPORT_DIR:-../../.local/test-results}:/results']
-    command: [sh, -c, 'python -m pytest e2e -q -p no:cacheprovider --junitxml=/results/http-e2e.xml && python -m testing.check_results /results/http-e2e.xml']
+    command: [sh, -c, 'python -m pytest e2e -q --junitxml=/results/http-e2e.xml && python -m testing.check_results /results/http-e2e.xml']
     depends_on:
       e2e-api: {condition: service_healthy}
     networks: [isolated]
@@ -64,12 +85,14 @@ services:
     build: *build
     profiles: [e2e]
     environment:
-      <<: *env
+      <<: *e2e-env
       JIDAN_REQUIRE_MYSQL: '1'
+      JIDAN_LARGE_CONTENT: '1'
       JIDAN_CHECKS_PYTEST_ARGS: ${JIDAN_CHECKS_PYTEST_ARGS:-}
     volumes: *reports
+    command: [sh, -c, 'python -m ruff check . && python -m pytest testing -q --junitxml=/results/tooling.xml && python -m testing.check_results /results/tooling.xml && python -m pytest $${JIDAN_CHECKS_PYTEST_ARGS:-tests} -q -rs -m "not openai" --junitxml=/results/python.xml && python -m testing.check_results --allow-skipped /results/python.xml']
     networks: [isolated]
-    # JIDAN_CHECKS_PYTEST_ARGS (test paths) narrows the full suite for a local run; CI leaves it unset.
-    command: [sh, -c, 'python -m ruff check . && python -m pytest testing -q -p no:cacheprovider --junitxml=/results/tooling.xml && python -m testing.check_results /results/tooling.xml && python -m pytest $${JIDAN_CHECKS_PYTEST_ARGS:-tests} -q -rs -p no:cacheprovider -m "not openai" --junitxml=/results/python.xml && python -m testing.check_results --allow-skipped /results/python.xml']
 networks:
   isolated: {}
+volumes:
+  sandbox-data: {}

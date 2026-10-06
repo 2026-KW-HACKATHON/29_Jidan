@@ -47,9 +47,20 @@ Redocly 경고 14개는 남아 있다. 대상 component 예시 4개는 YAML 1.2�
 
 ## 중점 리뷰·병합 계획
 
-- 열려 있는 PR #154는 같은 base이며 HTTP/MySQL 하네스·Auth/Profile E2E가 겹친다. 이 PR은 그 하네스를 로컬 구조에 맞게 선별 이식했고 중복 sandbox 로그인은 포함하지 않는다. 두 PR의 반영 순서와 중복 파일 소유를 팀과 정하고, 합친 tree로 관련 CI를 다시 검증해야 한다. #154를 자동 종료하거나 대신 병합하지 않는다.
+- PR #154의 원 작성자 커밋 33개(head `c48e48d`)를 기능 브랜치의 이력에 보존하고, 자동 HTTP 148개·수동 sandbox·도구 시험·문서·AGENTS 규칙을 흡수했다. 원본 HTTP 파일 10개 중 9개는 byte 동일하며 프로필 1개 파일의 2개 assertion만 row 재사용에 맞췄다. PR #154와 back-end/dev는 변경/종료/병합하지 않는다. 팀은 이 흡수안을 검토하고 향후 반영 순서를 정할 수 있다.
 - 0006→0041 DB 변경은 적용 전 백업 및 migration 기록을 확인한다. MySQL DDL은 비원자적이며 code rollback만으로 DB를 되돌렸다고 간주하지 않는다. 운영 DB downgrade/복구는 팀과 별도 계획한다.
 - 원격 관리자 PBKDF2 설정을 그대로 사용하며 새 기본 CLI도 같은 형식이다. 기존 scrypt를 강제 회전하지 않는다. 로그인/health/배포 gate가 동일 parser를 사용한다.
 - PR CI의 `deploy` 값은 false다. 현재 요청 범위는 branch upload와 비교 PR이며 병합·운영 배포·외부 데모 공개는 하지 않는다.
 
 관련 이슈: Refs #126, #127, #128, #122, #152.
+
+## PR #154 원형 흡수 후 추가 검증
+
+- 제품 `app/**`·마이그레이션 변경 0. 기존 전체 백엔드 검증 근거는 유지한다.
+- 원본 manual/e2e Compose 구조와 고유 실행 cleanup, strict 기본 JUnit gate를 보존한다. CI 대용량 opt-in은 켜고, SQLite skip은 같은 report의 성공한 MySQL 대응이 있어야만 허용한다. 유료 모델은 제외한다.
+- 새로운 하네스 상태에서 도구 62건, 관련 Python 148건(MySQL 53건), 원본 실제 HTTP 148건이 통과했다.
+- 실제 manual Uvicorn/MySQL 9단계 검증도 통과했다. 작업자는 Root agent이며 테스트 작성에 참여하지 않은 별도 독립 에이전트가 코드·테스트·문서와 보완 사항을 재검토했다.
+- 처음 동시 점주 fixture 로그인 4건 중 3개가 500이 되는 MySQL deadlock을 재현했다. sandbox의 원래 생성/재사용/쿠키 흐름은 유지하고 1062/1205/1213만 최대 3회 전체 rollback/retry한다. 기타 실패는 숨기지 않으며 bounded retry/부분 저장 보존 회귀 시험을 추가했다.
+- 등록 세션만 있는 기존 sandbox DB도 검사 시작 전에 거부한다. 기본 profile/availability의 실제 DB 저장, Origin/역할 거부, 양쪽 role의 동시 첫 로그인, 쿠키 전환, 가입/프로필 저장과 API 재조회를 확인했다.
+- runtime-source 실제 Docker build 단계에서도 tests/testing/e2e 디렉터리 제외를 확인했다. 이는 운영 최종 이미지의 실제 배포/프록시 검증과 구분한다.
+- 상세 실행 방법/fixture·미검증 경계는 [원형을 보존한 하네스 문서](../testing/README.md)에 있다. 브라우저·외부 Google/Kakao·유료 AI·운영 배포는 이 추가 하네스 검증에서 실행하지 않았다.

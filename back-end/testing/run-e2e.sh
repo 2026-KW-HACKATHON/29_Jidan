@@ -1,5 +1,5 @@
 #!/bin/sh
-# Every invocation gets its own project, so cleanup never touches another stack.
+# Every invocation gets its own project. Cleanup never targets the manual sandbox.
 set -eu
 cd "$(dirname "$0")"
 project="jidan-e2e-$(date +%s)-$$"
@@ -26,7 +26,6 @@ cleanup() {
   trap - EXIT INT TERM
   compose logs --no-color e2e-api e2e-mysql > "$JIDAN_E2E_REPORT_DIR/services.log" 2>&1 || true
   if [ "$result" -ne 0 ]; then cat "$JIDAN_E2E_REPORT_DIR/services.log"; fi
-  # Each run builds images under its own project name; remove them too so runs do not pile up.
   if ! compose down --volumes --remove-orphans --rmi local; then
     if [ "$result" -eq 0 ]; then result=1; fi
   fi

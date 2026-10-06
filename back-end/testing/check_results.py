@@ -1,9 +1,8 @@
 """Fail the execution gate when a pytest JUnit report omits successful coverage.
 
-`--allow-skipped` is only for the full Python suite: it has deliberate skips (SQLite variants of
-MySQL lock tests, opt-in large/real-AI tests, strict xfails of known contract gaps). MySQL skips
-cannot hide there because the run sets JIDAN_REQUIRE_MYSQL=1, which aborts instead of skipping.
-Failures, errors, empty and malformed reports still fail, and some test must actually run.
+`--allow-skipped` permits only SQLite cases whose matching MySQL case passed in the same
+report. Unexpected skips, xfails, MySQL skips, failures, empty and malformed evidence fail.
+The full CI suite enables large-content checks and excludes paid OpenAI tests explicitly.
 """
 import sys
 from pathlib import Path
@@ -20,6 +19,11 @@ def validate_report(path: Path, *, allow_skipped: bool = False) -> None:
         raise ValueError("unexpected report structure")
     if not suites:
         raise ValueError("no test suites")
+    passed_cases = {
+        (case.get("classname", ""), case.get("name", ""))
+        for case in root.iter("testcase")
+        if not any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))
+    }
     total = executed = 0
     for suite in suites:
         if suite.findall("testsuite"):
@@ -36,6 +40,16 @@ def validate_report(path: Path, *, allow_skipped: bool = False) -> None:
             case.find(tag) is not None for case in cases for tag in ("failure", "error")
         ) or (skipped and not allow_skipped):
             raise ValueError("inconsistent or unsuccessful test cases")
+        if allow_skipped:
+            for case in cases:
+                skip = case.find("skipped")
+                if skip is None:
+                    continue
+                name = case.get("name", "")
+                counterpart = (case.get("classname", ""), name.replace("[sqlite", "[mysql", 1))
+                if ("[sqlite" not in name or skip.get("type") == "pytest.xfail"
+                        or counterpart not in passed_cases):
+                    raise ValueError("skip has no successful MySQL counterpart")
         total += counts["tests"]
         executed += counts["tests"] - skipped
     if total == 0 or executed == 0:
