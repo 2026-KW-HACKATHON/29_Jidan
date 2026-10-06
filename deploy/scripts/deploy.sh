@@ -24,6 +24,12 @@ mkdir -p "$root/releases"
 exec 9>"$root/deploy.lock"
 flock -w 300 9
 child=
+# How long the next deployment waits for a recorded migration that is still running.
+migration_wait=${JIDAN_MIGRATION_WAIT_SECONDS:-300}
+if [[ ! "$migration_wait" =~ ^[1-9][0-9]{0,3}$ ]]; then
+  echo 'Invalid JIDAN_MIGRATION_WAIT_SECONDS' >&2
+  exit 2
+fi
 run() {
   "$@" &
   child=$!
@@ -37,11 +43,13 @@ compose() {
   shift
   run docker compose -p "$project" --env-file "$directory/.env" -f "$directory/compose.yml" "$@"
 }
-# Docker keeps one-off containers alive independently of the Compose client.
-# Retain the journal until the daemon confirms the recorded container is gone.
+# Docker keeps a one-off container running independently of a killed Compose client.
+# Keep the journal until the daemon confirms the recorded container is gone. A container that is
+# still migrating is never killed: MySQL DDL is not transactional, so a forced stop could leave a
+# half-applied revision for the next upgrade. $1 is how long to wait for it (0: do not wait).
 recover_migration() {
   [[ -f "$root/migration.pending" ]] || return 0
-  local name containers attempt
+  local wait_limit=${1:-0} name containers attempt state code
   name=$(cat "$root/migration.pending")
   if [[ ! "$name" =~ ^${project}-migrate-[a-zA-Z0-9]{8}$ ]]; then
     echo 'Invalid migration recovery record; deployment stopped.' >&2
@@ -61,9 +69,31 @@ recover_migration() {
     fi
     sleep 1
   done
-  docker rm -f "$name" >/dev/null || return 1
+  state=$(docker container inspect --format '{{.State.Running}} {{.State.ExitCode}}' "$name") || return 1
+  code=${state#* }
+  if [[ "${state%% *}" == true ]]; then
+    if [[ "$wait_limit" == 0 ]]; then
+      echo 'Migration container is still running and was left alone; the next deployment waits for it.' >&2
+      return 1
+    fi
+    echo "Waiting up to ${wait_limit}s for the recorded migration container to finish." >&2
+    if ! code=$(timeout "$wait_limit" docker wait "$name"); then
+      echo 'Recorded migration did not finish in time; record retained. Check it with `docker ps` and retry later.' >&2
+      return 1
+    fi
+  fi
+  # A created-but-never-started container reports 0. Any other code is a failed migration.
+  if [[ "$code" != 0 ]]; then
+    echo 'Recorded migration failed; record retained. Check `alembic current` and the schema, then remove migration.pending.' >&2
+    return 1
+  fi
+  # Only a container that is no longer running (finished, or created and never started) is removed.
   containers=$(docker container ls -a --filter "name=^/${name}$" --format '{{.Names}}') || return 1
-  [[ -z "$containers" ]] || return 1
+  if [[ -n "$containers" ]]; then
+    docker rm "$name" >/dev/null || return 1
+    containers=$(docker container ls -a --filter "name=^/${name}$" --format '{{.Names}}') || return 1
+    [[ -z "$containers" ]] || return 1
+  fi
   rm -f "$root/migration.pending" "$root/migration.next"
 }
 # Persist intent before touching containers. SIGKILL/power loss is recovered on the next run.
@@ -91,9 +121,11 @@ cleanup() {
     wait "$child" 2>/dev/null || true
     child=
   fi
+  # An interrupted `compose run` client can leave its one-off container migrating.
   if ! recover_migration; then
     echo 'MIGRATION RECOVERY FAILED: record retained; retry deployment to recover.' >&2
-    status=1
+    # Keep an interrupt's 130/143: leaving a running migration alone is the expected outcome.
+    [[ "$status" != 0 ]] || status=1
   fi
   if ! recover_pending; then
     echo 'ROLLBACK FAILED: pending marker retained; retry deployment to recover.' >&2
@@ -105,19 +137,23 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 # Never overwrite evidence of an interrupted deployment before recovery succeeds.
-recover_migration
+recover_migration "$migration_wait"
 recover_pending
 release=$(mktemp -d "$root/releases/release.XXXXXXXX")
 cp "deploy/$component/compose.yml" "$release/compose.yml"
 printf 'IMAGE_REF=%s\nAPP_PORT=%s\n' "$image" "$port" > "$release/.env"
 if [[ "$component" == backend ]]; then
   install -m 600 "$root/runtime.env" "$release/runtime.env"
+  # One fixed volume per environment keeps uploaded media across releases and rollbacks.
+  printf 'MEDIA_VOLUME=jidan-%s-media\n' "$environment" >> "$release/.env"
   run python3 "$script_dir/check_runtime_env.py" "$environment" "$release/runtime.env"
 fi
 compose "$release" config --quiet
 compose "$release" pull
 # Only dev backend migrates automatically, before any container changes. Production stays manual.
 if [[ "$environment/$component" == dev/backend ]]; then
+  # The journal, not a shared name, prevents overlap: a run left behind by a SIGKILLed runner
+  # keeps migrating, so the next run waits for exactly the recorded container first.
   migration_container="$project-migrate-${release##*.}"
   printf '%s\n' "$migration_container" > "$root/migration.next"
   mv -Tf "$root/migration.next" "$root/migration.pending"
@@ -137,6 +173,9 @@ expected=$(docker image inspect "$image" --format '{{.Id}}')
 actual=$(docker inspect "$container" --format '{{.Image}}')
 [[ -n "$container" && "$expected" == "$actual" ]]
 if [[ "$component" == backend ]]; then
+  # The app user must be able to write the mounted media volume; prints nothing from the container.
+  run docker exec "$container" python -c \
+    'import os, tempfile; tempfile.TemporaryFile(dir=os.environ["MEDIA_ROOT"]).close()'
   if [[ "$environment" == dev ]]; then
     origin=https://dev-jidan.leehyowon14.dev
   else
