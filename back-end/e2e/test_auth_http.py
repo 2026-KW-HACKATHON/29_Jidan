@@ -16,8 +16,8 @@ from app.db.models import (
     AvailabilityRule,
     IdempotencyRecord,
     User,
-    WorkerProfile,
     WorkerCareer,
+    WorkerProfile,
 )
 from e2e.conftest import registration_row, worker_snapshot
 
