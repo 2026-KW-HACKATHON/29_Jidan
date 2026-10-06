@@ -186,3 +186,24 @@ def test_mysql_uuid_columns_are_char36_with_matching_collation(mysql_engine):
                               ("work_requests", "pending_application_id")):
             ddl = connection.execute(text(f"SHOW CREATE TABLE {table}")).one()[1]
             assert f"`{column}` char(36)" in ddl and "GENERATED ALWAYS" in ddl
+
+
+def test_online_migration_engine_hides_sql_parameters(monkeypatch):
+    """Deploy runs `alembic upgrade head` with output in CI logs; errors must not echo values."""
+    import sqlalchemy
+
+    captured = {}
+
+    class Stop(Exception):
+        pass
+
+    def fake_create_engine(url, **kwargs):
+        captured.update(kwargs)
+        raise Stop
+
+    for key, value in {"HOST": "db", "NAME": "jidan_dev", "USER": "u", "PASSWORD": "p"}.items():
+        monkeypatch.setenv(f"DB_{key}", value)
+    monkeypatch.setattr(sqlalchemy, "create_engine", fake_create_engine)
+    with pytest.raises(Stop):
+        command.upgrade(alembic_config(), "head")
+    assert captured["hide_parameters"] is True

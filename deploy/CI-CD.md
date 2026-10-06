@@ -50,20 +50,56 @@ PR은 테스트·빌드만 수행한다. 같은 저장소의 PR만 self-hosted r
 
 ### DB 마이그레이션
 
-도구는 Alembic이며 리비전은 `back-end/migrations/versions/`에 있고 이미지에 함께 들어간다. **배포 시 자동 실행은 아직 넣지 않았다.** 스키마가 바뀌는 릴리즈는 다음 순서로 수동 적용한다.
+도구는 Alembic이며 리비전은 `back-end/migrations/versions/`에 있고 이미지에 함께 들어간다.
 
-1. 새 이미지 배포가 성공한 뒤(또는 이전 코드가 새 스키마와 호환되는 경우 배포 전에) RPi5의 해당 환경 백엔드 릴리즈 디렉터리에서 실행한다.
+**dev 백엔드는 배포 시 자동 적용한다.** `deploy.sh`는 `dev/backend`일 때만 새 이미지 pull 직후, `pending` 기록과 컨테이너 교체 전에 새 릴리즈의 Compose 정의로 일회성 컨테이너를 실행한다.
+
+```bash
+docker compose run --rm --no-deps -T --name <프로젝트>-migrate-<릴리즈> backend python -m alembic upgrade head
+```
+
+- 같은 이미지·`runtime.env`·`shared-mysql_default` 네트워크를 쓰며 포트는 열지 않는다. 대상 DB는 `jidan_dev`다.
+- 실패하면 배포를 즉시 중단한다. 실행 중인 이전 릴리즈와 `current`는 그대로 두고 새 컨테이너를 띄우지 않는다. 트랜잭션 DDL이 없는 MySQL 특성상 일부 리비전만 적용됐을 수 있으므로 `alembic current`와 실제 테이블을 확인해 정리한 뒤 다시 배포한다.
+- 실행 전에 컨테이너 이름을 권한 `600`의 `migration.pending`에 원자적으로 기록한다. SIGINT·SIGTERM으로 중단되면 실행 중인 명령과 일회성 컨테이너를 정리하고 이전 릴리즈를 유지한다. SIGKILL로 즉시 정리할 수 없으면 다음 배포가 같은 `deploy.lock`을 확보한 뒤 기록된 컨테이너부터 제거한다.
+- Docker 조회·제거 실패 또는 제거 후 컨테이너가 남아 있으면 `migration.pending`을 유지하고 새 마이그레이션·배포를 차단한다. 빈 조회는 생성 요청이 아직 처리 중일 수 있으므로 1초 간격으로 최대 10회 재조회한다. 끝까지 이름이 보이지 않아 생성·완료 여부가 불확실하면 기록을 지우지 않고 배포를 차단한다. `compose run --rm`이 성공을 반환해 실행 완료가 확인된 경우에만 기록을 직접 정리한다.
+- 불확실한 기록이 남으면 운영자가 원래 Compose 클라이언트의 종료, Docker의 해당 생성 요청 완료, 남은 컨테이너 정리와 부분 DDL 적용 상태를 확인한 뒤 기록을 수동으로 정리한다. 빈 조회만으로 기록을 삭제하지 않는다. 이미 끝난 컨테이너도 클라이언트 성공 확인 전에 강제 종료됐다면 이 보수적인 복구 절차가 필요하다. 이 복구는 컨테이너 교체용 `pending`과 별도로 처리한다.
+- 마이그레이션 출력은 Actions 로그에 남는다. 연결 정보는 `DB_*`에서 읽어 출력하지 않으며, 실패한 SQL의 바인딩 값도 출력하지 않는다(`hide_parameters=True`).
+
+**production과 frontend는 자동 실행하지 않는다.** production은 dev에서 적용·검증된 리비전을 포함한 **새 이미지**를 일회성 컨테이너로 실행해 수동 적용한다. 현재 실행 중인 backend 이미지는 새 리비전을 포함하지 않을 수 있으므로 배포 전 `compose exec backend ... upgrade head`의 대상으로 사용하지 않는다.
+
+1. CI가 GHCR에 게시했고 dev에서 검증한 새 backend 이미지 digest를 선택한다. 그 이미지의 리비전이 운영에 배포할 릴리즈와 동일하고 이전 코드와 호환되는지 확인한다(아래 정책). production CI/CD를 시작하기 전에 RPi5의 해당 소스 checkout에서 다음을 실행한다. `image`의 placeholder는 검증한 실제 digest로 바꾼다.
+
    ```bash
-   docker compose exec backend python -m alembic current
-   docker compose exec backend python -m alembic upgrade head
+   (
+     set -euo pipefail
+     umask 077
+     image='ghcr.io/2026-kw-hackathon/29_jidan-backend@sha256:<검증한 새 이미지 digest>'
+     root=/home/ubuntu/apps/jidan/production/backend
+     exec 9>"$root/deploy.lock"
+     flock -w 300 9
+     migration_release=$(mktemp -d "$root/releases/migration.XXXXXXXX")
+     cp deploy/backend/compose.yml "$migration_release/compose.yml"
+     install -m 600 "$root/runtime.env" "$migration_release/runtime.env"
+     printf 'IMAGE_REF=%s\nAPP_PORT=3023\n' "$image" > "$migration_release/.env"
+     python3 deploy/scripts/check_runtime_env.py production "$migration_release/runtime.env"
+     compose=(docker compose -p jidan-production-backend
+       --env-file "$migration_release/.env" -f "$migration_release/compose.yml")
+     "${compose[@]}" config --quiet
+     "${compose[@]}" pull backend
+     "${compose[@]}" run --rm --no-deps -T \
+       --name "jidan-production-backend-migrate-${migration_release##*.}" \
+       backend python -m alembic upgrade head
+     "${compose[@]}" run --rm --no-deps -T backend python -m alembic current
+     "${compose[@]}" run --rm --no-deps -T backend python -m alembic heads
+     rm -rf -- "$migration_release"
+   )
    ```
-   컨테이너에는 `runtime.env`의 `DB_*`가 이미 주입되어 있다. 자격 증명은 출력하거나 기록하지 않는다.
-2. 적용 뒤 `current`가 head 리비전이고 `GET /api/health`가 `database: ok`인지 확인한다.
-3. 마이그레이션이 실패하면 트랜잭션 DDL이 없는 MySQL 특성상 일부만 적용될 수 있다. 새 배포를 진행하지 말고 `alembic current`와 실제 테이블을 확인해 수동으로 정리한다.
 
-**롤백 한계**: 이미지 롤백(배포 스크립트의 자동 복구)은 DB 스키마를 되돌리지 않는다. 스키마를 되돌리려면 이전 이미지로 복구하기 전에 `alembic downgrade -1`을 따로 실행해야 하며, 데이터를 삭제하는 downgrade는 사전에 백업한 뒤에만 수행한다. 따라서 스키마 변경은 이전 버전 코드와 호환되도록 두 단계(추가 → 코드 전환 → 제거)로 나눈다. 자동 실행은 실패 시 중단·복구 정책을 정한 뒤 별도 이슈에서 추가한다.
+   일회성 컨테이너에는 production `runtime.env`의 `DB_*`가 주입된다. 포트를 열지 않고 `shared-mysql_default`로 production DB에만 연결한다. 실행 중인 앱과 `current`는 바꾸지 않으며 자격 증명은 출력하지 않는다.
+2. 새 이미지에서 조회한 `current`와 `heads`가 같은 리비전인지 확인한 뒤 production CI/CD로 앱을 배포한다. 배포 후 `GET /api/health`의 `database: ok`와 새 이미지 적용을 확인한다.
+3. 실패·중단 시 일부만 적용될 수 있다. 새 배포를 진행하지 말고 이름으로 남은 일회성 컨테이너를 확인·정리한다. 새 이미지로 `alembic current`와 실제 테이블을 확인한 뒤 수동으로 복구한다. 실패 시 남은 `migration.*` 디렉터리에는 비공개 환경 파일 사본이 있으므로 복구 완료 후 삭제한다.
 
-dev 환경에서는 `jidan_dev`에 위 절차로 적용한 뒤 헬스체크를 확인한다. 운영 환경은 dev 적용과 검증이 끝난 리비전만 적용한다.
+**expand-only 정책과 롤백 한계**: 이미지 롤백(배포 스크립트의 자동 복구, 커밋 revert 후 재배포)은 DB 스키마를 되돌리지 않는다. dev는 마이그레이션이 성공한 뒤 새 컨테이너 시작·헬스체크가 실패하면 이전 이미지가 새 스키마에서 다시 실행된다. 따라서 리비전은 이전 버전 코드와 호환되는 변경(테이블·nullable 또는 기본값 있는 컬럼·인덱스 추가)만 한다. 컬럼·테이블 삭제, 이름 변경, 타입 축소 같은 비호환 변경은 추가 → 코드 전환 → 제거의 별도 릴리즈로 나눈다. 스키마를 되돌려야 하면 이전 이미지로 복구하기 전에 `alembic downgrade -1`을 수동으로 실행하며, 데이터를 삭제하는 downgrade는 사전에 백업한 뒤에만 수행한다.
 
 ## RPi5 네트워크 및 DB
 
@@ -121,7 +157,7 @@ python3 -m unittest discover -s deploy/tests -v
 1. RPi4에서 테스트 단계와 런타임 이미지를 각각 빌드한다.
 2. 저장소의 `GITHUB_TOKEN`으로 GHCR에 게시한다. 별도의 레지스트리 비밀번호는 필요하지 않다.
 3. RPi5에서 이미지 digest와 환경별 설정으로 새 릴리즈 디렉터리를 만든다.
-4. 이미지를 pull하고 `docker compose up -d --wait`로 시작한다.
+4. 이미지를 pull한다. dev 백엔드는 이때 [DB 마이그레이션](#db-마이그레이션)을 적용하고, 실패하면 컨테이너를 바꾸지 않고 중단한다. 이후 `docker compose up -d --wait`로 시작한다.
 5. 실행 이미지 ID, 로컬 헬스체크, 공개 도메인 응답을 확인한다.
 6. 성공하면 `current` 심볼릭 링크를 새 릴리즈로 전환한다.
 7. 오류·SIGINT·SIGTERM 종료 시 실행 중인 배포 명령을 멈추고 이전 Compose·이미지·환경 파일로 복구를 시도한다. 첫 배포라 이전 릴리즈가 없다면 실패한 컴포넌트를 내린다.
