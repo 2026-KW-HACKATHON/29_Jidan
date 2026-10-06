@@ -1,6 +1,6 @@
 # 일반회원 프로필 API 설계
 
-[Figma Design](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1)의 일반회원 화면에 따른 구현 전 계약이다. [OpenAPI 원본](../openapi.yaml)과 [로컬 Swagger](http://127.0.0.1:5500)에서 확인한다. 실제 API·DB 처리는 아직 구현하지 않았다.
+[Figma Design](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1)의 일반회원 화면에 따른 API 계약이다. [OpenAPI 원본](../openapi.yaml)과 [로컬 Swagger](http://127.0.0.1:5500)에서 확인한다. #106에서 아래 API 4개와 DB 처리를 구현했다.
 
 ## 내 프로필 조회
 
@@ -20,7 +20,7 @@
 
 세 영역의 수정 버튼과 읽기 전용 Google 이메일은 Figma에서 확인했다. API 경로·세션/CSRF·상태 코드·배열 개수 상한·원자적 저장·동시 수정 정책은 서버 구현을 위한 설계 제안이다. 이름·전화번호 등 필드 제약과 신입/경력 조건은 기존 가입 계약을 따른다.
 
-Schema 검사는 조회 응답의 필수 필드·회원 역할·Google 이메일 검증 상태·경력 조건·예시를 확인한다. 실제 회원 식별·정지 계정 차단·DB 조회는 서버 구현 후 통합 테스트가 필요하다.
+Schema 검사는 조회 응답의 필수 필드·회원 역할·Google 이메일 검증 상태·경력 조건·예시를 확인한다. 실제 회원 식별·정지 계정 차단·DB 조회는 `tests/test_worker_profile.py`의 SQLite·MySQL 계약 테스트로 검증한다.
 
 ## 기본 정보 부분 수정
 
@@ -36,7 +36,7 @@ name·phoneNumber·birthDate·gender 중 하나 이상만 제출한다. 생략�
 
 수정에는 회원 세션과 X-CSRF-Token 및 허용 Origin이 필요하다. CSRF/Origin 누락·불일치는 403 CSRF_INVALID다. 관리자 password는 받지 않는다. 기본 정보만 원자적으로 저장하고 경력/가능 시간은 유지한다. 200은 전체 프로필이며 실질 변경이 없는 재요청은 updatedAt을 유지한다. 같은 영역을 동시에 저장하면 서버에서 마지막으로 저장된 요청이 반영된다. 다른 영역을 덮어쓰지 않는다.
 
-Schema로 부분 입력·빈 입력/null·읽기 전용 필드 주입·형식/길이 경계를 검증한다. 미래 날짜, 실제 정규화/저장/세션 조회 반영, CSRF·Origin·동시성은 실제 서버의 통합 테스트 대상이다.
+Schema로 부분 입력·빈 입력/null·읽기 전용 필드 주입·형식/길이 경계를 검증한다. 미래 날짜, 실제 정규화/저장/세션 조회 반영, CSRF·Origin은 `tests/test_profile_basic.py`로 검증한다. 동시 수정은 MySQL 통합 테스트로 검증한다.
 
 ## 근무 정보 전체 교체
 
@@ -61,7 +61,7 @@ experienceLevel과 careers를 함께 제출해 근무 정보만 전체 교체한
 
 현재 근무 중은 isCurrent=true/endMonth=null, 종료 경력은 isCurrent=false와 종료 연월이다. 같은 달 시작·종료는 허용하고 미래 연월과 종료<시작은 서버에서 422로 거절한다. 매장명은 선택이며 지우려면 해당 필드를 생략한다. 담당 업무와 매장명은 앞뒤 공백을 제거한 뒤 검증한다. 항목 ID는 받지 않는다.
 
-회원 세션·CSRF/Origin과 저장/재요청/동시성 정책은 기본 정보 수정과 같다. 기본 정보·가능 시간은 유지하고 200으로 전체 프로필을 반환한다. Schema는 신입/경력 전환 조건, 배열 상한, 필수 필드, 현재 근무/종료일 일치, 연월 형식을 검증한다. 날짜 비교·정규화·원자적 교체/삭제·타 영역 보존은 후속 서버 통합 테스트 대상이다.
+회원 세션·CSRF/Origin과 저장/재요청/동시성 정책은 기본 정보 수정과 같다. 기본 정보·가능 시간은 유지하고 200으로 전체 프로필을 반환한다. Schema는 신입/경력 전환 조건, 배열 상한, 필수 필드, 현재 근무/종료일 일치, 연월 형식을 검증한다. 날짜 비교·정규화·원자적 교체/삭제·타 영역 보존은 `tests/test_profile_careers.py`의 SQLite·MySQL 통합 테스트로 검증한다.
 
 ## 가능 시간 전체 교체
 
@@ -86,4 +86,24 @@ Asia/Seoul 기준 매주 반복, 30분 단위이며 0<기간<=24시간이다. �
 
 서버는 제출된 전체 목록을 요일별로 펼쳐 같은 날·심야의 다음 날·일요일→월요일 중첩을 검사한다. 예를 들어 일요일 22:00~월요일 02:00과 월요일 01:00~03:00은 겹쳐서 422다. 중복 구간도 422이며 실패 시 기존 목록을 유지한다. 기존 목록과 새 목록 사이의 중첩은 검사하지 않는다.
 
-Schema 검사는 개수 상한·필수 필드·요일 중복·30분 형식·자정 표현·타 영역 주입 거절을 확인한다. 0시간/역전/24시간 초과, 구간 중복·심야/주 경계 중첩, 저장 원자성은 실제 서버 통합 테스트 대상이다. Schema 테스트 통과가 이 서버 검증의 구현 완료를 뜻하지 않는다.
+Schema 검사는 개수 상한·필수 필드·요일 중복·30분 형식·자정 표현·타 영역 주입 거절을 확인한다. 0시간/역전/24시간 초과, 구간 중복·심야/주 경계 중첩, 저장 원자성은 `tests/test_profile_availabilities.py`의 SQLite·MySQL 통합 테스트로 검증한다.
+
+## #106 구현과 검증
+
+- `app/worker_profile.py`가 조회·영역별 수정 API 4개를 제공한다. `app/profile_inputs.py`는 가입 입력의 이름·전화번호·생일·경력·가능 시간 규칙을 재사용한다.
+- 기존 `users`·`worker_profiles`·`worker_careers`·`availability_rules`·`availability_days`를 사용하며 스키마·환경변수 변경은 없다. `updatedAt`은 `users.updated_at`으로 반환하고 해당 프로필 영역에 실질 변경이 있을 때만 갱신한다.
+- 수정은 `User` 행을 먼저 `FOR UPDATE`로 잠그고 자식도 최신 잠금 조회로 읽는다. MySQL `REPEATABLE READ`에서 인증 조회로 만들어진 이전 snapshot을 재사용하지 않는다. 같은 회원의 영역별 저장을 직렬화해 마지막 저장과 타 영역 보존을 보장한다.
+- 응답 본문은 잠금을 보유한 트랜잭션 안에서 만들고 commit 성공 후 반환한다. 검증·자식 교체·commit 실패는 기존 프로필 전체를 유지한다.
+- 경력과 가능 시간 그룹은 요청 순서로 저장한다. 그룹 내 요일은 순서 없는 선택 집합으로 비교하고 응답은 `MON`~`SUN` 순으로 반환한다. 요일 순서만 바꾼 요청은 `updatedAt`을 변경하지 않는다.
+- 수정 API 3개는 OpenAPI의 `Idempotency-Key` 필수 대상이 아니다. 회원 세션·CSRF·Origin을 검증하며, 동일한 정규화 내용을 재저장하면 자식 행 ID와 `updatedAt`을 유지한다. 중간에 다른 변경이 있었다면 마지막 요청의 내용을 적용한다.
+- `tests/auth_contract.py`는 실제 프로필 성공·오류 응답을 hand-authored OpenAPI schema로 검증한다. `tests/test_profile_transactions.py`는 모든 수정 API의 인증·CSRF·commit 실패·개인정보 로그 차단과 MySQL 동시 수정의 영역 보존을 검증한다.
+
+```bash
+cd back-end
+python -m ruff check .
+python -m pytest tests/test_worker_profile.py tests/test_profile_basic.py \
+  tests/test_profile_careers.py tests/test_profile_availabilities.py \
+  tests/test_profile_transactions.py
+```
+
+실제 행 잠금·동시성은 전용 `*_test` MySQL DB와 `DB_*`를 설정한 뒤 `JIDAN_REQUIRE_MYSQL=1 python -m pytest`로 검증한다. DB 설정 없는 실행에서 MySQL skip은 MySQL 검증 완료를 뜻하지 않는다.
