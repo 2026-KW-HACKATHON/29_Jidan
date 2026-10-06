@@ -57,6 +57,7 @@ def test_approve_and_retry_keep_first_time_and_session_permissions(admin_api, ap
         assert store.approval_status == request.status == "APPROVED"
         assert store.approved_at == request.approved_at
     assert "request_id=" in caplog.text and request_id in caplog.text and PASSWORD not in caplog.text
+    assert f"request_id={first.headers['X-Request-ID']} " in caplog.text
 
 
 def test_authentication_precedes_existence(admin_api, db_engine):
@@ -97,7 +98,7 @@ def test_approval_disallows_server_field_injection(admin_api, approval_target, f
 
 
 @pytest.mark.parametrize("stage", ["flush", "commit"])
-def test_approval_failure_rolls_back_both_rows(admin_api, approval_target, db_engine, monkeypatch, stage):
+def test_approval_failure_rolls_back_both_rows(admin_api, approval_target, db_engine, monkeypatch, stage, caplog):
     store_id, request_id, _ = approval_target
     original = getattr(Session, stage)
     def fail(db, *args, **kwargs):
@@ -113,8 +114,12 @@ def test_approval_failure_rolls_back_both_rows(admin_api, approval_target, db_en
     try:
         with monkeypatch.context() as m:
             m.setattr(Session, stage, fail)
-            r = approve(admin_api, request_id)
+            with caplog.at_level("INFO", logger="jidan.store_approval"):
+                r = approve(admin_api, request_id)
             assert r.status_code == 500 and "secret" not in r.text
+            assert r.headers["X-Request-ID"] == r.json()["requestId"]
+            assert f"request_id={r.json()['requestId']} " in caplog.text
+            assert "result=INTERNAL_ERROR" in caplog.text and "secret-do-not-return" not in caplog.text
     finally:
         event.remove(Session, "after_flush", mark)
     with Session(db_engine) as db:
@@ -150,3 +155,29 @@ def test_approve_requires_origin_and_valid_uuid(admin_api, approval_target):
     for headers in ({}, {"Origin": "https://foreign.test"}):
         assert admin_api.post(path, json={"password": PASSWORD}, headers=headers).status_code == 403
     assert approve(admin_api, "invalid").status_code == 422
+
+
+@pytest.mark.parametrize("scenario,status", [("missing", 404), ("role", 409), ("password", 401)])
+def test_failed_approval_audit_id_matches_client_response(admin_api, approval_target, db_engine, caplog,
+                                                        scenario, status):
+    request_id = approval_target[1]
+    password = PASSWORD
+    if scenario == "missing": request_id = str(uuid4())
+    if scenario == "password": password = "wrong-password"
+    if scenario == "role":
+        with Session(db_engine) as db:
+            db.get(User, admin_api.owner_id).role = "WORKER"
+            db.commit()
+    path = f"/api/admin/store-approval-requests/{request_id}/approve"
+    with caplog.at_level("INFO", logger="jidan.store_approval"):
+        response = admin_api.post(path, json={"password": password},
+                                  headers={**ORIGIN, "X-Request-ID": "untrusted-client-id"})
+    assert response.status_code == status
+    correlation = response.json()["requestId"]
+    assert response.headers["X-Request-ID"] == correlation and correlation != "untrusted-client-id"
+    records = [r.getMessage() for r in caplog.records if r.name == "jidan.store_approval"]
+    assert len(records) == 1
+    assert f"request_id={correlation} " in records[0]
+    assert f"approval_request_id={request_id} " in records[0]
+    assert f"result={response.json()['code']}" in records[0]
+    assert password not in records[0] and "untrusted-client-id" not in records[0]

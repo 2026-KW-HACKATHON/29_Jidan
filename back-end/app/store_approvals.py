@@ -3,7 +3,7 @@ import logging
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import Field, field_validator
 from sqlalchemy import func, select
 
@@ -11,10 +11,11 @@ from app.admin_password import AdminPasswordInput, verify_password
 from app.csrf import require_allowed_origin
 from app.db import SessionDep, utcnow
 from app.db.models import Store, StoreApprovalRequest, User
-from app.errors import ApiError, ErrorCode, new_request_id
+from app.errors import ApiError, ErrorCode
 from app.owner_stores import read_snapshot, store_body
 from app.pagination import PageParams, page_response
 from app.ratelimit import AdminAttempt
+from app.request_id import request_id_for
 
 router = APIRouter(prefix="/api/admin/store-approval-requests",
                    dependencies=[Depends(require_allowed_origin)])
@@ -64,13 +65,14 @@ def search_approvals(body: ApprovalSearchInput, attempt: AdminAttempt, db: Sessi
 
 
 @router.post("/{requestId}/approve")
-def approve_store(requestId: UUID, body: AdminPasswordInput, attempt: AdminAttempt, db: SessionDep):
-    verify_password(body.password, attempt)
-    audit_id = new_request_id()
+def approve_store(requestId: UUID, body: AdminPasswordInput, attempt: AdminAttempt,
+                  db: SessionDep, request: Request):
+    audit_id = request_id_for(request)
     def locked(model, row_id):
         return db.scalar(select(model).where(model.id == row_id).with_for_update()
                          .execution_options(populate_existing=True))
     try:
+        verify_password(body.password, attempt)
         approval = locked(StoreApprovalRequest, str(requestId))
         if approval is None:
             raise ApiError(404, ErrorCode.STORE_APPROVAL_REQUEST_NOT_FOUND)
@@ -88,9 +90,10 @@ def approve_store(requestId: UUID, body: AdminPasswordInput, attempt: AdminAttem
             db.flush()
         result = approval_body(approval, store, applicant)
         db.commit()  # status and the derived session permissions become durable together
-    except ApiError as exc:
+    except Exception as exc:
         logger.info("operation=approve request_id=%s approval_request_id=%s at=%s result=%s",
-                    audit_id, requestId, utcnow().isoformat(), exc.code)
+                    audit_id, requestId, utcnow().isoformat(),
+                    exc.code if isinstance(exc, ApiError) else ErrorCode.INTERNAL_ERROR)
         raise
     logger.info("operation=approve request_id=%s approval_request_id=%s at=%s result=%s",
                 audit_id, requestId, utcnow().isoformat(), "approved" if changed else "already_approved")
