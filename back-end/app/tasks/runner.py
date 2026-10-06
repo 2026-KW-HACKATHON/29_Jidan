@@ -34,6 +34,7 @@ Lifecycle of a task (`background_tasks` row):
 
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -533,6 +534,12 @@ class BackgroundRunner:
     _inflight: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
+    def __post_init__(self) -> None:
+        if type(self.workers) is not int or self.workers <= 0:
+            raise ValueError("TASK_RUNNER_WORKERS must be a positive integer")
+        if not math.isfinite(self.poll_seconds) or self.poll_seconds <= 0:
+            raise ValueError("TASK_RUNNER_POLL_SECONDS must be finite and positive")
+
     def start(self) -> None:
         self._executor = ThreadPoolExecutor(max_workers=self.workers + 1, thread_name_prefix="jidan-task")
         self._thread = threading.Thread(target=self._loop, name="jidan-task-dispatcher", daemon=True)
@@ -581,6 +588,18 @@ def runner_mode() -> str:
     return mode
 
 
+def runner_settings() -> BackgroundRunner:
+    try:
+        workers = int(os.getenv("TASK_RUNNER_WORKERS", "2"))
+    except ValueError:
+        raise ValueError("TASK_RUNNER_WORKERS must be a positive integer") from None
+    try:
+        poll_seconds = float(os.getenv("TASK_RUNNER_POLL_SECONDS", "2"))
+    except ValueError:
+        raise ValueError("TASK_RUNNER_POLL_SECONDS must be finite and positive") from None
+    return BackgroundRunner(workers=workers, poll_seconds=poll_seconds)
+
+
 @asynccontextmanager
 async def task_runner_lifespan(_app):
     """Start the background runner with the app (no-op in manual mode)."""
@@ -590,10 +609,7 @@ async def task_runner_lifespan(_app):
     import app.tasks.handlers  # noqa: F401 - registers every task handler
 
     validate_task_leases()
-    runner = BackgroundRunner(
-        workers=int(os.getenv("TASK_RUNNER_WORKERS", "2")),
-        poll_seconds=float(os.getenv("TASK_RUNNER_POLL_SECONDS", "2")),
-    )
+    runner = runner_settings()
     runner.start()
     try:
         yield

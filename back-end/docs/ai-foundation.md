@@ -172,6 +172,8 @@ register_handler(TaskHandler(kind="EVALUATION", execute=execute, apply=apply, fa
 
 ### 실행 모드와 테스트
 
+실행기의 `TASK_RUNNER_WORKERS`는 양의 정수, `TASK_RUNNER_POLL_SECONDS`는 유한한 양수여야 한다. 잘못된 값(0·음수·NaN·무한대·빈 문자열·형식 오류)은 API 시작 시 거부하며, `BACKGROUND_JOBS=off`나 수동 모드에서도 설정 검증은 수행한다.
+
 - 기본 `TASK_RUNNER_MODE=background`: `app/lifespan.py`의 `LIFESPANS`에 등록된 `ai_task_runner_lifespan`이 디스패처 스레드와 작업 스레드(`TASK_RUNNER_WORKERS`, 기본 2)를 띄운다. commit 시 즉시 깨어나고 `TASK_RUNNER_POLL_SECONDS`(기본 2초)마다, lease 복구는 30초마다 확인한다. `BACKGROUND_JOBS=off`이거나 `TASK_RUNNER_MODE=manual`이면 스레드를 띄우지 않는다. 미디어 보관 정리는 `PERIODIC_JOBS`의 `media-retention`(5분)이다.
 - 테스트는 autouse fixture가 `manual` 모드로 두므로 스레드가 없다. `drain()`으로 현재 스레드에서 실행한다. backoff된 작업은 시각을 넘겨 실행한다: `drain(now=utcnow() + timedelta(minutes=1))`.
 - 여러 프로세스가 같은 DB를 써도 `claim`은 `SKIP LOCKED` + 조건부 UPDATE로 한 작업을 한 번만 임대한다(MySQL 동시성 테스트).

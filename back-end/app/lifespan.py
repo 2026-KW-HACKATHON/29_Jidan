@@ -20,7 +20,7 @@ from app.notification_sweeps import INTERVAL_SECONDS, run_notification_sweeps
 from app.oauth_cleanup import oauth_cleanup_lifespan
 from app.periodic import PeriodicJob, periodic_jobs
 from app.tasks import task_runner_lifespan
-from app.tasks.runner import runner_mode
+from app.tasks.runner import runner_mode, runner_settings
 from app.work_reminders import reminder_hour
 
 PERIODIC_JOBS: list[PeriodicJob] = [
@@ -79,6 +79,7 @@ def validate_background_settings() -> None:
     validate_database_settings()
     background_jobs_enabled()
     runner_mode()
+    runner_settings()
     reminder_hour()
     invitation_mail.validate_mail_settings()
 

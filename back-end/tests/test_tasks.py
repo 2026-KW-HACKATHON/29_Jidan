@@ -297,3 +297,22 @@ def test_runner_and_media_retention_are_registered_once(monkeypatch):
     monkeypatch.setenv("TASK_RUNNER_MODE", "sometimes")
     with pytest.raises(ValueError):
         app_lifespan.validate_background_settings()
+
+
+@pytest.mark.parametrize("name,value", [
+    *(("TASK_RUNNER_WORKERS", v) for v in ("0", "-1", "1.5", "nan", "inf", "x", "")),
+    *(("TASK_RUNNER_POLL_SECONDS", v) for v in ("0", "-1", "nan", "inf", "-inf", "x", "")),
+])
+def test_runner_numeric_settings_rejected_at_startup(monkeypatch, name, value):
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=name):
+        runner_module.runner_settings()
+
+
+@pytest.mark.parametrize("workers,poll", [("1", "0.01"), ("2", "2")])
+def test_runner_valid_numeric_settings(monkeypatch, workers, poll):
+    monkeypatch.setenv("TASK_RUNNER_WORKERS", workers)
+    monkeypatch.setenv("TASK_RUNNER_POLL_SECONDS", poll)
+    runner = runner_module.runner_settings()
+    assert runner.workers == int(workers) and runner.poll_seconds == float(poll)
+    assert runner._thread is None and runner._executor is None
