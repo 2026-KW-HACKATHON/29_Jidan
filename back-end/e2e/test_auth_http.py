@@ -1,5 +1,6 @@
 """Auth HTTP → MySQL scenarios; external Google verification is the seed boundary."""
 from datetime import timedelta
+from http.cookies import SimpleCookie
 
 import httpx
 import pytest
@@ -9,37 +10,90 @@ from sqlalchemy.orm import Session
 from app import auth
 from app.db import utcnow
 from app.db.models import (
+    WEEKDAYS,
     AuthSession,
     AvailabilityDay,
     AvailabilityRule,
     IdempotencyRecord,
     User,
     WorkerProfile,
+    WorkerCareer,
 )
-from e2e.conftest import registration_row
+from e2e.conftest import registration_row, worker_snapshot
 
 
-def test_worker_registration_persists_entire_aggregate_and_replays(registration, real_db):
+@pytest.mark.parametrize("experienced", [False, True])
+def test_worker_registration_persists_entire_aggregate_and_replays(registration, real_db, experienced):
     case = registration
+    if experienced:
+        case.worker.update(experienceLevel="EXPERIENCED", careers=[
+            {"industry": "CAFE", "duties": "음료 제조", "storeName": "월계 카페",
+             "startMonth": "2024-03", "endMonth": None, "isCurrent": True},
+            {"industry": "OTHER", "duties": "매장 정리", "startMonth": "2022-01",
+             "endMonth": "2023-12", "isCurrent": False},
+        ], availabilities=[
+            {"days": ["FRI", "MON"], "startTime": "09:30", "endTime": "14:00",
+             "endsNextDay": False},
+            {"days": ["SUN"], "startTime": "22:00", "endTime": "02:00",
+             "endsNextDay": True},
+        ])
     key = case.headers()["Idempotency-Key"]
     response = case.register(key=key)
     assert response.status_code == 201, response.text
     assert response.headers["cache-control"] == "no-store"
-    assert "HttpOnly" in response.headers["set-cookie"]
+    cookies = SimpleCookie()
+    for header in response.headers.get_list("set-cookie"):
+        cookies.load(header)
+    session_cookie = cookies[auth.SESSION_COOKIE_NAME]
+    assert session_cookie["httponly"] and session_cookie["path"] == "/"
+    assert session_cookie["samesite"].lower() == "lax" and not session_cookie["domain"]
+    assert int(session_cookie["max-age"]) > 0
+    assert not session_cookie["secure"]  # dedicated plain HTTP local environment
+    deletion = cookies[auth.REGISTRATION_COOKIE_NAME]
+    assert deletion["max-age"] == "0" and deletion["path"] == "/api/auth"
+    assert deletion["httponly"] and deletion["samesite"].lower() == "lax"
+    assert auth.REGISTRATION_COOKIE_NAME not in case.client.cookies
     user_id = response.json()["user"]["id"]
     token = case.client.cookies.get(auth.SESSION_COOKIE_NAME)
     assert token and response.json()["nextAction"] == "WORKER_HOME"
     with Session(real_db) as db:
         user = db.get(User, user_id)
         assert user.google_sub == case.subject and user.name == case.worker["name"]
-        assert db.get(WorkerProfile, user_id).experience_level == "NEW"
-        rule = db.scalar(select(AvailabilityRule).where(AvailabilityRule.worker_id == user_id))
-        assert rule.start_time.hour == 9 and rule.end_time.hour == 14
-        assert db.scalar(select(AvailabilityDay.weekday).where(AvailabilityDay.rule_id == rule.id)) == "MON"
+        profile = db.get(WorkerProfile, user_id)
+        assert (profile.birth_date.isoformat(), profile.gender, profile.experience_level) == (
+            case.worker["birthDate"], case.worker["gender"], case.worker["experienceLevel"])
+        careers = db.scalars(select(WorkerCareer).where(WorkerCareer.worker_id == user_id)
+                             .order_by(WorkerCareer.sort_order)).all()
+        assert len(careers) == len(case.worker["careers"])
+        for index, (row, expected) in enumerate(zip(careers, case.worker["careers"], strict=True)):
+            assert (row.sort_order, row.industry, row.duties, row.store_name, row.start_month,
+                    row.end_month, row.is_current) == (
+                index, expected["industry"], expected["duties"], expected.get("storeName"),
+                expected["startMonth"], expected["endMonth"], expected["isCurrent"])
+        rules = db.scalars(select(AvailabilityRule).where(AvailabilityRule.worker_id == user_id)
+                           .order_by(AvailabilityRule.sort_order)).all()
+        assert len(rules) == len(case.worker["availabilities"])
+        for index, (row, expected) in enumerate(zip(rules, case.worker["availabilities"], strict=True)):
+            assert (row.sort_order, row.start_time.strftime("%H:%M"), row.end_time.strftime("%H:%M"),
+                    row.ends_next_day) == (
+                index, expected["startTime"], expected["endTime"], expected["endsNextDay"])
+            days = db.scalars(select(AvailabilityDay.weekday).where(
+                AvailabilityDay.rule_id == row.id)).all()
+            assert sorted(days, key=WEEKDAYS.index) == sorted(expected["days"], key=WEEKDAYS.index)
         assert registration_row(db, case).consumed_at is not None
         assert db.scalar(select(AuthSession).where(AuthSession.user_id == user_id)).token_hash == auth.hash_token(token)
         assert db.scalar(select(IdempotencyRecord).where(IdempotencyRecord.idempotency_key == key)) is not None
-    assert case.client.get("/api/auth/session").json()["user"]["id"] == user_id
+        persisted = worker_snapshot(db, user_id)
+    session = case.client.get("/api/auth/session")
+    assert session.status_code == 200 and session.json()["user"]["id"] == user_id
+    profile = case.client.get("/api/users/me/profile")
+    assert profile.status_code == 200
+    assert profile.json()["careers"] == case.worker["careers"]
+    for field_name in ("name", "phoneNumber", "birthDate", "gender", "experienceLevel"):
+        assert profile.json()[field_name] == case.worker[field_name]
+    assert len(profile.json()["availabilities"]) == len(case.worker["availabilities"])
+    for actual, expected in zip(profile.json()["availabilities"], case.worker["availabilities"], strict=True):
+        assert actual == {**expected, "days": sorted(expected["days"], key=WEEKDAYS.index)}
     replay = case.register(key=key)
     assert replay.status_code == 201 and replay.json() == response.json()
     assert replay.headers["Idempotent-Replayed"] == "true" and "set-cookie" not in replay.headers
@@ -51,6 +105,7 @@ def test_worker_registration_persists_entire_aggregate_and_replays(registration,
         assert db.scalar(select(func.count()).select_from(User).where(User.google_sub == case.subject)) == 1
         assert db.scalar(select(func.count()).select_from(AuthSession).where(AuthSession.user_id == user_id)) == 1
         assert db.get(User, user_id).name == case.worker["name"]
+        assert worker_snapshot(db, user_id) == persisted
 
 
 @pytest.mark.parametrize("change", [

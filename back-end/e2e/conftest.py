@@ -18,7 +18,14 @@ from sqlalchemy.orm import Session
 
 from app import auth
 from app.db import get_engine, reset_engine
-from app.db.models import RegistrationSession
+from app.db.models import (
+    AvailabilityDay,
+    AvailabilityRule,
+    RegistrationSession,
+    User,
+    WorkerCareer,
+    WorkerProfile,
+)
 
 WORKER = {
     "name": "HTTP 테스트", "phoneNumber": "01012345678", "birthDate": "2001-03-14",
@@ -86,7 +93,10 @@ def registration(base_url, real_db):
         issued = auth.create_registration_session(subject, f"{subject}@e2e.test", db=db)
         db.commit()
     with httpx.Client(base_url=base_url, timeout=10, trust_env=False) as client:
-        client.cookies.set(auth.REGISTRATION_COOKIE_NAME, issued.token, path="/api/auth")
+        # Match CookieJar's host-only domain so the server's deletion removes the seed.
+        host = urlsplit(base_url).hostname
+        domain = host if "." in host else f"{host}.local"
+        client.cookies.set(auth.REGISTRATION_COOKIE_NAME, issued.token, domain=domain, path="/api/auth")
         yield RegistrationCase(client, subject, issued.token)
 
 
@@ -101,3 +111,19 @@ def registration_row(db, case):
     return db.scalar(select(RegistrationSession).where(
         RegistrationSession.token_hash == auth.hash_token(case.registration_token),
     ))
+
+
+def worker_snapshot(db, user_id):
+    """All persisted aggregate columns, independent of response serialization."""
+    snapshot = {}
+    for model, field_name in ((User, "id"), (WorkerProfile, "user_id"),
+                              (WorkerCareer, "worker_id"), (AvailabilityRule, "worker_id")):
+        table = model.__table__
+        snapshot[table.name] = [tuple(row) for row in db.execute(
+            select(table).where(getattr(model, field_name) == user_id)
+            .order_by(*table.primary_key.columns))]
+    snapshot[AvailabilityDay.__tablename__] = [tuple(row) for row in db.execute(
+        select(AvailabilityDay.__table__).join(AvailabilityRule)
+        .where(AvailabilityRule.worker_id == user_id)
+        .order_by(AvailabilityDay.rule_id, AvailabilityDay.weekday))]
+    return snapshot
