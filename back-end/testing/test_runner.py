@@ -13,6 +13,7 @@ RUNNER = Path(__file__).with_name("run-e2e.sh")
 @pytest.mark.parametrize("phase,cleanup_fails,expected", [
     ("none", False, 0), ("up", False, 7), ("run", False, 9),
     ("none", True, 1), ("run", True, 9),
+    ("api-up", False, 8), ("http", False, 10),
 ])
 def test_runner_propagates_failure_and_only_cleans_its_project(tmp_path, phase, cleanup_fails, expected):
     log = tmp_path / "commands"
@@ -20,6 +21,8 @@ def test_runner_propagates_failure_and_only_cleans_its_project(tmp_path, phase, 
     docker.write_text('''#!/bin/sh
 printf '%s\\n' "$*" >> "$TEST_COMMAND_LOG"
 case "$*" in
+  *" up "*"e2e-api"*) [ "$FAIL_PHASE" != api-up ] || exit 8 ;;
+  *" run "*"--no-deps e2e"*) [ "$FAIL_PHASE" != http ] || exit 10 ;;
   *" up "*) [ "$FAIL_PHASE" != up ] || exit 7 ;;
   *" run "*) [ "$FAIL_PHASE" != run ] || exit 9 ;;
   *" down "*) [ "$FAIL_CLEANUP" != yes ] || exit 4 ;;
@@ -41,6 +44,11 @@ esac
     assert (reports / "services.log").exists()
     if phase == "up":
         assert not any(" run " in line for line in commands)
+    if phase == "run":
+        assert not any(" up " in line and line.endswith("e2e-api") for line in commands)
+    if phase == "none":
+        phases = [line for line in commands if " up " in line or " run " in line]
+        assert [line.split()[-1] for line in phases] == ["e2e-mysql", "checks", "e2e-api", "e2e"]
 
 
 @pytest.mark.parametrize("sent_signal,expected", [(signal.SIGINT, 130), (signal.SIGTERM, 143)])

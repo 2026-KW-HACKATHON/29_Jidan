@@ -35,5 +35,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'interrupted 130' INT
 trap 'interrupted 143' TERM
+run_compose up --detach --wait --wait-timeout 180 e2e-mysql
+run_compose run --build --rm --no-deps checks
+# Schema-resetting Python tests finish before the API/background jobs start.
 run_compose up --build --detach --wait --wait-timeout 180 e2e-api
 run_compose run --build --rm --no-deps e2e
