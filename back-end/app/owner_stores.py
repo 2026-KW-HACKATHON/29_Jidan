@@ -3,13 +3,18 @@ from uuid import UUID
 
 from fastapi import APIRouter
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.auth import CurrentOwner
 from app.auth_views import STORE_PERMISSIONS
+from app.csrf import CsrfOwner
 from app.db import SessionDep, utcnow
-from app.db.models import Store, StoreApprovalRequest
+from app.db.models import Store, StoreApprovalRequest, User
 from app.errors import ApiError, ErrorCode
+from app.idempotency import IdempotencyKey, IdempotentResult, run_idempotent
 from app.pagination import Pagination, page_response
+from app.registration_inputs import StoreInput
+from app.store_address import verify_store_address
 
 router = APIRouter()
 
@@ -68,3 +73,62 @@ def get_store(storeId: UUID, owner: CurrentOwner, db: SessionDep):
     store = owned_store(db, owner.user_id, str(storeId))
     approval = db.scalar(select(StoreApprovalRequest).where(StoreApprovalRequest.store_id == store.id))
     return owner_store_body(store, approval)
+
+
+def current_owner(db, owner_id):
+    user = db.scalar(select(User).where(User.id == owner_id).with_for_update()
+                     .execution_options(populate_existing=True))
+    if user is None:
+        raise ApiError(401, ErrorCode.SESSION_EXPIRED)
+    if user.status != "ACTIVE":
+        raise ApiError(403, ErrorCode.ACCOUNT_SUSPENDED)
+    if user.role != "OWNER":
+        raise ApiError(403, ErrorCode.FORBIDDEN)
+    return user
+
+
+@router.post("/api/stores", status_code=201)
+def create_store(body: StoreInput, owner: CsrfOwner, db: SessionDep, key: IdempotencyKey):
+    def work():
+        try:
+            address = verify_store_address(body)
+        except ApiError as exc:
+            # The shared registration validator uses store.*; this endpoint's body is flat.
+            for error in exc.field_errors:
+                error["field"] = error["field"].removeprefix("store.")
+            raise
+        current_owner(db, owner.user_id)
+        if db.scalar(select(Store.id).where(
+            Store.business_registration_number == body.businessRegistrationNumber,
+        )) is not None:
+            raise ApiError(409, ErrorCode.STORE_ALREADY_REGISTERED)
+        store = Store(owner_id=owner.user_id, name=body.name, industry=body.industry,
+                      postal_code=body.postalCode, address=address, detail_address=body.detailAddress,
+                      business_registration_number=body.businessRegistrationNumber,
+                      phone_number=body.phoneNumber, approval_status="PENDING")
+        db.add(store)
+        db.flush()
+        approval = StoreApprovalRequest(store_id=store.id, status="PENDING")
+        db.add(approval)
+        db.flush()
+        return IdempotentResult(201, owner_store_body(store, approval))
+
+    def revalidate():
+        current_owner(db, owner.user_id)
+        store = db.scalar(select(Store).where(
+            Store.business_registration_number == body.businessRegistrationNumber,
+            Store.owner_id == owner.user_id,
+        ).with_for_update().execution_options(populate_existing=True))
+        if store is None:
+            raise ApiError(403, ErrorCode.FORBIDDEN)
+
+    try:
+        return run_idempotent(db=db, principal=owner, key=key, method="POST", path="/api/stores",
+                              body=body, handler=work, revalidate=revalidate)
+    except IntegrityError:
+        # Known UNIQUE conflict only; unrelated persistence failures remain internal errors.
+        if db.scalar(select(Store.id).where(
+            Store.business_registration_number == body.businessRegistrationNumber,
+        )) is not None:
+            raise ApiError(409, ErrorCode.STORE_ALREADY_REGISTERED) from None
+        raise ApiError(500, ErrorCode.INTERNAL_ERROR) from None
