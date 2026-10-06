@@ -15,8 +15,8 @@
 ```
 
 - password는 매 요청 body에 필수 입력한다. 위 값은 실제 비밀번호가 아닌 자리 표시자다.
-- status 생략 시 모든 점주의 승인 대기·완료 신청을 조회한다. PENDING/APPROVED 필터를 선택할 수 있다.
-- 기본 page=0, size=20, 최대 size=100. submittedAt 및 id 내림차순으로 정렬한다.
+- status 생략 시 모든 점주의 승인 대기·완료 신청을 조회한다. PENDING/APPROVED 필터를 선택할 수 있다. 명시적인 null은 422로 거부한다.
+- 기본 page=0, size=20, 최대 size=100. page는 0 이상의 정수이며 상한이 없다. 전체 건수를 넘는 offset은 DB 조회 없이 빈 목록을 반환한다. submittedAt 및 id 내림차순으로 정렬한다.
 - 신청 ID, 신청자 식별/연락 정보, 매장 정보, 상태, 신청/승인 시각을 반환한다.
 - 빈 결과나 마지막 페이지를 넘긴 요청은 200, 빈 items를 반환한다. 필터와 totalItems는 현재 DB 기준이며 조회 간 데이터 변동이 가능하다.
 - 점주 가입/최초 매장 저장과 동일 트랜잭션에서 승인 신청을 생성한다. 최초 PENDING/approvedAt=null 상태다.

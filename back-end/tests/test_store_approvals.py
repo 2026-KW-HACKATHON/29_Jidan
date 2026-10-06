@@ -127,10 +127,10 @@ def test_search_empty_database(api):
 
 @pytest.mark.parametrize("body", [
     {}, {"password": ""}, {"password": "   "}, {"password": "x" * 1025}, {"password": 123},
-    {"password": None}, {"password": PASSWORD, "status": "REJECTED"},
+    {"password": None}, {"password": PASSWORD, "status": "REJECTED"}, {"password": PASSWORD, "status": None},
     {"password": PASSWORD, "page": -1}, {"password": PASSWORD, "size": 0},
     {"password": PASSWORD, "size": 101}, {"password": PASSWORD, "page": True},
-    {"password": PASSWORD, "page": "1"}, {"password": PASSWORD, "page": 1_000_001},
+    {"password": PASSWORD, "page": "1"},
     {"password": PASSWORD, "approvedBy": "x"},
 ])
 def test_search_validation(api, db_engine, body):
@@ -832,3 +832,12 @@ def test_origin_refusal_is_recorded_without_the_password(api, db_engine, caplog)
     for path in (SEARCH, _approve_path(request_id)):
         assert f"Admin operation refused: path={path} result=CSRF_INVALID" in records, records
     assert PASSWORD.strip() not in caplog.text and "evil.example" not in caplog.text
+
+
+@pytest.mark.parametrize("page", [1_000_001, 2**64, 10**100])
+def test_search_unbounded_page_returns_empty(api, db_engine, page):
+    _seed(db_engine)
+    response = api.post(SEARCH, json={"password": PASSWORD, "page": page})
+    assert response.status_code == 200, response.text
+    assert response.json() == {"items": [], "page": page, "size": 20,
+                               "totalItems": 3, "totalPages": 1}

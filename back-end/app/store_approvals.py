@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Path, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -28,7 +28,7 @@ from app.db import SessionDep, utcnow
 from app.db.models import Store, StoreApprovalRequest, User
 from app.errors import ApiError, ErrorCode
 from app.idempotency import is_lock_contention
-from app.pagination import MAX_PAGE, MAX_SIZE, PageParams, page_response
+from app.pagination import MAX_SIZE, PageParams, page_response
 from app.ratelimit import AdminAttempt
 from app.store_access import APPROVED, PENDING, UUID_PATTERN, normalize_uuid
 from app.stores import iso, store_fields
@@ -70,8 +70,15 @@ class AdminBody(BaseModel):
 
 class ApprovalSearchBody(AdminBody):
     status: Literal["PENDING", "APPROVED"] | None = None
-    page: Annotated[StrictInt, Field(ge=0, le=MAX_PAGE)] = 0
+    page: Annotated[StrictInt, Field(ge=0)] = 0
     size: Annotated[StrictInt, Field(ge=1, le=MAX_SIZE)] = 20
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def non_null_status(cls, value):
+        if value is None:
+            raise ValueError("status must be omitted or PENDING/APPROVED")
+        return value
 
 
 @contextmanager
@@ -127,7 +134,7 @@ def search_approval_requests(body: ApprovalSearchBody, attempt: AdminAttempt, db
             base = base.where(StoreApprovalRequest.status == body.status)
         params = PageParams(body.page, body.size)
         total = db.scalar(select(func.count()).select_from(base.subquery()))
-        rows = db.execute(
+        rows = [] if params.offset >= total else db.execute(
             base.order_by(StoreApprovalRequest.submitted_at.desc(), StoreApprovalRequest.id.desc())
             .offset(params.offset).limit(params.limit)
         ).all()
