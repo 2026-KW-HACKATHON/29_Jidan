@@ -9,6 +9,8 @@ import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/deploy.sh'
 IMAGE = 'ghcr.io/2026-kw-hackathon/29_jidan-frontend@sha256:' + 'a' * 64
+VALID_HASH = "pbkdf2_sha256$600000$c3Nzc3Nzc3Nzc3Nzc3Nzcw==$ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQ="
+
 FAKE = '''#!/usr/bin/env python3
 import json, os, signal, subprocess, sys, time
 from pathlib import Path
@@ -149,7 +151,7 @@ class DeployTests(unittest.TestCase):
         self.root.mkdir(parents=True, exist_ok=True)
         origin = ('https://dev-jidan.leehyowon14.dev' if environment == 'dev'
                   else 'https://jidan.leehyowon14.dev')
-        (self.root / 'runtime.env').write_text(f'APP_ENV={environment}\nALLOWED_ORIGINS={origin}\n')
+        (self.root / 'runtime.env').write_text(f'APP_ENV={environment}\nALLOWED_ORIGINS={origin}\nADMIN_PASSWORD_HASH={VALID_HASH}\n')
         (self.root / 'runtime.env').chmod(0o600)
         return IMAGE.replace('-frontend@', '-backend@')
 
@@ -212,7 +214,7 @@ class DeployTests(unittest.TestCase):
                             'ALLOWED_ORIGINS=https://dev-jidan.leehyowon14.dev,https://jidan.leehyowon14.dev'):
                 with self.subTest(environment=environment, content=content):
                     self.calls.write_text('')
-                    path.write_text(content + '\nDB_PASSWORD=private-do-not-print\n')
+                    path.write_text(content + f'\nDB_PASSWORD=private-do-not-print\nADMIN_PASSWORD_HASH={VALID_HASH}\n')
                     result, calls = self.run_deploy(environment=environment, component='backend', image=image)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(calls, [])
@@ -226,6 +228,29 @@ class DeployTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(calls, [])
             self.assertEqual((self.root / 'current').resolve(), prev)
+
+    def test_invalid_backend_hash_never_pulls_migrates_or_changes_containers(self):
+        for environment in ('dev', 'production'):
+            image = self.backend(environment)
+            prev = self.previous()
+            path = self.root / 'runtime.env'
+            origin = ('https://dev-jidan.leehyowon14.dev' if environment == 'dev'
+                      else 'https://jidan.leehyowon14.dev')
+            for content in ('', 'ADMIN_PASSWORD_HASH=', 'ADMIN_PASSWORD_HASH=private-do-not-print',
+                            'ADMIN_PASSWORD_HASH="' + VALID_HASH + '"',
+                            'ADMIN_PASSWORD_HASH=' + VALID_HASH.replace('$600000$', '$1$'),
+                            'ADMIN_PASSWORD_HASH=' + VALID_HASH + '\nADMIN_PASSWORD_HASH=' + VALID_HASH):
+                with self.subTest(environment=environment, content=content):
+                    self.calls.write_text('')
+                    path.write_text(f'ALLOWED_ORIGINS={origin}\n{content}\n')
+                    result, calls = self.run_deploy(environment=environment, component='backend', image=image)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(calls, [])
+                    self.assertEqual((self.root / 'current').resolve(), prev)
+                    self.assertFalse((self.root / 'pending').exists())
+                    self.assertFalse((self.root / 'migration.pending').exists())
+                    self.assertNotIn('private-do-not-print', result.stdout + result.stderr)
+                    self.assertNotIn(VALID_HASH, result.stdout + result.stderr)
 
     def test_backend_runtime_mismatch_restores_previous_release(self):
         for environment in ('dev', 'production'):
