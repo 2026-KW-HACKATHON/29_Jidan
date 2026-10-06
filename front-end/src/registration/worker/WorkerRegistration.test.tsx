@@ -137,3 +137,15 @@ it('확인 화면의 수정 취소는 값과 제출 요청 키를 보존한다',
  await screen.findByText('프로필 등록이 완료됐어요')
  expect(vi.mocked(service.submit).mock.calls[0][0].name).toBe('김지수')
 })
+
+it('인증된 같은 이메일로 재진입할 때 입력을 복원하고 다른 이메일에는 노출하지 않는다',async()=>{
+ sessionStorage.setItem('jidan.worker-draft.v1',JSON.stringify({scope:'member@example.com',draft:{...valid,name:'복원 이름'},requestKey:'retry-key',savedAt:Date.now()}))
+ const props={initialPage:1 as const,onBack:vi.fn(),onExpired:vi.fn(),onHome:vi.fn()}
+ const service={identity:async()=>({email:'member@example.com',draftScope:'member@example.com'}),submit:vi.fn()}
+ const view=render(<WorkerRegistration {...props} service={service}/>);await waitFor(()=>expect(screen.getByLabelText('이름 *')).toHaveValue('복원 이름'));view.unmount()
+ render(<WorkerRegistration {...props} service={{...service,identity:async()=>({email:'other@example.com',draftScope:'other@example.com'})}}/>);await waitFor(()=>expect(screen.getByLabelText('이름 *')).toHaveValue(''));sessionStorage.clear()
+})
+
+it('서버 가입 완료 후 세션 전환을 알리고 완료 화면을 유지한다',async()=>{
+ const onRegistered=vi.fn();render(<WorkerRegistration service={{identity:async()=>({email:'member@example.com'}),submit:async()=>({id:'worker',status:'COMPLETE'})}} initialDraft={valid} initialPage="review" onBack={vi.fn()} onExpired={vi.fn()} onHome={vi.fn()} onRegistered={onRegistered}/>);fireEvent.click(await screen.findByRole('button',{name:'프로필 등록 완료'}));await screen.findByText('프로필 등록이 완료됐어요');expect(onRegistered).toHaveBeenCalledOnce()
+})

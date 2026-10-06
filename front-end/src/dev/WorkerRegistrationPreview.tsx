@@ -14,4 +14,4 @@ let calls=0
 const service:WorkerService={identity:async()=>({email:'member@example.com'}),submit:async()=>{if(new URLSearchParams(location.search).has('fail')&&calls++===0)throw Error('MOCK_FAILURE');return {id:'preview-worker-receipt',status:'COMPLETE'}}}
 return {step,fixture,page,service}
 });const {step,fixture,page,service}=state;
-const [profileService]=useState(()=>createProfilePreviewService({draft:fixture,email:"member@example.com"}));return <WorkerRegistration service={service} profileService={profileService} initialDraft={step?fixture:emptyWorker} initialPage={page} onBack={()=>navigatePreview('/__auth/signup')} onExpired={()=>navigatePreview('/__auth/signup')} onHome={()=>navigatePreview('/__home/worker')} />}
+const [profileService]=useState(()=>createProfilePreviewService({draft:fixture,email:"member@example.com"}));return <WorkerRegistration service={service} profileService={profileService} initialDraft={step?fixture:emptyWorker} initialPage={page} onBack={()=>navigatePreview('/__preview/signup')} onExpired={()=>navigatePreview('/__preview/signup')} onHome={()=>navigatePreview('/__home/worker')} />}

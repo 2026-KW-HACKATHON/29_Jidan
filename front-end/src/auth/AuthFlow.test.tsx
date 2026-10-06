@@ -18,13 +18,13 @@ it('API 미준비 상태는 준비 안내만 표시한다', async () => {
   const { service, renderHome } = setup('/')
   const button = screen.getByRole('button', { name: 'Google 계정으로 시작하기' })
   await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button)
-  expect(screen.getByRole('dialog')).toHaveAccessibleName('Google 로그인 연결을 준비하고 있어요')
+  expect(screen.getByRole('dialog')).toHaveAccessibleName('요청을 완료하지 못했어요')
   expect(fetch).not.toHaveBeenCalled(); expect(service.startGoogle).not.toHaveBeenCalled(); expect(renderHome).not.toHaveBeenCalled()
 })
 it.each(['/signup','/signup/owner','/signup/worker','/home'] as const)('쿠키와 URL은 %s 진입 권한을 만들지 않는다', async path => {
   document.cookie = 'signup_csrf=hint; Path=/'
   const { navigate, renderHome, renderRegistration } = setup(path, { kind: 'guest' }, '?role=OWNER&error=access_denied')
-  await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login', true))
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith(path.startsWith('/signup') ? '/login?error=signup_expired' : '/login', true))
   expect(renderHome).not.toHaveBeenCalled(); expect(renderRegistration).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled()
 })
 it.each(['OWNER','WORKER'] as const)('주입한 %s UI 상태로 역할별 홈을 표시한다', async accountType => {
@@ -55,4 +55,54 @@ it('로그인 시작 지연 후 버튼을 복구하고 중복 시작을 막는�
  const startGoogle=vi.fn(()=>new Promise<void>(()=>{}));render(<AuthFlow path="/" navigate={vi.fn()} service={{read:async()=>({kind:'guest'}),startGoogle}} renderHome={()=>null} renderRegistration={()=>null}/>)
  const button=screen.getByRole('button',{name:'Google 계정으로 시작하기'});await waitFor(()=>expect(button).toBeEnabled());vi.useFakeTimers();fireEvent.click(button);fireEvent.click(button);expect(startGoogle).toHaveBeenCalledTimes(1)
  await act(async()=>{await vi.advanceTimersByTimeAsync(10000)});expect(button).toBeEnabled();expect(screen.getByRole('dialog')).toBeVisible()
+})
+
+it('신규 가입 세션은 로그인 진입에서도 가입 유형 화면으로 이동한다',async()=>{
+ const {navigate}=setup('/login',{kind:'registration'});await waitFor(()=>expect(navigate).toHaveBeenCalledWith('/signup',true))
+})
+it('가입 세션 만료 시 로그인으로 복귀하고 입력 화면을 숨긴다',async()=>{
+ vi.useFakeTimers();const navigate=vi.fn()
+ render(<AuthFlow path="/signup/worker" service={{read:async()=>({kind:'registration',context:{identity:{provider:'GOOGLE',email:'a@b.com',emailVerified:true},allowedRoles:['OWNER','WORKER'],expiresAt:new Date(Date.now()+600000).toISOString()}}),startGoogle:vi.fn()}} navigate={navigate} renderHome={()=>null} renderRegistration={()=><p>가입 입력</p>}/> )
+ await act(async()=>{});expect(screen.getByText('가입 입력')).toBeVisible();await act(async()=>vi.advanceTimersByTimeAsync(600000));expect(navigate).toHaveBeenCalledWith('/login?error=signup_expired',true);expect(screen.queryByText('가입 입력')).not.toBeInTheDocument()
+})
+it('조회 오류는 코드별 안내와 재시도를 제공한다',async()=>{
+ const {ApiError}=await import('../api/client');const read=vi.fn().mockRejectedValueOnce(new ApiError(403,'ACCOUNT_SUSPENDED')).mockResolvedValueOnce({kind:'guest'})
+ render(<AuthFlow path="/login" service={{read,startGoogle:vi.fn()}} navigate={vi.fn()} renderHome={()=>null} renderRegistration={()=>null}/> )
+ expect(await screen.findByRole('alert')).toHaveTextContent('이용이 제한된 계정');fireEvent.click(screen.getByRole('button',{name:'다시 시도'}));await waitFor(()=>expect(read).toHaveBeenCalledTimes(2));await waitFor(()=>expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+})
+it('로그아웃 중 중복 제출을 막고 성공 후 로그인으로 이동한다',async()=>{
+ let finish!:()=>void;const logout=vi.fn(()=>new Promise<void>(r=>{finish=r})),navigate=vi.fn()
+ render(<AuthFlow path="/home" service={{read:async()=>({kind:'authenticated',session:{displayName:'김',accountType:'WORKER'}}),startGoogle:vi.fn(),logout}} navigate={navigate} renderHome={()=><p>홈</p>} renderRegistration={()=>null}/> )
+ const button=await screen.findByRole('button',{name:'로그아웃'});fireEvent.click(button);fireEvent.click(button);expect(logout).toHaveBeenCalledOnce();await act(async()=>finish());expect(navigate).toHaveBeenCalledWith('/login',true);expect(screen.queryByText('홈')).not.toBeInTheDocument()
+})
+it('callback 공개 오류 힌트는 표시만 하고 인증 권한을 만들지 않는다',async()=>{
+ setup('/login',{kind:'guest'},'?error=GOOGLE_ACCESS_DENIED&role=OWNER');expect(await screen.findByRole('alert')).toHaveTextContent('Google 로그인이 취소됐어요')
+})
+
+it('가입이 성공하면 기존 가입 만료 타이머를 취소한다',async()=>{
+ vi.useFakeTimers();const navigate=vi.fn()
+ render(<AuthFlow path="/signup/worker" service={{read:async()=>({kind:'registration',context:{identity:{provider:'GOOGLE',email:'a@b.com',emailVerified:true},allowedRoles:['OWNER','WORKER'],expiresAt:new Date(Date.now()+600000).toISOString()}}),startGoogle:vi.fn()}} navigate={navigate} renderHome={()=>null} renderRegistration={(_role,registered)=><button onClick={registered}>가입 성공</button>}/> )
+ await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'가입 성공'}));await act(async()=>vi.advanceTimersByTimeAsync(600000));expect(navigate).not.toHaveBeenCalled()
+})
+
+it('가입 유형 화면의 로그아웃 실패는 안내 후 재시도가 가능하다',async()=>{
+ const logout=vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined),navigate=vi.fn()
+ render(<AuthFlow path="/signup" service={{read:async()=>({kind:'registration'}),startGoogle:vi.fn(),logout}} navigate={navigate} renderHome={()=>null} renderRegistration={()=>null}/> )
+ const back=await screen.findByRole('button',{name:'뒤로 가기'});fireEvent.click(back);expect(await screen.findByRole('dialog')).toBeVisible();expect(navigate).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'확인'}));await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());fireEvent.click(back);await waitFor(()=>expect(navigate).toHaveBeenCalledWith('/login',true))
+})
+
+it('로그아웃 중 세션 재조회는 logout 요청을 취소하지 않고 실패 후 잠금을 복구한다',async()=>{
+ vi.useFakeTimers();const navigate=vi.fn();let reject!:(reason:unknown)=>void;let logoutSignal!:AbortSignal
+ const read=vi.fn().mockResolvedValueOnce({kind:'authenticated',session:{displayName:'김',accountType:'WORKER',expiresAt:new Date(Date.now()+400).toISOString()}}).mockResolvedValue({kind:'authenticated',session:{displayName:'김',accountType:'WORKER',expiresAt:new Date(Date.now()+86400000).toISOString()}})
+ const logout=vi.fn().mockImplementationOnce((signal:AbortSignal)=>{logoutSignal=signal;return new Promise<void>((_,r)=>{reject=r})}).mockResolvedValueOnce(undefined)
+ render(<AuthFlow path="/home" navigate={navigate} service={{read,startGoogle:vi.fn(),logout}} renderHome={()=><p>홈</p>} renderRegistration={()=>null}/> )
+ await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'로그아웃'}));await act(async()=>vi.advanceTimersByTimeAsync(500))
+ expect(read).toHaveBeenCalledTimes(2);expect(logoutSignal.aborted).toBe(false);expect(screen.getByRole('button',{name:'로그아웃'})).toBeDisabled()
+ await act(async()=>reject(new Error('offline')));expect(screen.getByRole('button',{name:'로그아웃'})).toBeEnabled();expect(screen.getByRole('dialog')).toBeVisible()
+ fireEvent.click(screen.getByRole('button',{name:'확인'}));await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'로그아웃'}));await act(async()=>{});expect(logout).toHaveBeenCalledTimes(2);expect(navigate).toHaveBeenCalledWith('/login',true)
+})
+it('해제 시 로그아웃 요청도 취소하고 늦은 성공으로 이동하지 않는다',async()=>{
+ let finish!:()=>void;let signal!:AbortSignal;const navigate=vi.fn()
+ const view=render(<AuthFlow path="/home" navigate={navigate} service={{read:async()=>({kind:'authenticated',session:{displayName:'김',accountType:'WORKER'}}),startGoogle:vi.fn(),logout:s=>{signal=s;return new Promise<void>(r=>{finish=r})}}} renderHome={()=><p>홈</p>} renderRegistration={()=>null}/> )
+ fireEvent.click(await screen.findByRole('button',{name:'로그아웃'}));view.unmount();expect(signal.aborted).toBe(true);await act(async()=>finish());expect(navigate).not.toHaveBeenCalled()
 })

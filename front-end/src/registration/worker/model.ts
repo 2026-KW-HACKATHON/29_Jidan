@@ -7,18 +7,18 @@ export type Errors = Record<string, string>
 export const emptyWorker: WorkerDraft = { name: '', phone: '', birth: '', gender: '', experience: '', careers: [], availability: [] }
 export const emptyCareer: Career = { id: '', industry: '', duties: '', store: '', start: '', end: '', current: false }
 export const emptyAvailability: Availability = { id: '', days: [], start: -1, end: -1, overnight: false }
-export function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
+export function today() { const parts = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()); return ['year','month','day'].map(type=>parts.find(part=>part.type===type)!.value).join('-') }
 export function validDate(value: string, current = today()) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < '0001-01-01' || value > current) return false
   const date = new Date(`${value}T00:00:00Z`)
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0,10) === value
 }
-export function validateCareer(c: Career, birth: string, current = today()): Errors {
+export function validateCareer(c: Career, _birth: string, current = today()): Errors {
   const e: Errors = {}, month = /^\d{4}-(0[1-9]|1[0-2])$/
   if (!industries.includes(c.industry as typeof industries[number])) e.industry = '업종을 선택해 주세요.'
-  if (!c.duties.trim() || c.duties.trim().length > 200) e.duties = '담당 업무를 1~200자로 입력해 주세요.'
+  if (!c.duties.trim() || c.duties.trim().length > 300) e.duties = '담당 업무를 1~300자로 입력해 주세요.'
   if (c.store.trim().length > 100) e.store = '매장명은 100자 이내로 입력해 주세요.'
-  if (!month.test(c.start) || c.start < birth.slice(0,7) || c.start > current.slice(0,7)) e.start = '생년월일 이후의 올바른 시작 연월을 선택해 주세요.'
+  if (!month.test(c.start) || c.start.startsWith('0000') || c.start > current.slice(0,7)) e.start = '올바른 시작 연월을 선택해 주세요.'
   if (!c.current && (!month.test(c.end) || c.end < c.start || c.end > current.slice(0,7))) e.end = '시작 연월 이후의 올바른 종료 연월을 선택해 주세요.'
   return e
 }
@@ -44,15 +44,17 @@ export function validateWorker(d: WorkerDraft, step: number, current = today()):
   const e: Errors = {}
   if (step === 1 || step === 4) {
     if (!d.name.trim() || d.name.trim().length > 50) e.name = '이름을 1~50자로 입력해 주세요.'
-    if (!/^(010\d{8}|01[16789]\d{7,8})$/.test(d.phone.replace(/[\s-]/g,''))) e.phone = '올바른 휴대전화 번호를 입력해 주세요.'
+    if (!/^010[0-9]{8}$/.test(d.phone.replace(/[\s-]/g,''))) e.phone = '올바른 휴대전화 번호를 입력해 주세요.'
     if (!validDate(d.birth,current)) e.birth = '오늘 이전의 올바른 생년월일을 입력해 주세요.'
     if (!['남성','여성'].includes(d.gender)) e.gender = '성별을 선택해 주세요.'
   }
   if (step === 2 || step === 4) {
     if (!['신입','경력 있음'].includes(d.experience)) e.experience = '근무 경력을 선택해 주세요.'
+    if (d.experience === '경력 있음' && d.careers.length > 20) e.careers = '경력은 20건까지 등록할 수 있어요.'
     if (d.experience === '경력 있음' && (!d.careers.length || d.careers.some(c => Object.keys(validateCareer(c,d.birth,current)).length))) e.careers = '올바른 경력을 한 건 이상 등록해 주세요.'
   }
   if (step === 3 || step === 4) {
+    if (d.availability.length > 100) e.availability = '근무 가능 시간은 100건까지 등록할 수 있어요.'
     if (!d.availability.length || d.availability.some((a,i) => Object.keys(validateAvailability(a,d.availability.slice(0,i))).length)) e.availability = '겹치지 않는 근무 가능 시간을 등록해 주세요.'
   }
   return e
