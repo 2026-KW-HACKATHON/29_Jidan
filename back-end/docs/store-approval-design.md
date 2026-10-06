@@ -1,6 +1,6 @@
 # 매장 승인 신청 관리 API 설계
 
-사용자가 요청한 관리자 기능의 구현 전 계약이다. [OpenAPI 원본](../openapi.yaml)과 [Swagger](http://127.0.0.1:5500)에서 확인한다. 실제 관리자 인증과 DB 처리 코드는 아직 없다.
+사용자가 요청한 관리자 기능의 계약이며 #107에서 검색·승인 API를 구현했다. [OpenAPI 원본](../openapi.yaml)과 [Swagger](http://127.0.0.1:5500)에서 확인한다. 실제 비밀번호 인증과 DB 처리는 `app/admin_password.py`와 `app/store_approvals.py`에서 제공한다.
 
 ## 전체 신청 조회
 
@@ -37,7 +37,7 @@
 
 ## 검증 범위
 
-OpenAPI 구조·예시 및 password/페이지/상태 입력 경계, 승인 상태와 시각 일치, 응답의 password 제외를 Schema로 확인한다. 실제 비밀번호 대조·인증 시도 제한·DB 페이지 수 계산·정렬은 서버 구현 후 검증이 필요하다.
+OpenAPI 구조·예시 및 password/페이지/상태 입력 경계, 승인 상태와 시각 일치, 응답의 password 제외를 Schema로 확인한다. 실제 비밀번호 대조·인증 전 데이터 비노출·429/Retry-After·DB 페이지 수 계산·정렬을 SQLite와 MySQL 통합 테스트로 검증한다.
 
 ## 승인 처리
 
@@ -59,4 +59,29 @@ requestId는 조회 결과 `items[].id`의 신청 UUID다. store.id와 구분한
 - 서버가 상태·시각·권한을 결정하며, 요청에는 password 이외 필드를 받지 않는다. 별도 Idempotency-Key는 필요하지 않다.
 - 기존 점주 세션의 다음 `/api/auth/session` 조회에서 승인된 매장 권한과 OWNER_HOME을 확인한다. 다른 매장의 승인은 영향을 받지 않는다.
 
-Schema 검사는 비밀번호 필수·외부 상태/시각/권한/승인자 주입 거절·승인 응답의 APPROVED 및 승인 시각 필수를 확인한다. 비밀번호 검증 우선순위, 실제 404/409 처리, 중복·동시 승인, 트랜잭션 rollback과 세션 권한 반영은 후속 구현의 통합 테스트 대상이다.
+Schema 검사는 비밀번호 필수·외부 상태/시각/권한/승인자 주입 거절·승인 응답의 APPROVED 및 승인 시각 필수를 확인한다. 비밀번호 검증 우선순위, 실제 404/409 처리, MySQL 동시 승인, 최초 시각 유지, commit 실패 시 두 행 rollback과 기존 점주 세션 권한 반영을 통합 테스트로 검증한다.
+
+
+## #107 구현과 운영 설정
+
+관리자 요청에는 `ALLOWED_ORIGINS`에 등록된 정확한 Origin이 필요하다. 누락·불일치는 403 `CSRF_INVALID`이며 회원 쿠키·세션 CSRF 토큰·Idempotency-Key는 요구하지 않는다. 입력 검증 오류는 입력값을 응답하지 않고, password는 `SecretStr`로 표현한다.
+
+서버 환경변수 `ADMIN_PASSWORD_HASH`에 PBKDF2-SHA256 해시를 설정한다. 평문 비밀번호 환경변수는 지원하지 않는다. 형식은 `pbkdf2_sha256$iterations$base64-salt$base64-digest`이며 최소 600,000회, salt 16바이트 이상, digest 32바이트다. 누락·잘못된 형식은 조회·승인을 허용하지 않고 내부 정보 없는 500을 반환한다. 해시 생성은 터미널에서 다음 명령을 실행해 비밀번호를 숨김 입력한다. 명령행 인자에 비밀번호를 넣지 않는다.
+
+```bash
+cd back-end
+python -m app.admin_password
+```
+
+출력된 해시를 서버의 보호된 `runtime.env`에 설정하고 CI/CD로 적용한다. Compose는 이 파일을 `format: raw`로 읽으므로 `$`를 보존한다. 서버 설정·배포는 이 구현의 로컬 검증과 별도로 수행해야 한다. #146은 DB 마이그레이션 자동 적용 PR이며 관리자 해시 설정을 대신하지 않는다.
+
+승인은 신청→매장→현재 점주 순서로 `SELECT FOR UPDATE`를 수행한다. 현재 ACTIVE OWNER 관계와 신청/매장 상태·시각의 일치를 확인한다. 최초 승인만 두 행을 변경하고, commit 이후에 성공 응답을 반환한다. 운영 권한은 매장 상태에서 계산하므로 별도 권한 행을 생성하지 않는다. 이번 범위에는 소유권 이전 API가 없다. 신청자는 기존 ERD대로 매장의 `owner_id`에서 조회한다.
+
+비밀번호가 틀리면 기존 관리자 레이트 리미터의 실패 슬롯을 정산하고, 맞으면 성공 정산한다. 성공한 IP의 완료된 실패 기록만 초기화한다. 제한은 IP별 10분 5회·프로세스 전체 10분 50회이며 여러 프로세스 사이에는 공유하지 않는다. 성공 승인과 재승인 및 업무 오류에는 비밀번호·연락 정보를 제외한 요청 ID·신청 ID·작업·시각·결과를 기록한다.
+
+```bash
+cd back-end
+python -m pytest tests/test_admin_password.py tests/test_store_approval_search.py tests/test_store_approval_approve.py
+```
+
+MySQL의 실제 행 잠금 검증에는 별도 `_test` DB의 `DB_*`와 `JIDAN_REQUIRE_MYSQL=1`이 필요하다. MySQL 동시 승인 5회에서 같은 응답·최초 승인 시각과 두 상태 행의 1회 변경을 확인한다. SQLite 변형은 해당 행 잠금 테스트를 건너뛴다. 신규 테이블·컬럼·마이그레이션은 없다.
