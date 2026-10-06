@@ -11,6 +11,7 @@ if [[ ! "$image" =~ ^ghcr\.io/2026-kw-hackathon/29_jidan-${component}@sha256:[a-
   echo 'Invalid image reference' >&2
   exit 2
 fi
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root="${JIDAN_APP_ROOT:-/home/ubuntu/apps/jidan}/$environment/$component"
 project="jidan-$environment-$component"
 case "$environment/$component" in
@@ -77,6 +78,7 @@ cp "deploy/$component/compose.yml" "$release/compose.yml"
 printf 'IMAGE_REF=%s\nAPP_PORT=%s\n' "$image" "$port" > "$release/.env"
 if [[ "$component" == backend ]]; then
   install -m 600 "$root/runtime.env" "$release/runtime.env"
+  run python3 "$script_dir/check_runtime_env.py" "$environment" "$release/runtime.env"
 fi
 compose "$release" config --quiet
 compose "$release" pull
@@ -95,7 +97,6 @@ mv -Tf "$root/current.next" "$root/current"
 # Once current changes, recovery recognizes this release as committed.
 rm -f "$root/pending"
 echo "Deployed $environment/$component: $image"
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 if ! run python3 "$script_dir/retention.py" deploy "$environment" "$component"; then
   echo 'Retention cleanup failed; deployment remains committed.' >&2
 fi
