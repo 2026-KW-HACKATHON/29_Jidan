@@ -37,4 +37,5 @@ esac
     assert "jidan-sandbox" not in log.read_text()
     assert commands[-1].endswith("down --volumes --remove-orphans")
     assert (reports / "services.log").exists()
-    if phase == "up": assert not any(" run " in line for line in commands)
+    if phase == "up":
+        assert not any(" run " in line for line in commands)
