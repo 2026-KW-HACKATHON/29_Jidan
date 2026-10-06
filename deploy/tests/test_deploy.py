@@ -52,6 +52,13 @@ if args[0] == 'compose':
 elif args[:2] == ['container', 'ls']:
     if mode == 'recovery-list': sys.exit(1)
     container = Path(os.environ['MIGRATION_CONTAINER'])
+    if mode == 'recovery-delayed-create' and not container.exists():
+        checks = Path(os.environ['RECOVERY_CHECKS'])
+        count = int(checks.read_text()) + 1 if checks.exists() else 1
+        checks.write_text(str(count))
+        if count == 3:
+            name = next(a for a in args if a.startswith('name=^/'))[7:-1]
+            container.write_text(json.dumps({'name': name}))
     if container.exists():
         name = json.loads(container.read_text())['name']
         if 'name=^/' + name + '$' in args: print(name)
@@ -109,7 +116,7 @@ class DeployTests(unittest.TestCase):
                         JIDAN_APP_ROOT=str(self.base / 'apps'), CALLS=str(self.calls), READY=str(self.base / 'ready'),
                         MIGRATED=str(self.base / 'migrated'), MIGRATION_RECORD=str(self.base / 'migration-record'),
                         MIGRATION_CONTAINER=str(self.base / 'migration-container'), WORKER=str(worker),
-                        WORKER_PID=str(self.base / 'worker-pid'))
+                        WORKER_PID=str(self.base / 'worker-pid'), RECOVERY_CHECKS=str(self.base / 'recovery-checks'))
         self.addCleanup(self.stop_worker)
 
     def stop_worker(self):
@@ -391,7 +398,8 @@ class DeployTests(unittest.TestCase):
         self.assertEqual((self.root / 'current').resolve(), prev)
         self.assertFalse(os.path.lexists(self.root / 'pending'))
         self.assertFalse(os.path.lexists(self.root / 'current.next'))
-        self.assertFalse((self.root / 'migration.pending').exists())
+        self.assertTrue((self.root / 'migration.pending').exists())
+        self.assertIn('Migration creation/completion is uncertain', result.stderr)
         self.assertNotIn('APP_ENV', result.stdout + result.stderr)
 
     def test_migration_failure_on_first_deployment_starts_nothing(self):
@@ -402,7 +410,7 @@ class DeployTests(unittest.TestCase):
         self.assertIn('--rm', self.migration_calls(calls)[0])
         self.assertFalse(os.path.lexists(self.root / 'current'))
         self.assertFalse(os.path.lexists(self.root / 'pending'))
-        self.assertFalse((self.root / 'migration.pending').exists())
+        self.assertTrue((self.root / 'migration.pending').exists())
 
     def test_pull_failure_skips_migration(self):
         image = self.backend()
@@ -478,13 +486,29 @@ class DeployTests(unittest.TestCase):
             (self.base / 'migration-container').write_text(json.dumps({'name': name}))
         return name
 
-    def test_finished_or_not_yet_created_migration_is_safe_to_retry(self):
+    def test_absent_container_retains_uncertain_record_and_blocks_new_migration(self):
         image = self.backend()
         name = self.seed_migration(container=False)
         result, calls = self.run_deploy(image=image, component='backend')
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Migration creation/completion is uncertain', result.stderr)
         self.assertNotIn(['docker', 'rm', '-f', name], calls)
+        self.assertEqual(self.migration_calls(calls), [])
+        self.assertFalse(any(c[:2] == ['docker', 'compose'] for c in calls))
+        self.assertEqual((self.root / 'migration.pending').read_text().strip(), name)
+        self.assertGreaterEqual(len([c for c in calls if c[:3] == ['docker', 'container', 'ls']]), 10)
+
+    def test_delayed_container_creation_is_removed_before_new_migration(self):
+        image = self.backend()
+        prev = self.previous()
+        name = self.seed_migration(container=False)
+        result, calls = self.run_deploy('recovery-delayed-create', image=image, component='backend')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.base / 'recovery-checks').read_text(), '4')
+        self.assertLess(calls.index(['docker', 'rm', '-f', name]),
+                        calls.index(self.migration_calls(calls)[0]))
         self.assertEqual(len(self.migration_calls(calls)), 1)
+        self.assertNotEqual((self.root / 'current').resolve(), prev)
         self.assertFalse((self.root / 'migration.pending').exists())
 
     def test_failed_migration_recovery_retains_record_and_blocks_deployment(self):

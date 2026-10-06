@@ -41,19 +41,29 @@ compose() {
 # Retain the journal until the daemon confirms the recorded container is gone.
 recover_migration() {
   [[ -f "$root/migration.pending" ]] || return 0
-  local name containers
+  local name containers attempt
   name=$(cat "$root/migration.pending")
   if [[ ! "$name" =~ ^${project}-migrate-[a-zA-Z0-9]{8}$ ]]; then
     echo 'Invalid migration recovery record; deployment stopped.' >&2
     return 1
   fi
-  containers=$(docker container ls -a --filter "name=^/${name}$" --format '{{.Names}}') || return 1
-  if [[ -n "$containers" ]]; then
-    [[ "$containers" == "$name" ]] || return 1
-    docker rm -f "$name" >/dev/null || return 1
+  # A killed client may leave an in-flight create request. Absence alone cannot
+  # prove completion: allow delayed creation to appear, then fail closed if unknown.
+  for attempt in {1..10}; do
     containers=$(docker container ls -a --filter "name=^/${name}$" --format '{{.Names}}') || return 1
-    [[ -z "$containers" ]] || return 1
-  fi
+    if [[ -n "$containers" ]]; then
+      [[ "$containers" == "$name" ]] || return 1
+      break
+    fi
+    if [[ "$attempt" == 10 ]]; then
+      echo 'Migration creation/completion is uncertain; recovery record retained for operator verification.' >&2
+      return 1
+    fi
+    sleep 1
+  done
+  docker rm -f "$name" >/dev/null || return 1
+  containers=$(docker container ls -a --filter "name=^/${name}$" --format '{{.Names}}') || return 1
+  [[ -z "$containers" ]] || return 1
   rm -f "$root/migration.pending" "$root/migration.next"
 }
 # Persist intent before touching containers. SIGKILL/power loss is recovered on the next run.
@@ -116,7 +126,9 @@ if [[ "$environment/$component" == dev/backend ]]; then
     echo 'MySQL DDL is not transactional: check `alembic current` and the schema before retrying.' >&2
     exit 1
   fi
-  recover_migration
+  # Success from the attached --rm client confirms this create/run completed.
+  # A crash before this removal deliberately leaves an ambiguous recovery record.
+  rm -f "$root/migration.pending" "$root/migration.next"
 fi
 ln -s "$release" "$root/pending"
 compose "$release" up -d --wait --wait-timeout 180
