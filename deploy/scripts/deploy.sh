@@ -37,6 +37,35 @@ compose() {
   shift
   run docker compose -p "$project" --env-file "$directory/.env" -f "$directory/compose.yml" "$@"
 }
+# Docker keeps one-off containers alive independently of the Compose client.
+# Retain the journal until the daemon confirms the recorded container is gone.
+recover_migration() {
+  [[ -f "$root/migration.pending" ]] || return 0
+  local name containers attempt
+  name=$(cat "$root/migration.pending")
+  if [[ ! "$name" =~ ^${project}-migrate-[a-zA-Z0-9]{8}$ ]]; then
+    echo 'Invalid migration recovery record; deployment stopped.' >&2
+    return 1
+  fi
+  # A killed client may leave an in-flight create request. Absence alone cannot
+  # prove completion: allow delayed creation to appear, then fail closed if unknown.
+  for attempt in {1..10}; do
+    containers=$(docker container ls -a --filter "name=^/${name}$" --format '{{.Names}}') || return 1
+    if [[ -n "$containers" ]]; then
+      [[ "$containers" == "$name" ]] || return 1
+      break
+    fi
+    if [[ "$attempt" == 10 ]]; then
+      echo 'Migration creation/completion is uncertain; recovery record retained for operator verification.' >&2
+      return 1
+    fi
+    sleep 1
+  done
+  docker rm -f "$name" >/dev/null || return 1
+  containers=$(docker container ls -a --filter "name=^/${name}$" --format '{{.Names}}') || return 1
+  [[ -z "$containers" ]] || return 1
+  rm -f "$root/migration.pending" "$root/migration.next"
+}
 # Persist intent before touching containers. SIGKILL/power loss is recovered on the next run.
 recover_pending() {
   [[ -L "$root/pending" ]] || return 0
@@ -62,6 +91,10 @@ cleanup() {
     wait "$child" 2>/dev/null || true
     child=
   fi
+  if ! recover_migration; then
+    echo 'MIGRATION RECOVERY FAILED: record retained; retry deployment to recover.' >&2
+    status=1
+  fi
   if ! recover_pending; then
     echo 'ROLLBACK FAILED: pending marker retained; retry deployment to recover.' >&2
     status=1
@@ -72,6 +105,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 # Never overwrite evidence of an interrupted deployment before recovery succeeds.
+recover_migration
 recover_pending
 release=$(mktemp -d "$root/releases/release.XXXXXXXX")
 cp "deploy/$component/compose.yml" "$release/compose.yml"
@@ -82,6 +116,20 @@ if [[ "$component" == backend ]]; then
 fi
 compose "$release" config --quiet
 compose "$release" pull
+# Only dev backend migrates automatically, before any container changes. Production stays manual.
+if [[ "$environment/$component" == dev/backend ]]; then
+  migration_container="$project-migrate-${release##*.}"
+  printf '%s\n' "$migration_container" > "$root/migration.next"
+  mv -Tf "$root/migration.next" "$root/migration.pending"
+  if ! compose "$release" run --rm --no-deps -T --name "$migration_container" backend python -m alembic upgrade head; then
+    echo 'DB migration failed; the running release was left untouched and the new release was not deployed.' >&2
+    echo 'MySQL DDL is not transactional: check `alembic current` and the schema before retrying.' >&2
+    exit 1
+  fi
+  # Success from the attached --rm client confirms this create/run completed.
+  # A crash before this removal deliberately leaves an ambiguous recovery record.
+  rm -f "$root/migration.pending" "$root/migration.next"
+fi
 ln -s "$release" "$root/pending"
 compose "$release" up -d --wait --wait-timeout 180
 container=$(compose "$release" ps -q "$component")

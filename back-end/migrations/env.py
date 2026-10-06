@@ -26,8 +26,10 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     connection = config.attributes.get("connection")
     if connection is None:
+        # Deploy logs keep migration output; failed statements must not echo bound values.
         engine = create_engine(
-            database_url(), connect_args={"init_command": "SET time_zone = '+00:00'"},
+            database_url(), hide_parameters=True,
+            connect_args={"init_command": "SET time_zone = '+00:00'"},
         )
         with engine.connect() as connection:
             _migrate(connection)

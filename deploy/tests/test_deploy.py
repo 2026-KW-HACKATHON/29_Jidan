@@ -10,7 +10,7 @@ import unittest
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/deploy.sh'
 IMAGE = 'ghcr.io/2026-kw-hackathon/29_jidan-frontend@sha256:' + 'a' * 64
 FAKE = '''#!/usr/bin/env python3
-import json, os, sys, time
+import json, os, signal, subprocess, sys, time
 from pathlib import Path
 args=sys.argv[1:]
 with open(os.environ['CALLS'], 'a') as f: f.write(json.dumps([Path(sys.argv[0]).name]+args)+'\\n')
@@ -21,15 +21,77 @@ if Path(sys.argv[0]).name == 'curl':
     sys.exit(22 if failed else 0)
 if args[0] == 'compose':
     if 'pull' in args and mode == 'pull': sys.exit(1)
+    if 'alembic' in args:
+        release = Path(args[args.index('-f') + 1]).parent
+        name = args[args.index('--name') + 1]
+        Path(os.environ['MIGRATION_RECORD']).write_text((release.parent.parent / 'migration.pending').read_text())
+        container = Path(os.environ['MIGRATION_CONTAINER'])
+        if container.exists(): sys.exit(93)  # Never overlap daemon-owned migration workers.
+        Path(os.environ['MIGRATED']).write_text(json.dumps(os.path.lexists(release.parent.parent / 'pending')))
+        if mode == 'migrate': sys.exit(1)
+        if mode == 'migrate-wait':
+            container.write_text(json.dumps({'name': name}))
+            Path(os.environ['READY']).write_text(str(os.getpid()))
+            time.sleep(60)
+        if mode == 'migrate-daemon':
+            subprocess.Popen([sys.executable, os.environ['WORKER'], name],
+                             start_new_session=True, close_fds=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            deadline = time.monotonic() + 5
+            while not container.exists():
+                if time.monotonic() > deadline: sys.exit(94)
+                time.sleep(0.01)
+            Path(os.environ['READY']).write_text(str(os.getpid()))
+            time.sleep(60)
     if 'up' in args and mode == 'up' and '/previous/' not in ' '.join(args): sys.exit(1)
     if 'up' in args and mode == 'rollback': sys.exit(1)
     if 'up' in args and mode == 'wait' and '/previous/' not in ' '.join(args):
         Path(os.environ['READY']).touch()
         time.sleep(60)
     if 'ps' in args: print('container-id')
+elif args[:2] == ['container', 'ls']:
+    if mode == 'recovery-list': sys.exit(1)
+    container = Path(os.environ['MIGRATION_CONTAINER'])
+    if mode == 'recovery-delayed-create' and not container.exists():
+        checks = Path(os.environ['RECOVERY_CHECKS'])
+        count = int(checks.read_text()) + 1 if checks.exists() else 1
+        checks.write_text(str(count))
+        if count == 3:
+            name = next(a for a in args if a.startswith('name=^/'))[7:-1]
+            container.write_text(json.dumps({'name': name}))
+    if container.exists():
+        name = json.loads(container.read_text())['name']
+        if 'name=^/' + name + '$' in args: print(name)
+elif args[:2] == ['rm', '-f']:
+    if mode == 'recovery-remove': sys.exit(1)
+    container = Path(os.environ['MIGRATION_CONTAINER'])
+    if container.exists():
+        data = json.loads(container.read_text())
+        if data['name'] != args[2]: sys.exit(1)
+        if mode != 'recovery-still-running':
+            if 'pid' in data:
+                os.kill(data['pid'], signal.SIGTERM)
+                deadline = time.monotonic() + 5
+                while container.exists():
+                    if time.monotonic() > deadline: sys.exit(1)
+                    time.sleep(0.01)
+            else: container.unlink()
 elif args[0] == 'exec': sys.exit(1 if mode == 'runtime' else 0)
 elif args[:2] == ['image', 'inspect']: print('expected-id')
 elif args[0] == 'inspect': print('wrong-id' if mode == 'image' else 'expected-id')
+'''
+
+WORKER = '''import json, os, signal, sys, time
+from pathlib import Path
+container = Path(os.environ['MIGRATION_CONTAINER'])
+def stop(*_):
+    container.unlink(missing_ok=True)
+    sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+Path(os.environ['WORKER_PID']).write_text(str(os.getpid()))
+container.write_text(json.dumps({'name': sys.argv[1], 'pid': os.getpid()}))
+time.sleep(60)
+stop()
 '''
 
 
@@ -48,8 +110,22 @@ class DeployTests(unittest.TestCase):
         self.root = self.base / 'apps/dev/frontend'
         self.root.mkdir(parents=True)
         self.calls = self.base / 'calls'
+        worker = self.base / 'worker.py'
+        worker.write_text(WORKER)
         self.env = dict(os.environ, PATH=f"{self.base / 'bin'}:{os.environ['PATH']}",
-                        JIDAN_APP_ROOT=str(self.base / 'apps'), CALLS=str(self.calls), READY=str(self.base / 'ready'))
+                        JIDAN_APP_ROOT=str(self.base / 'apps'), CALLS=str(self.calls), READY=str(self.base / 'ready'),
+                        MIGRATED=str(self.base / 'migrated'), MIGRATION_RECORD=str(self.base / 'migration-record'),
+                        MIGRATION_CONTAINER=str(self.base / 'migration-container'), WORKER=str(worker),
+                        WORKER_PID=str(self.base / 'worker-pid'), RECOVERY_CHECKS=str(self.base / 'recovery-checks'))
+        self.addCleanup(self.stop_worker)
+
+    def stop_worker(self):
+        pid_file = self.base / 'worker-pid'
+        if pid_file.exists():
+            try:
+                os.kill(int(pid_file.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
     def previous(self):
         prev = self.root / 'previous'
@@ -211,9 +287,9 @@ class DeployTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(calls, [])
 
-    def interrupt(self, sig):
-        self.env['FAIL'] = 'wait'
-        proc = subprocess.Popen(['bash', str(SCRIPT), 'dev', 'frontend', IMAGE],
+    def interrupt(self, sig, failure='wait', component='frontend', image=IMAGE):
+        self.env['FAIL'] = failure
+        proc = subprocess.Popen(['bash', str(SCRIPT), 'dev', component, image],
                                 cwd=self.base, env=self.env, start_new_session=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
@@ -279,6 +355,204 @@ class DeployTests(unittest.TestCase):
         self.assertFalse(any('up' in c or 'down' in c for c in calls))
         self.assertFalse((self.root / 'pending').exists())
         self.assertFalse((self.root / 'current.next').exists())
+
+
+    # dev backend applies Alembic migrations once, after pull and before any container change.
+    def migration_calls(self, calls):
+        return [c for c in calls if 'alembic' in c]
+
+    def test_development_backend_migrates_between_pull_and_start(self):
+        image = self.backend()
+        self.previous()
+        result, calls = self.run_deploy(image=image, component='backend')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        migrations = self.migration_calls(calls)
+        self.assertEqual(len(migrations), 1)
+        migration = migrations[0]
+        self.assertEqual(migration[migration.index('run'):migration.index('--name')],
+                         ['run', '--rm', '--no-deps', '-T'])
+        self.assertEqual(migration[migration.index('--name') + 2:],
+                         ['backend', 'python', '-m', 'alembic', 'upgrade', 'head'])
+        release = (self.root / 'current').resolve()
+        self.assertIn(str(release / 'compose.yml'), migration)
+        index = calls.index(migration)
+        pull = next(i for i, c in enumerate(calls) if 'pull' in c)
+        up = next(i for i, c in enumerate(calls) if 'up' in c)
+        self.assertLess(pull, index)
+        self.assertLess(index, up)
+        self.assertFalse(json.loads((self.base / 'migrated').read_text()), 'pending existed during migration')
+        self.assertEqual((self.base / 'migration-record').read_text().strip(),
+                         migration[migration.index('--name') + 1])
+        self.assertFalse((self.root / 'migration.pending').exists())
+        self.assertFalse((self.root / 'migration.next').exists())
+
+    def test_migration_failure_keeps_previous_release_running(self):
+        image = self.backend()
+        prev = self.previous()
+        result, calls = self.run_deploy('migrate', image=image, component='backend')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('DB migration failed', result.stderr)
+        self.assertIn('alembic current', result.stderr)
+        self.assertEqual(len(self.migration_calls(calls)), 1)
+        self.assertFalse(any('up' in c or 'down' in c or 'stop' in c for c in calls))
+        self.assertEqual((self.root / 'current').resolve(), prev)
+        self.assertFalse(os.path.lexists(self.root / 'pending'))
+        self.assertFalse(os.path.lexists(self.root / 'current.next'))
+        self.assertTrue((self.root / 'migration.pending').exists())
+        self.assertIn('Migration creation/completion is uncertain', result.stderr)
+        self.assertNotIn('APP_ENV', result.stdout + result.stderr)
+
+    def test_migration_failure_on_first_deployment_starts_nothing(self):
+        image = self.backend()
+        result, calls = self.run_deploy('migrate', image=image, component='backend')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any('up' in c for c in calls))
+        self.assertIn('--rm', self.migration_calls(calls)[0])
+        self.assertFalse(os.path.lexists(self.root / 'current'))
+        self.assertFalse(os.path.lexists(self.root / 'pending'))
+        self.assertTrue((self.root / 'migration.pending').exists())
+
+    def test_pull_failure_skips_migration(self):
+        image = self.backend()
+        result, calls = self.run_deploy('pull', image=image, component='backend')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.migration_calls(calls), [])
+
+    def test_other_targets_never_migrate(self):
+        for environment, component in [('production', 'backend'), ('dev', 'frontend'),
+                                       ('production', 'frontend')]:
+            with self.subTest(environment=environment, component=component):
+                self.calls.unlink(missing_ok=True)
+                if component == 'backend':
+                    image = self.backend(environment)
+                else:
+                    image = IMAGE
+                    self.root = self.base / f'apps/{environment}/frontend'
+                    self.root.mkdir(parents=True, exist_ok=True)
+                result, calls = self.run_deploy(image=image, environment=environment, component=component)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.migration_calls(calls), [])
+                self.assertFalse(any('run' in c for c in calls if c[0] == 'docker'))
+
+    def assert_interrupted_migration_cleaned(self, sig, code):
+        image = self.backend()
+        prev = self.previous()
+        self.assertEqual(self.interrupt(sig, 'migrate-wait', 'backend', image), code)
+        pid = int((self.base / 'ready').read_text())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        name = self.migration_calls(calls)[0]
+        name = name[name.index('--name') + 1]
+        self.assertTrue(name.startswith('jidan-dev-backend-migrate-'))
+        self.assertIn(['docker', 'rm', '-f', name], calls)
+        self.assertFalse(any('up' in c or 'down' in c for c in calls))
+        self.assertEqual((self.root / 'current').resolve(), prev)
+        self.assertFalse(os.path.lexists(self.root / 'pending'))
+        self.assertFalse((self.root / 'migration.pending').exists())
+
+    def test_sigterm_during_migration_stops_child_and_keeps_previous(self):
+        self.assert_interrupted_migration_cleaned(signal.SIGTERM, 143)
+
+    def test_sigint_during_migration_stops_child_and_keeps_previous(self):
+        self.assert_interrupted_migration_cleaned(signal.SIGINT, 130)
+
+    def test_sigkill_recovers_daemon_worker_before_new_migration(self):
+        image = self.backend()
+        prev = self.previous()
+        self.assertEqual(self.interrupt(signal.SIGKILL, 'migrate-daemon', 'backend', image), -signal.SIGKILL)
+        journal = self.root / 'migration.pending'
+        name = journal.read_text().strip()
+        self.assertEqual(journal.stat().st_mode & 0o777, 0o600)
+        worker_pid = int((self.base / 'worker-pid').read_text())
+        os.kill(worker_pid, 0)  # The worker survived the deployment and Compose client's SIGKILL.
+        self.assertTrue((self.base / 'migration-container').exists())
+        self.assertEqual((self.root / 'current').resolve(), prev)
+        self.assertFalse((self.root / 'pending').exists())
+        self.calls.write_text('')
+        result, calls = self.run_deploy(image=image, component='backend')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(calls.index(['docker', 'rm', '-f', name]),
+                        calls.index(self.migration_calls(calls)[0]))
+        self.assertFalse((self.base / 'migration-container').exists())
+        state = Path(f'/proc/{worker_pid}/stat')
+        self.assertTrue(not state.exists() or state.read_text().split()[2] == 'Z')
+        self.assertFalse(journal.exists())
+
+    def seed_migration(self, container=True):
+        name = 'jidan-dev-backend-migrate-abcdefgh'
+        (self.root / 'migration.pending').write_text(name + '\n')
+        if container:
+            (self.base / 'migration-container').write_text(json.dumps({'name': name}))
+        return name
+
+    def test_absent_container_retains_uncertain_record_and_blocks_new_migration(self):
+        image = self.backend()
+        name = self.seed_migration(container=False)
+        result, calls = self.run_deploy(image=image, component='backend')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Migration creation/completion is uncertain', result.stderr)
+        self.assertNotIn(['docker', 'rm', '-f', name], calls)
+        self.assertEqual(self.migration_calls(calls), [])
+        self.assertFalse(any(c[:2] == ['docker', 'compose'] for c in calls))
+        self.assertEqual((self.root / 'migration.pending').read_text().strip(), name)
+        self.assertGreaterEqual(len([c for c in calls if c[:3] == ['docker', 'container', 'ls']]), 10)
+
+    def test_delayed_container_creation_is_removed_before_new_migration(self):
+        image = self.backend()
+        prev = self.previous()
+        name = self.seed_migration(container=False)
+        result, calls = self.run_deploy('recovery-delayed-create', image=image, component='backend')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.base / 'recovery-checks').read_text(), '4')
+        self.assertLess(calls.index(['docker', 'rm', '-f', name]),
+                        calls.index(self.migration_calls(calls)[0]))
+        self.assertEqual(len(self.migration_calls(calls)), 1)
+        self.assertNotEqual((self.root / 'current').resolve(), prev)
+        self.assertFalse((self.root / 'migration.pending').exists())
+
+    def test_failed_migration_recovery_retains_record_and_blocks_deployment(self):
+        image = self.backend()
+        prev = self.previous()
+        for failure in ('recovery-list', 'recovery-remove', 'recovery-still-running'):
+            with self.subTest(failure=failure):
+                name = self.seed_migration()
+                self.calls.write_text('')
+                result, calls = self.run_deploy(failure, image=image, component='backend')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('MIGRATION RECOVERY FAILED', result.stderr)
+                self.assertEqual((self.root / 'migration.pending').read_text().strip(), name)
+                self.assertTrue((self.base / 'migration-container').exists())
+                self.assertEqual((self.root / 'current').resolve(), prev)
+                self.assertFalse(any(c[:2] == ['docker', 'compose'] for c in calls))
+                self.assertEqual(list((self.root / 'releases').iterdir()), [])
+        self.calls.write_text('')
+        result, _ = self.run_deploy(image=image, component='backend')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / 'migration.pending').exists())
+
+    def test_invalid_migration_record_never_removes_unrelated_container(self):
+        image = self.backend()
+        for name in ('', 'jidan-production-backend-migrate-abcdefgh', '--force',
+                     'jidan-dev-backend-migrate-abcdefgh\nother'):
+            with self.subTest(name=name):
+                (self.root / 'migration.pending').write_text(name + '\n')
+                self.calls.write_text('')
+                result, calls = self.run_deploy(image=image, component='backend')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(calls, [])
+                self.assertTrue((self.root / 'migration.pending').exists())
+
+    def test_invalid_backend_input_rejected_before_docker(self):
+        backend_image = self.backend()
+        for kwargs in [dict(component='../backend', image=backend_image),
+                       dict(component='backend', image=IMAGE),
+                       dict(component='backend', image=backend_image[:-1]),
+                       dict(environment='staging', component='backend', image=backend_image)]:
+            with self.subTest(kwargs=kwargs):
+                result, calls = self.run_deploy(**kwargs)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(calls, [])
 
 
 if __name__ == '__main__':
