@@ -142,9 +142,15 @@ if [[ "$component" == backend ]]; then
   else
     origin=https://jidan.leehyowon14.dev
   fi
-  # Inspect only this setting and report no container environment values.
+  # Validate effective settings without displaying any container environment values.
   run docker exec "$container" python -c \
-    'import os, sys; sys.exit(os.getenv("ALLOWED_ORIGINS") != sys.argv[1])' "$origin"
+    'import os, sys
+from app.admin_password_config import parse_password_hash
+try:
+    parse_password_hash(os.getenv("ADMIN_PASSWORD_HASH", ""))
+except ValueError:
+    sys.exit("Invalid backend administrator password configuration")
+sys.exit(os.getenv("ALLOWED_ORIGINS") != sys.argv[1])' "$origin"
 fi
 if [[ "$component" == backend ]]; then health=/api/health; else health=/healthz; fi
 run curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$port$health" >/dev/null
