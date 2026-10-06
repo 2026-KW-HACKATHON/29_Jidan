@@ -7,9 +7,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
+from app.admin_password_config import ITERATIONS, parse_password_hash
 from app.errors import ApiError, ErrorCode
-
-ITERATIONS = 600_000
 
 
 class AdminPasswordInput(BaseModel):
@@ -33,14 +32,7 @@ def password_hash(password: str) -> str:
 
 def verify_password(password: SecretStr, attempt) -> None:
     try:
-        algorithm, rounds, salt_text, digest_text = os.environ["ADMIN_PASSWORD_HASH"].split("$")
-        rounds = int(rounds)
-        salt = base64.b64decode(salt_text, validate=True)
-        expected = base64.b64decode(digest_text, validate=True)
-        if algorithm != "pbkdf2_sha256" or not ITERATIONS <= rounds <= 2_000_000:
-            raise ValueError("Invalid algorithm or work factor")
-        if not 16 <= len(salt) <= 64 or len(expected) != 32:
-            raise ValueError("Invalid hash size")
+        rounds, salt, expected = parse_password_hash(os.environ["ADMIN_PASSWORD_HASH"])
     except (KeyError, ValueError):
         attempt.failed()
         raise ApiError(500, ErrorCode.INTERNAL_ERROR) from None

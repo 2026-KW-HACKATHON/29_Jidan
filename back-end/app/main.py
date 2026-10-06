@@ -4,6 +4,7 @@ import pymysql
 from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.admin_password_config import parse_password_hash
 from app.auth import validate_cookie_settings
 from app.auth_views import router as auth_views_router
 from app.database import database_status
@@ -39,6 +40,8 @@ def health() -> dict[str, str]:
     try:
         if environment not in {"local", "dev", "production"}:
             raise ValueError("Invalid environment")
+        if environment in {"dev", "production"}:
+            parse_password_hash(os.getenv("ADMIN_PASSWORD_HASH", ""))
         database = database_status(environment)
     except (pymysql.MySQLError, SQLAlchemyError, OSError, ValueError):
         # Keep connection details and credentials out of public health responses.

@@ -7,6 +7,8 @@ from sqlalchemy.exc import OperationalError
 
 from app.main import app
 
+VALID_HASH = "pbkdf2_sha256$600000$c3Nzc3Nzc3Nzc3Nzc3Nzcw==$ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQ="
+
 client = TestClient(app)
 
 
@@ -26,13 +28,14 @@ def test_health_rejects_writes():
 
 @pytest.fixture(autouse=True)
 def clear_environment(monkeypatch):
-    for key in ("APP_ENV", "DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_PORT"):
+    for key in ("APP_ENV", "DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_PORT", "ADMIN_PASSWORD_HASH"):
         monkeypatch.delenv(key, raising=False)
 
 
 def configure_database(monkeypatch):
     for key, value in {"APP_ENV": "dev", "DB_HOST": "mysql", "DB_NAME": "jidan_dev",
-                       "DB_USER": "jidan", "DB_PASSWORD": "test-only"}.items():
+                       "DB_USER": "jidan", "DB_PASSWORD": "test-only",
+                       "ADMIN_PASSWORD_HASH": VALID_HASH}.items():
         monkeypatch.setenv(key, value)
 
 
@@ -86,3 +89,34 @@ def test_database_failure_does_not_expose_credentials(monkeypatch, error):
 def test_partial_local_database_configuration_is_rejected(monkeypatch):
     monkeypatch.setenv("DB_HOST", "mysql")
     assert client.get("/api/health").status_code == 503
+
+
+@pytest.mark.parametrize("environment", ["dev", "production"])
+@pytest.mark.parametrize("configured", [None, "", "do-not-print-secret", "pbkdf2_sha256$1$a$b"])
+def test_deployed_health_requires_valid_admin_hash(monkeypatch, environment, configured):
+    configure_database(monkeypatch)
+    monkeypatch.setenv("APP_ENV", environment)
+    if configured is None:
+        monkeypatch.delenv("ADMIN_PASSWORD_HASH")
+    else:
+        monkeypatch.setenv("ADMIN_PASSWORD_HASH", configured)
+    engine = MagicMock()
+    monkeypatch.setattr("app.database.get_engine", lambda: engine)
+    response = client.get("/api/health")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Service unavailable"}
+    assert "secret" not in response.text
+    engine.connect.assert_not_called()
+
+
+@pytest.mark.parametrize("environment", ["dev", "production"])
+def test_deployed_health_checks_hash_without_deriving_password(monkeypatch, environment):
+    configure_database(monkeypatch)
+    monkeypatch.setenv("APP_ENV", environment)
+    engine = MagicMock()
+    engine.connect.return_value.__enter__.return_value.execute.return_value.scalar.return_value = 1
+    monkeypatch.setattr("app.database.get_engine", lambda: engine)
+    monkeypatch.setattr("hashlib.pbkdf2_hmac", lambda *args: pytest.fail("Health must not derive passwords"))
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "environment": environment, "database": "ok"}
