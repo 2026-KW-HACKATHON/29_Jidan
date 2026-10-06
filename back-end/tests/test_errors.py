@@ -59,6 +59,7 @@ def assert_error(response, status, code):
     assert set(body) == ERROR_KEYS
     assert body["code"] == code
     assert body["requestId"].startswith("req_")
+    assert response.headers["X-Request-ID"] == body["requestId"]
     assert isinstance(body["fieldErrors"], list)
     return body
 

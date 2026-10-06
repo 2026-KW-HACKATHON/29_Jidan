@@ -5,7 +5,6 @@ safe to show to users and never contain internal details, SQL, stack traces or i
 """
 
 import logging
-import uuid
 from enum import StrEnum
 
 from fastapi import FastAPI, Request
@@ -14,6 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.log_privacy import install_log_privacy
+from app.request_id import new_request_id, request_id_for
 
 logger = logging.getLogger("jidan.errors")
 
@@ -173,10 +173,6 @@ class UnstructuredHTTPException(StarletteHTTPException):
     """
 
 
-def new_request_id() -> str:
-    return f"req_{uuid.uuid4().hex[:16]}"
-
-
 def error_response(
     status_code: int,
     code: str,
@@ -184,14 +180,16 @@ def error_response(
     *,
     field_errors: list[dict[str, str]] | None = None,
     headers: dict[str, str] | None = None,
+    request_id: str | None = None,
 ) -> JSONResponse:
+    request_id = request_id or new_request_id()
     body = {
         "code": str(code),
         "message": message,
-        "requestId": new_request_id(),
+        "requestId": request_id,
         "fieldErrors": (field_errors or [])[:MAX_FIELD_ERRORS],
     }
-    response_headers = {"Cache-Control": "no-store", **(headers or {})}
+    response_headers = {"Cache-Control": "no-store", **(headers or {}), "X-Request-ID": request_id}
     return JSONResponse(body, status_code=status_code, headers=response_headers)
 
 
@@ -220,6 +218,7 @@ def _field_error(error: dict) -> dict[str, str]:
 async def handle_api_error(_request: Request, exc: ApiError) -> JSONResponse:
     return error_response(
         exc.status_code, exc.code, exc.message, field_errors=exc.field_errors, headers=exc.headers,
+        request_id=request_id_for(_request),
     )
 
 
@@ -228,10 +227,12 @@ async def handle_validation_error(_request: Request, exc: RequestValidationError
     # Malformed JSON is a 400 (the request itself is unreadable); anything that parsed but
     # failed field rules is a 422 with per-field details.
     if any(error["type"] == "json_invalid" for error in errors):
-        return error_response(400, ErrorCode.INVALID_REQUEST, "JSON 요청 형식을 확인해 주세요.")
+        return error_response(400, ErrorCode.INVALID_REQUEST, "JSON 요청 형식을 확인해 주세요.",
+                              request_id=request_id_for(_request))
     return error_response(
         422, ErrorCode.VALIDATION_ERROR, DEFAULT_MESSAGES[ErrorCode.VALIDATION_ERROR],
         field_errors=[_field_error(error) for error in errors],
+        request_id=request_id_for(_request),
     )
 
 
@@ -239,6 +240,7 @@ async def handle_http_exception(_request: Request, exc: StarletteHTTPException) 
     if exc.status_code >= 500:
         return error_response(
             exc.status_code, ErrorCode.INTERNAL_ERROR, DEFAULT_MESSAGES[ErrorCode.INTERNAL_ERROR],
+            request_id=request_id_for(_request),
         )
     code = _STATUS_CODES.get(exc.status_code, ErrorCode.INVALID_REQUEST)
     if exc.status_code == 405:
@@ -246,7 +248,8 @@ async def handle_http_exception(_request: Request, exc: StarletteHTTPException) 
     else:
         message = DEFAULT_MESSAGES[code]
     # Keep protocol headers such as Allow; the detail text is never forwarded.
-    return error_response(exc.status_code, code, message, headers=dict(exc.headers or {}))
+    return error_response(exc.status_code, code, message, headers=dict(exc.headers or {}),
+                          request_id=request_id_for(_request))
 
 
 async def handle_unstructured_http_exception(
@@ -258,7 +261,8 @@ async def handle_unstructured_http_exception(
 async def handle_unexpected_error(_request: Request, exc: Exception) -> JSONResponse:
     # The logging filter removes exception payloads; log only the exception class.
     logger.error("Unhandled error", exc_info=(type(exc), exc, exc.__traceback__))
-    return error_response(500, ErrorCode.INTERNAL_ERROR, DEFAULT_MESSAGES[ErrorCode.INTERNAL_ERROR])
+    return error_response(500, ErrorCode.INTERNAL_ERROR, DEFAULT_MESSAGES[ErrorCode.INTERNAL_ERROR],
+                          request_id=request_id_for(_request))
 
 
 def install_error_handlers(app: FastAPI) -> None:
