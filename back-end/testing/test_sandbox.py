@@ -88,4 +88,36 @@ def test_role_validation_and_registration_switch(api):
 def test_production_app_has_no_sandbox_routes(environment):
     from app.main import app
 
-    assert not any(path.startswith("/sandbox") for path in app.openapi()["paths"])
+    assert not any(getattr(route, "path", "").startswith("/sandbox") for route in app.routes)
+    # No lifespan is needed for 404 routing; do not start DB cleanup in this guard test.
+    client = TestClient(app)
+    try:
+        assert client.get("/sandbox").status_code == 404
+        assert client.post("/sandbox/login/worker").status_code == 404
+    finally:
+        client.close()
+
+
+def test_actual_factory_serves_page_and_real_profile_routes(environment, monkeypatch):
+    from app.main import app
+
+    engine = migrated_sqlite_engine()
+    monkeypatch.setattr("app.db.session.get_session_factory",
+                        lambda: sessionmaker(engine, expire_on_commit=False))
+    routes = list(app.router.routes)
+    schema = app.openapi_schema
+    try:
+        wrapped = create_app()
+        assert wrapped is app
+        with TestClient(wrapped) as client:
+            page = client.get("/sandbox")
+            assert page.status_code == 200 and "Jidan API 테스트" in page.text
+            assert page.headers["cache-control"] == "no-store"
+            login = client.post("/sandbox/login/worker", headers={"Origin": "http://testserver"})
+            assert login.status_code == 204
+            profile = client.get("/api/users/me/profile")
+            assert profile.status_code == 200 and profile.json()["name"] == "테스트 worker"
+    finally:
+        app.router.routes[:] = routes
+        app.openapi_schema = schema
+        engine.dispose()

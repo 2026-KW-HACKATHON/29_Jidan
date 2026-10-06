@@ -63,6 +63,7 @@ def real_db(base_url):
         assert response.status_code == 200
         assert response.json() == {"status": "ok", "environment": "local", "database": "ok"}
         assert client.post("/sandbox/login/worker").status_code == 404
+        assert client.get("/sandbox").status_code == 404
     yield engine
     reset_engine()
 
