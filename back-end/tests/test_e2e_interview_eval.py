@@ -405,6 +405,19 @@ def test_report_observations_flag_judgement_problems():
     assert "EXCEPTIONS 검토: 근무조·섹션이 비어 있음" in joined
 
 
+def test_report_flags_a_not_applicable_intent_that_wrote_sections():
+    section = {"id": "r1", "category": "RULE", "shiftId": "elsewhere", "title": "매장 규칙",
+               "steps": [{"id": "x", "instruction": "따로 정해 둔 매장 규칙은 없어요.", "checklistItem": False}]}
+    reviews = {"RULES": {"status": "READY", "error": None,
+                         "content": {"summary": "없음", "shifts": [], "sections": [section], "needsDetail": False}}}
+    record = sample_record(reviews=reviews)
+    assert "RULES 검토: '해당 없음' 답인데 섹션 1개를 만듦 (초안에 그대로 실림)" in interview_report.observations(record)
+    assert "(RULE · 다른 검토의 근무조)" in interview_report.render(record)
+    empty = {"RULES": {**reviews["RULES"], "content": {**reviews["RULES"]["content"], "sections": [],
+                                                       "missingInformation": []}}}
+    assert not any("해당 없음" in n for n in interview_report.observations(sample_record(reviews=empty)))
+
+
 def test_report_flags_depth_mismatch_and_review_errors():
     turns = [turn("WORK_STRUCTURE", d) for d in range(4)]
     reviews = {"WORK_STRUCTURE": {"status": "ERROR", "error": {"code": "AI_PROCESSING_FAILED"}, "content": None}}

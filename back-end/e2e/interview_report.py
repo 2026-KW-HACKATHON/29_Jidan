@@ -59,7 +59,9 @@ def _attempts(entries: list[dict]) -> str:
 def _steps_lines(sections: list[dict], shift_names: dict[str, str]) -> list[str]:
     lines = []
     for section in sections:
-        where = shift_names.get(section.get("shiftId") or "", "")
+        shift_id = section.get("shiftId")
+        # A review section may point at a shift of another review (WORK_STRUCTURE).
+        where = shift_names.get(shift_id, "다른 검토의 근무조") if shift_id else ""
         head = f"- **{section.get('title')}** ({section.get('category')}{' · ' + where if where else ''})"
         steps = section.get("steps") or []
         lines.append(head + ("" if steps else " — 단계 없음"))
@@ -139,6 +141,9 @@ def observations(record: dict) -> list[str]:
             notes.append(f"{key} 검토: 근무조·섹션이 비어 있음")
         if any(not s.get("steps") for s in content.get("sections") or []):
             notes.append(f"{key} 검토: 단계가 빈 섹션이 있음")
+        answers = [t.get("answer") for t in turns if t["intent"] == key]
+        if answers and answers[-1] == owner_persona.NOT_APPLICABLE and content.get("sections"):
+            notes.append(f"{key} 검토: '해당 없음' 답인데 섹션 {len(content['sections'])}개를 만듦 (초안에 그대로 실림)")
     draft = record.get("draft") or {}
     content = draft.get("content") or {}
     if draft and any(not s.get("steps") for s in content.get("sections") or []):
