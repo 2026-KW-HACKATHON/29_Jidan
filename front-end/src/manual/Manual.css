@@ -34,3 +34,7 @@
 .manual-issue{display:flex;align-items:flex-start;gap:var(--ds-space-2)}
 .manual-issue .ds-checkbox{flex-shrink:0}
 .manual-entry-error{padding:var(--ds-space-4);background:var(--ds-white);color:var(--ds-danger);display:flex;flex-direction:column;gap:var(--ds-space-2)}
+
+.manual-photo-count-1{grid-template-columns:minmax(0,1fr)}
+.manual-photo-count-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.manual-caption{font-size:var(--ds-small)}
