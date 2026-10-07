@@ -47,7 +47,7 @@ export function Workspace({session,search,navigate}:{session:Session;search:stri
  const selected=home.stores.find(s=>s.id===home.selectedStoreId)
  const selectedRoute:Route=(next,id)=>{const query=new URLSearchParams({view:next});if(selected)query.set('store',selected.id);if(id)query.set('id',id);navigate(`/home?${query}`)}
  if(selected){
-  if(['jobs','job','create-job'].includes(view)&&selected.permissions.includes('MANAGE_JOB_POSTINGS'))return <OwnerJobs view={view} id={id} storeId={selected.id} storeName={selected.name} route={selectedRoute}/>
+  if(['jobs','job','applicants','onboarding','create-job'].includes(view)&&selected.permissions.includes('MANAGE_JOB_POSTINGS'))return <OwnerJobs view={view} id={id} storeId={selected.id} storeName={selected.name} route={selectedRoute}/>
   if(['store','workers','worker'].includes(view)&&selected.permissions.includes('MANAGE_STORE'))return <StorePages view={view} id={id} storeId={selected.id} storeName={selected.name} route={selectedRoute}/>
   if(['invitations','invite'].includes(view)&&selected.permissions.includes('INVITE_WORKERS'))return <InvitationPages view={view} storeId={selected.id} storeName={selected.name} route={selectedRoute}/>
   if(view==='manual'&&selected.permissions.includes('MANAGE_MANUALS'))return <OwnerManual storeId={selected.id} onBack={()=>selectedRoute('home')}/>
