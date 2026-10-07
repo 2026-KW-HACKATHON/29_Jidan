@@ -5,7 +5,7 @@ import {useCommand} from '../async/useCommand'
 import {Modal} from '../ui/Modal'
 import {Button} from '../ui/Button'
 export function OwnerRequestWithdrawal({job,request,storeId,onClose,onCompleted,onReload}:{job:JobPosting;request:WorkRequest;storeId:string;onClose:()=>void;onCompleted:()=>void;onReload:()=>void}){
- const write=useMemo(mutation,[]),{busy,failed,run,cancel}=useCommand()
+ const write=useMemo(()=>mutation(),[]),{busy,failed,run,cancel}=useCommand()
  const confirmed=request.status==='ACCEPTED'
  const close=()=>{cancel();onClose()}
  async function confirm(){
