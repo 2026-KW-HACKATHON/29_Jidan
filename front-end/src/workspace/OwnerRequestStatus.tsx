@@ -18,7 +18,10 @@ function Status({job,request,applicant,storeId,route,onReload}:{job:JobPosting;r
  useEffect(()=>{
   const clock=Date.now(),start=Date.parse(job.startAt)
   const deadline=Date.parse(request.status==='PENDING'?request.expiresAt:clock<start?job.startAt:job.endAt),delay=deadline-clock
-  if(delay<=0)return
+  if(delay<=0){
+   if(request.status==='PENDING'){const timer=setTimeout(onReload,0);return()=>clearTimeout(timer)}
+   return
+  }
   const timer=setTimeout(()=>{setNow(Date.now());onReload()},Math.min(delay+50,2147483647))
   const minute=setInterval(()=>setNow(Date.now()),60000)
   return()=>{clearTimeout(timer);clearInterval(minute)}
