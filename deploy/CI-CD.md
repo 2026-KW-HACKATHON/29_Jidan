@@ -2,7 +2,7 @@
 
 ## 실행 구조
 
-- **RPi4**: `jidan-rpi4-build` self-hosted runner에서 테스트와 ARM64 이미지 빌드, GHCR 업로드.
+- **GitHub-hosted**: `ubuntu-24.04-arm`에서 테스트와 ARM64 이미지 빌드, GHCR 업로드. QEMU 없이 배포 서버와 같은 아키텍처로 빌드한다.
 - **RPi5**: `jidan-rpi5-deploy` self-hosted runner에서 이미지를 내려받아 Docker Compose 배포.
 - 배포 서버는 소스를 빌드하지 않는다. 이미지는 커밋 SHA로 게시하고 실제 배포는 digest로 고정한다.
 - FE와 BE는 독립적인 Compose 프로젝트로 배포한다. 한쪽 배포가 다른 쪽 이미지를 바꾸지 않는다.
@@ -13,7 +13,7 @@
 | `back-end/dev` | `dev` | `dev-jidan.leehyowon14.dev` | BE |
 | `main` | `production` | `jidan.leehyowon14.dev` | 변경된 FE/BE |
 
-PR은 테스트·빌드만 수행한다. 같은 저장소의 PR만 self-hosted runner에서 실행하며, fork PR은 자동 실행하지 않는다. `feat/fix/hotfix → dev → main` 병합 규칙은 [BRANCHING.md](../BRANCHING.md)를 따른다.
+PR은 테스트·빌드만 수행한다. fork PR도 격리된 GitHub-hosted runner에서 검사하며 로그인·이미지 게시·배포를 수행하지 않는다. PR 갱신 시 이전 검사는 취소하고 push/CD는 취소하지 않는다. `feat/fix/hotfix → dev → main` 병합 규칙은 [BRANCHING.md](../BRANCHING.md)를 따른다.
 
 두 앱은 별도로 배포되므로 `main`의 FE·BE 배포는 원자적이지 않다. API 변경은 기존 클라이언트와 호환되도록 준비한다.
 
@@ -78,7 +78,7 @@ Nginx 설정 원본은 `deploy/nginx/`에 있고, 서버에서는 `/etc/nginx/si
 
 ## 배포 및 복구
 
-1. RPi4에서 테스트 단계와 런타임 이미지를 각각 빌드한다.
+1. GitHub-hosted ARM64 runner에서 테스트 단계와 런타임 이미지를 각각 빌드한다.
 2. 저장소의 `GITHUB_TOKEN`으로 GHCR에 게시한다. 별도의 레지스트리 비밀번호는 필요하지 않다.
 3. RPi5에서 이미지 digest와 환경별 설정으로 새 릴리즈 디렉터리를 만든다.
 4. 이미지를 pull하고 `docker compose up -d --wait`로 시작한다.
@@ -89,7 +89,9 @@ Nginx 설정 원본은 `deploy/nginx/`에 있고, 서버에서는 `/etc/nginx/si
 
 릴리즈는 `/home/ubuntu/apps/jidan/<환경>/<frontend|backend>/releases/`에 보관한다. 백엔드 릴리즈에는 환경 파일 사본이 있으므로 해당 디렉터리도 비공개로 관리한다. 성공한 배포 뒤 해당 환경·컴포넌트의 검증된 최근 릴리즈 5개와 현재 릴리즈를 보관하고 나머지를 정리한다. 복구 중인 `pending` 기록이 있으면 릴리즈를 삭제하지 않는다.
 
-RPi4는 `jidan-ci` 전용 Buildx builder를 사용한다. 테스트 단계는 Docker 이미지로 내보내지 않고 전용 캐시에만 저장한다. 빌드 종료 시 해당 캐시를 최대 4GB·여유 공간 8GB 목표로 정리한다(정리 가능한 캐시에 한하므로 용량을 보장하는 quota는 아니다). FE/BE별 최근 이미지 참조 5개를 보관하며, 실행·정지된 컨테이너가 사용하는 이미지는 제외한다. RPi5에서는 보관 중인 모든 환경의 릴리즈 이미지도 보호한다. 다른 프로젝트의 이미지·builder와 Docker volume은 정리하지 않으며 `--force` 이미지 삭제를 사용하지 않는다. GHCR 원격 이미지에는 이 로컬 보관 정책을 적용하지 않는다.
+GitHub-hosted 빌드는 실행별 임시 Buildx builder와 GHA 캐시를 사용한다. 캐시는 FE/BE, test/runtime, runtime 환경별로 분리하고 mode=max로 의존성 단계를 보관한다. runner의 로컬 이미지/캐시 정리는 필요하지 않다. 캐시가 없는 첫 실행은 전체 빌드하며 후속 실행에서 복원한다. 테스트 단계 실패 시 runtime 게시와 CD는 실행하지 않는다. 개발 frontend만 미리보기를 포함하며 backend 문서 revision은 현재 SHA로 전달한다.
+
+RPi5에서는 보관 중인 모든 환경의 릴리즈 이미지와 실행·정지된 컨테이너의 이미지를 보호한다. 다른 프로젝트의 이미지·builder와 Docker volume은 정리하지 않으며 `--force` 이미지 삭제를 사용하지 않는다. GHCR 원격 이미지에는 이 로컬 보관 정책을 적용하지 않는다. 이전 RPi4 runner/캐시는 이번 전환에서 삭제하지 않으며 새 CI 작업을 배정하지 않는다.
 
 정리 단계가 실패하면 CI에 실패가 표시된다. 앱 배포 후의 정리 실패는 경고를 남기며, 이미 검증·확정된 앱 배포를 롤백하지 않는다.
 
@@ -107,7 +109,7 @@ RPi4는 `jidan-ci` 전용 Buildx builder를 사용한다. 테스트 단계는 Do
 검증 명령:
 
 ```bash
-# Linux / RPi4
+# Linux / GitHub-hosted와 동일한 환경
 bash -n deploy/scripts/deploy.sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/tests -v
 
