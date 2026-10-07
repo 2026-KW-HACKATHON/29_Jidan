@@ -132,8 +132,8 @@ def test_aspects_are_listed_most_essential_first():
     assert labels["COMMON_TASKS"] == ["공통 업무의 종류", "공통 업무의 작업 순서", "공통 업무의 완료 기준"]
     # Safety before upkeep for a worker's first day.
     assert labels["EQUIPMENT"] == ["설비의 종류", "설비의 사용 순서", "설비의 주의 사항", "설비의 관리 방법"]
-    for key in V1:  # core aspects come before details
-        cores = [a.core for a in aspects_for(V1[key]).aspects]
+    for key, definition in V1.items():  # core aspects come before details
+        cores = [a.core for a in aspects_for(definition).aspects]
         assert cores == sorted(cores, reverse=True), key
 
 
@@ -248,7 +248,7 @@ def test_judge_meta_names_the_configured_backend_and_effort():
 
 
 @pytest.fixture
-def ctx(api, db_engine, media_root):
+def ctx(api, db_engine, media_root):  # noqa: F811
     return build_ctx(api, db_engine)
 
 
