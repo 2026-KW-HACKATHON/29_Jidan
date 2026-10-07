@@ -173,6 +173,8 @@ def test_model_written_missing_entry_wins_and_concrete_steps_stay(fake):
     ("상황에 따라 점주에게 연락해요.", None),
     ("정해진 자리에 컵을 둬요.", None),
     ("영수증이 출력되면 주문 응대가 끝난 거예요.", None),
+    ("근무자는 음식물 쓰레기를 버리지 않아도 돼요.", None),  # Figma 업무 상세: a "don't" is guidance
+    ("오후조와 야간조는 별도 업무가 없어요.", None),
     ("제빙기 안에는 손을 넣지 말고 꼭 스쿱을 사용해요.", None),
     ("상황에 맞게 처리해요. " * 10, None),  # long text is never judged by a pattern
 ])
