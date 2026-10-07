@@ -2,10 +2,9 @@
 
 from fastapi import FastAPI
 from starlette.datastructures import MutableHeaders
-from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.request_id import request_id_for
+from app.request_id import RequestIdMiddleware
 
 NO_STORE = "no-store"
 API_PREFIX = "/api"
@@ -27,12 +26,9 @@ class NoStoreMiddleware:
             await self.app(scope, receive, send)
             return
 
-        request_id = request_id_for(Request(scope))
-
         async def send_with_header(message: Message) -> None:
             if message["type"] == "http.response.start":
                 MutableHeaders(scope=message)["Cache-Control"] = NO_STORE
-                MutableHeaders(scope=message)["X-Request-ID"] = request_id
             await send(message)
 
         await self.app(scope, receive, send_with_header)
@@ -40,3 +36,4 @@ class NoStoreMiddleware:
 
 def install_middleware(app: FastAPI) -> None:
     app.add_middleware(NoStoreMiddleware)
+    app.add_middleware(RequestIdMiddleware)  # added last = outermost user middleware

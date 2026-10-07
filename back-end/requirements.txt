@@ -9,6 +9,8 @@ annotated-types==0.8.0
 anyio==4.15.1
     # via
     #   httpx
+    #   httpx2
+    #   openai
     #   starlette
 certifi==2026.7.22
     # via
@@ -32,20 +34,32 @@ google-auth==2.59.1
 h11==0.16.0
     # via
     #   httpcore
+    #   httpcore2
     #   uvicorn
 httpcore==1.0.9
     # via httpx
+httpcore2==2.13.1
+    # via httpx2
 httpx==0.28.1
     # via -r back-end/requirements.in
+httpx2==2.13.1
+    # via openai
 idna==3.20
     # via
     #   anyio
     #   httpx
+    #   httpx2
     #   requests
+jiter==0.17.0
+    # via openai
 mako==1.4.3
     # via alembic
 markupsafe==3.0.4
     # via mako
+openai==3.24.0
+    # via -r back-end/requirements.in
+pillow==12.3.0
+    # via -r back-end/requirements.in
 pyasn1==0.6.4
     # via pyasn1-modules
 pyasn1-modules==0.4.2
@@ -53,24 +67,36 @@ pyasn1-modules==0.4.2
 pycparser==3.0
     # via cffi
 pydantic==2.13.5
-    # via fastapi
+    # via
+    #   fastapi
+    #   openai
 pydantic-core==2.46.5
     # via pydantic
 pymysql==1.2.3
     # via -r back-end/requirements.in
+python-multipart==0.0.32
+    # via -r back-end/requirements.in
 requests==2.34.2
     # via google-auth
+sniffio==1.3.1
+    # via openai
 sqlalchemy==2.1.3
     # via
     #   -r back-end/requirements.in
     #   alembic
 starlette==1.6.0
     # via fastapi
+truststore==0.10.4
+    # via
+    #   httpcore2
+    #   httpx2
 typing-extensions==4.16.0
     # via
     #   alembic
     #   anyio
     #   fastapi
+    #   httpx2
+    #   openai
     #   pydantic
     #   pydantic-core
     #   sqlalchemy

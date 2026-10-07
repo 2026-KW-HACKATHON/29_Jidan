@@ -139,7 +139,8 @@ def test_engine_is_created_lazily_and_reset(monkeypatch):
     assert db.get_engine() is db.get_engine()
     assert created.call_count == 1
     kwargs = created.call_args.kwargs["connect_args"]
-    assert kwargs["init_command"] == "SET time_zone = '+00:00'" and kwargs["connect_timeout"] == 3
+    assert kwargs["init_command"] == "SET time_zone = '+00:00', innodb_lock_wait_timeout = 5"
+    assert (kwargs["connect_timeout"], kwargs["read_timeout"], kwargs["write_timeout"]) == (3, 15, 15)
     db.reset_engine()
     db.get_engine()
     assert created.call_count == 2
@@ -149,3 +150,106 @@ def test_engine_is_created_lazily_and_reset(monkeypatch):
 def test_select_one_via_engine(engine):
     with engine.connect() as connection:
         assert connection.execute(select(1)).scalar() == 1
+
+
+# --- timeouts --------------------------------------------------------------------------------
+
+
+def test_db_timeouts_default_and_environment(monkeypatch):
+    from app.db.engine import db_timeouts
+
+    monkeypatch.delenv("DB_LOCK_WAIT_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("DB_READ_TIMEOUT_SECONDS", raising=False)
+    assert db_timeouts() == (5, 15)
+    monkeypatch.setenv("DB_LOCK_WAIT_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv("DB_READ_TIMEOUT_SECONDS", "55")
+    assert db_timeouts() == (1, 55)
+    monkeypatch.setenv("DB_LOCK_WAIT_TIMEOUT_SECONDS", "")  # empty means the default
+    assert db_timeouts() == (5, 55)
+
+
+@pytest.mark.parametrize(("lock_wait", "read_timeout"), [
+    ("0", "15"), ("-1", "15"), ("abc", "15"), ("1.5", "15"), ("\uff15", "15"), (" 5", "15"),
+    ("5", "5"), ("10", "5"), ("5", "56"), ("5", "0"),
+])
+def test_db_timeouts_reject_invalid_values(monkeypatch, lock_wait, read_timeout):
+    """A read timeout at or below the lock wait would turn lock waits into 2013 again."""
+    from app.db.engine import db_timeouts
+
+    monkeypatch.setenv("DB_LOCK_WAIT_TIMEOUT_SECONDS", lock_wait)
+    monkeypatch.setenv("DB_READ_TIMEOUT_SECONDS", read_timeout)
+    with pytest.raises(ValueError) as error:
+        db_timeouts()
+    message = str(error.value)  # names the settings, never echoes the value
+    assert message.startswith("Invalid DB_") and not any(char.isdigit() for char in message)
+
+
+def test_invalid_timeouts_stop_startup(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    monkeypatch.setenv("DB_READ_TIMEOUT_SECONDS", "2")
+    with pytest.raises(ValueError), TestClient(app):
+        pass
+
+
+def test_health_engine_keeps_short_timeouts(monkeypatch):
+    from app import db
+
+    configure(monkeypatch)
+    created = MagicMock()
+    monkeypatch.setattr("app.db.engine.create_engine", created)
+    db.reset_engine()
+    assert db.get_health_engine() is db.get_health_engine()
+    kwargs = created.call_args.kwargs
+    assert (kwargs["connect_args"]["read_timeout"], kwargs["connect_args"]["write_timeout"]) == (3, 3)
+    assert (kwargs["pool_size"], kwargs["max_overflow"], kwargs["pool_timeout"]) == (1, 0, 3)
+    db.reset_engine()
+
+
+@pytest.mark.mysql
+def test_mysql_session_uses_the_configured_lock_wait(mysql_engine):
+    with mysql_engine.connect() as connection:
+        assert connection.execute(text("SELECT @@session.innodb_lock_wait_timeout")).scalar() == 5
+        assert connection.execute(text("SELECT @@session.time_zone")).scalar() == "+00:00"
+
+
+@pytest.fixture
+def short_timeouts(mysql_engine, monkeypatch):
+    """Lock wait 1 s, read timeout 3 s: the defaults' ratio, fast enough for a test."""
+    from app.db import get_engine, reset_engine
+
+    monkeypatch.setenv("DB_LOCK_WAIT_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv("DB_READ_TIMEOUT_SECONDS", "3")
+    reset_engine()
+    yield get_engine()
+    reset_engine()
+
+
+@pytest.mark.mysql
+def test_mysql_lock_wait_ends_as_1205_not_a_lost_connection(short_timeouts):
+    """Before the session lock wait was set, the 3 s socket timeout ended every wait longer
+    than 3 s as 2013 "Lost connection" (not lock contention, so a 500 nothing retried)."""
+    import time
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.idempotency import is_lock_contention
+
+    with Session(short_timeouts) as holder:
+        user = User(google_sub=f"lock-{new_uuid()}", google_email="lock@example.com", email_verified=True,
+                    role="WORKER", name="잠금", phone_number="01012345678")
+        holder.add(user)
+        holder.commit()
+        try:
+            holder.execute(select(User).where(User.id == user.id).with_for_update())
+            started = time.monotonic()
+            with short_timeouts.connect() as waiter, pytest.raises(OperationalError) as error:
+                waiter.execute(select(User.id).where(User.id == user.id).with_for_update())
+            assert error.value.orig.args[0] == 1205 and is_lock_contention(error.value)
+            assert time.monotonic() - started < 3
+        finally:
+            holder.rollback()
+            holder.delete(holder.get(User, user.id))
+            holder.commit()

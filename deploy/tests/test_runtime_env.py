@@ -5,12 +5,12 @@ import sys
 import tempfile
 import unittest
 
-VALID_HASH = "pbkdf2_sha256$600000$c3Nzc3Nzc3Nzc3Nzc3Nzcw==$ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQ="
-
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/check_runtime_env.py'
 SPEC = importlib.util.spec_from_file_location('check_runtime_env', SCRIPT)
 runtime_env = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runtime_env)
+# A well-formed scrypt ADMIN_PASSWORD_HASH (format only; no real password behind it).
+VALID_HASH = 'scrypt$14$8$1$c3Nzc3Nzc3Nzc3Nzc3Nzcw$ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQ'
 
 
 class RuntimeEnvTests(unittest.TestCase):
@@ -76,51 +76,17 @@ class RuntimeEnvTests(unittest.TestCase):
         self.path.mkdir()
         self.assert_safe_failure('dev')
 
-    def test_password_hash_is_required_once_and_raw(self):
-        origin = runtime_env.ORIGINS['dev']
-        cases = [
-            '', '# ADMIN_PASSWORD_HASH=' + VALID_HASH, 'ADMIN_PASSWORD_HASH', 'ADMIN_PASSWORD_HASH=',
-            'ADMIN_PASSWORD_HASH=do-not-print', 'ADMIN_PASSWORD_HASH="' + VALID_HASH + '"',
-            "ADMIN_PASSWORD_HASH='" + VALID_HASH + "'", 'ADMIN_PASSWORD_HASH=${HASH}',
-            'ADMIN_PASSWORD_HASH= ' + VALID_HASH, 'ADMIN_PASSWORD_HASH=' + VALID_HASH + ' ',
-            'ADMIN_PASSWORD_HASH=' + VALID_HASH + ' # comment',
-            'ADMIN_PASSWORD_HASH=' + VALID_HASH + '\nADMIN_PASSWORD_HASH=' + VALID_HASH,
-            'ADMIN_PASSWORD_HASH\nADMIN_PASSWORD_HASH=' + VALID_HASH,
-            'ADMIN_PASSWORD_HASH=' + VALID_HASH.replace('$600000$', '$599999$'),
-            'ADMIN_PASSWORD_HASH=' + VALID_HASH.replace('$600000$', '$2000001$'),
-            'ADMIN_PASSWORD_HASH=' + VALID_HASH.replace('pbkdf2_sha256', 'sha256'),
-            'ADMIN_PASSWORD_HASH=' + VALID_HASH.replace('c3Nzc3Nzc3Nzc3Nzc3Nzcw==', 'not-base64!'),
-            'ADMIN_PASSWORD_HASH=' + VALID_HASH.replace('c3Nzc3Nzc3Nzc3Nzc3Nzcw==', 'c2hvcnQ='),
-            'ADMIN_PASSWORD_HASH=' + VALID_HASH.rsplit('$', 1)[0] + '$c2hvcnQ=',
-        ]
-        for content in cases:
-            with self.subTest(content=content):
-                self.path.write_text(f'ALLOWED_ORIGINS={origin}\n{content}\n')
-                self.assertFalse(runtime_env.valid_admin_password_hash(self.path))
-                self.assert_safe_failure('dev')
-
-    def test_valid_hash_preserves_raw_bytes_and_permissions(self):
-        origin = runtime_env.ORIGINS['dev']
-        self.path.write_bytes(f'ALLOWED_ORIGINS={origin}\r\nADMIN_PASSWORD_HASH={VALID_HASH}\r\n'.encode())
-        self.path.chmod(0o600)
-        before = self.path.read_bytes()
-        self.assertTrue(runtime_env.valid_admin_password_hash(self.path))
-        self.assertEqual(runtime_env.main(['dev', str(self.path)]), 0)
-        self.assertEqual(self.path.read_bytes(), before)
-        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
-
     def assert_safe_failure(self, environment):
         result = subprocess.run([sys.executable, str(SCRIPT), environment, str(self.path)],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, '')
         self.assertNotIn('do-not-print', result.stderr)
-        self.assertNotIn(VALID_HASH, result.stdout + result.stderr)
         self.assertNotIn(str(self.path), result.stderr)
 
     def test_cli_success_and_invalid_arguments(self):
-        self.path.write_text('ALLOWED_ORIGINS=' + runtime_env.ORIGINS['production']
-                             + '\nADMIN_PASSWORD_HASH=' + VALID_HASH + '\n')
+        self.path.write_text('ALLOWED_ORIGINS=' + runtime_env.ORIGINS['production'] + '\n'
+                             f'ADMIN_PASSWORD_HASH={VALID_HASH}\n')
         result = subprocess.run([sys.executable, str(SCRIPT), 'production', str(self.path)],
                                 capture_output=True, text=True)
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '', ''))
@@ -128,6 +94,85 @@ class RuntimeEnvTests(unittest.TestCase):
             with self.subTest(args=args):
                 result = subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True)
                 self.assertEqual(result.returncode, 2)
+
+
+class AdminPasswordHashTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / 'runtime.env'
+
+    def write(self, hash_lines):
+        origin = runtime_env.ORIGINS['dev']
+        self.path.write_text(f'ALLOWED_ORIGINS={origin}\n{hash_lines}\nDB_PASSWORD=do-not-print\n')
+
+    def test_existing_scrypt_hash_is_accepted(self):
+        for line in (f'ADMIN_PASSWORD_HASH={VALID_HASH}', f'# ADMIN_PASSWORD_HASH=old\nADMIN_PASSWORD_HASH={VALID_HASH}',
+                     f'ADMIN_PASSWORD_HASH={VALID_HASH}\r'):
+            with self.subTest(line=line):
+                self.write(line)
+                self.assertTrue(runtime_env.valid_admin_password_hash(self.path))
+                result = subprocess.run([sys.executable, str(SCRIPT), 'dev', str(self.path)],
+                                        capture_output=True, text=True)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '', ''))
+
+    def test_remote_pbkdf2_hash_is_accepted_unchanged(self):
+        stored = 'pbkdf2_sha256$600000$c3Nzc3Nzc3Nzc3Nzc3Nzcw==$ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQ='
+        for ending in ('\n', '\r\n'):
+            with self.subTest(ending=ending):
+                content = ('ALLOWED_ORIGINS=' + runtime_env.ORIGINS['dev'] + ending
+                           + 'ADMIN_PASSWORD_HASH=' + stored + ending)
+                self.path.write_bytes(content.encode())
+                before = self.path.read_bytes()
+                result = subprocess.run([sys.executable, str(SCRIPT), 'dev', str(self.path)],
+                                        capture_output=True, text=True)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '', ''))
+                self.assertEqual(self.path.read_bytes(), before)
+
+    def test_missing_duplicate_and_malformed_hashes_are_rejected_without_leaking(self):
+        salt, key = VALID_HASH.split('$')[4:]
+        cases = [
+            '', 'ADMIN_PASSWORD_HASH', 'ADMIN_PASSWORD_HASH=', '# ADMIN_PASSWORD_HASH=' + VALID_HASH,
+            f'ADMIN_PASSWORD_HASH={VALID_HASH}\nADMIN_PASSWORD_HASH={VALID_HASH}',
+            f'ADMIN_PASSWORD_HASH="{VALID_HASH}"', f"ADMIN_PASSWORD_HASH='{VALID_HASH}'",
+            'ADMIN_PASSWORD_HASH=${ADMIN_HASH}', 'ADMIN_PASSWORD_HASH=do-not-print',
+            # PBKDF2 below the approved minimum is invalid.
+            'ADMIN_PASSWORD_HASH=pbkdf2_sha256$599999$c3Nzc3Nzc3Nzc3Nzc3Nzcw==$ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQ=',
+            f'ADMIN_PASSWORD_HASH=scrypt$13$8$1${salt}${key}', f'ADMIN_PASSWORD_HASH=scrypt$18$8$1${salt}${key}',
+            f'ADMIN_PASSWORD_HASH=scrypt$16$1$1${salt}${key}',  # OpenSSL scrypt refuses N >= 2**(16 * r)
+            f'ADMIN_PASSWORD_HASH=scrypt$14$8$1${salt}${key[:-1]}',
+        ]
+        for content in cases:
+            with self.subTest(content=content):
+                self.write(content)
+                self.assertFalse(runtime_env.valid_admin_password_hash(self.path))
+                result = subprocess.run([sys.executable, str(SCRIPT), 'dev', str(self.path)],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, '')
+                self.assertIn('ADMIN_PASSWORD_HASH', result.stderr)
+                for secret in ('do-not-print', 'c3Nzc3Nz', 'ZGRkZGRk', str(self.path)):
+                    self.assertNotIn(secret, result.stderr)
+
+    def test_origin_check_still_runs_first(self):
+        self.path.write_text(f'ALLOWED_ORIGINS=https://wrong.example.com\nADMIN_PASSWORD_HASH={VALID_HASH}\n')
+        result = subprocess.run([sys.executable, str(SCRIPT), 'dev', str(self.path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('ALLOWED_ORIGINS', result.stderr)
+
+    def test_checkout_without_backend_fails_closed(self):
+        self.write(f'ADMIN_PASSWORD_HASH={VALID_HASH}')
+        original = runtime_env.BACK_END
+        runtime_env.BACK_END = Path(self.temp.name) / 'missing-back-end'
+        saved = {name: module for name, module in sys.modules.items() if name == 'app' or name.startswith('app.')}
+        for name in saved:
+            del sys.modules[name]
+        try:
+            self.assertFalse(runtime_env.valid_admin_password_hash(self.path))
+        finally:
+            runtime_env.BACK_END = original
+            sys.modules.update(saved)
+        self.assertNotIn(str(Path(self.temp.name) / 'missing-back-end'), sys.path)
 
 
 if __name__ == '__main__':

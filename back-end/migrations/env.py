@@ -27,9 +27,11 @@ def run_migrations_online() -> None:
     connection = config.attributes.get("connection")
     if connection is None:
         # Deploy logs keep migration output; failed statements must not echo bound values.
+        # DDL waiting for a metadata lock queues every later query on that table behind it, and
+        # MySQL waits a year by default: fail fast so the running release keeps serving.
         engine = create_engine(
             database_url(), hide_parameters=True,
-            connect_args={"init_command": "SET time_zone = '+00:00'"},
+            connect_args={"init_command": "SET time_zone = '+00:00', lock_wait_timeout = 15"},
         )
         with engine.connect() as connection:
             _migrate(connection)

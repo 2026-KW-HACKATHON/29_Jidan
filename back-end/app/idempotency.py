@@ -32,18 +32,19 @@ import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import Depends, Header
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.auth import MemberPrincipal, RegistrationPrincipal
 from app.db import new_uuid, session_scope, utcnow
+from app.db.keyed import delete_by_key
 from app.db.models import IdempotencyRecord
 from app.errors import ApiError, ErrorCode
 
@@ -180,6 +181,11 @@ def _is_lock_contention(error: OperationalError) -> bool:
         return args[0] in _MYSQL_LOCK_ERRNOS
     text = str(original).lower()
     return any(message in text for message in _SQLITE_LOCK_MESSAGES)
+
+
+def is_lock_contention(error: OperationalError) -> bool:
+    """Public form of the lock wait / deadlock test, for handlers that retry their own writes."""
+    return _is_lock_contention(error)
 
 
 def _reserve(subject_id: str, key: str, endpoint: str, request_hash: str):
@@ -361,10 +367,69 @@ def run_idempotent(
     return _response(result.status_code, result.body, result.headers, replayed=False)
 
 
-def purge_expired(*, db: Session | None = None) -> int:
-    """Delete records past their 24 hours; safe to run from a periodic job."""
-    statement = delete(IdempotencyRecord).where(IdempotencyRecord.expires_at <= utcnow())
+# Retention (B05). The replay window is RECORD_TTL (24 h, `expires_at`). Storage is a little
+# longer: the periodic job below deletes expired records at its next run (every
+# RETENTION_INTERVAL_SECONDS), at most RETENTION_BATCH * RETENTION_MAX_BATCHES per run, and the
+# rest of a backlog at the following runs. A failed run is retried at the next interval.
+RETENTION_INTERVAL_SECONDS = 300
+RETENTION_BATCH = 1000
+RETENTION_MAX_BATCHES = 20
+# A batch that loses a lock wait or deadlock is retried this often, then left to the next run.
+RETENTION_LOCK_RETRIES = 3
+
+
+def purge_expired(*, db: Session | None = None, now: datetime | None = None,
+                  batch_size: int | None = None) -> int:
+    """Delete one bounded batch of records past their 24 hours; returns how many went.
+
+    A PROCESSING record whose lease is still live is kept even past `expires_at`: its request
+    may still complete it. Rows are picked with SKIP LOCKED (a concurrent purge or a request
+    holding a row is passed over, never waited for) and deleted one primary key at a time in
+    ascending order. A single `DELETE ... WHERE id IN (...)` was planned as a clustered index
+    scan on a small table and locked every row it examined, including rows another purge had
+    picked (MySQL 1213); a key lookup locks only its own row whatever the plan.
+    """
+    now = now or utcnow()
+    limit = RETENTION_BATCH if batch_size is None else batch_size
+
+    def purge(session: Session) -> int:
+        ids = list(session.scalars(
+            select(IdempotencyRecord.id)
+            .where(
+                IdempotencyRecord.expires_at <= now,
+                or_(
+                    IdempotencyRecord.state == "COMPLETED",
+                    IdempotencyRecord.locked_until.is_(None),
+                    IdempotencyRecord.locked_until <= now,
+                ),
+            )
+            .order_by(IdempotencyRecord.expires_at, IdempotencyRecord.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        ))
+        return delete_by_key(session, IdempotencyRecord, ids)
+
     if db is not None:
-        return db.execute(statement).rowcount
+        return purge(db)
     with session_scope() as session:
-        return session.execute(statement).rowcount
+        return purge(session)
+
+
+def run_idempotency_retention() -> int:
+    """The periodic job (app.lifespan): bounded batches, each in its own short transaction."""
+    removed = 0
+    for _ in range(RETENTION_MAX_BATCHES):
+        for attempt in range(RETENTION_LOCK_RETRIES + 1):
+            try:
+                count = purge_expired()
+                break
+            except OperationalError as error:
+                if not _is_lock_contention(error):
+                    raise
+                if attempt == RETENTION_LOCK_RETRIES:
+                    return removed  # rolled back; the next run picks the batch up again
+                time.sleep(0.05 * (attempt + 1))
+        removed += count
+        if count < RETENTION_BATCH:
+            break
+    return removed

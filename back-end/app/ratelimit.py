@@ -18,12 +18,13 @@ Known limits, by design of this first version:
 """
 
 import itertools
+import logging
 import math
 import os
 import threading
 import time
 from collections import OrderedDict, deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -212,6 +213,7 @@ admin_password_global_limiter = RateLimiter(
     ADMIN_PASSWORD_GLOBAL_LIMIT, ADMIN_PASSWORD_WINDOW_SECONDS,
 )
 _ADMIN_GLOBAL_KEY = "admin"
+_admin_logger = logging.getLogger("jidan.admin")
 
 
 def enforce_login_rate_limit(request: Request) -> None:
@@ -229,8 +231,8 @@ class AdminPasswordAttempt:
     * `succeeded()` (right password): both slots are given back, and the client's earlier
       finished failures are forgotten. Other attempts still in flight keep their slots.
 
-    An endpoint that leaves without reporting (an unexpected error, or a body that failed
-    validation) simply leaves the slots used, which is the safe direction.
+    An attempt left unreported (an unexpected error, or a body that failed validation) is
+    settled as failed when the request ends (`AdminAttempt`), which is the safe direction.
     """
 
     def __init__(self, ip_key: str, ip_slot: Reservation, global_slot: Reservation) -> None:
@@ -250,6 +252,12 @@ class AdminPasswordAttempt:
         if self._finish():
             admin_password_ip_limiter.settle(self._ip_slot)
             admin_password_global_limiter.settle(self._global_slot)
+
+    def abandoned(self) -> None:
+        """The password was never checked (server busy): give both slots back, forgive nothing."""
+        if self._finish():
+            admin_password_ip_limiter.release(self._ip_slot)
+            admin_password_global_limiter.release(self._global_slot)
 
     def succeeded(self) -> None:
         if self._finish():
@@ -274,7 +282,29 @@ def enforce_admin_password_rate_limit(request: Request) -> AdminPasswordAttempt:
     return AdminPasswordAttempt(ip_key, ip_slot, global_slot)
 
 
-AdminAttempt = Annotated[AdminPasswordAttempt, Depends(enforce_admin_password_rate_limit)]
+def admin_password_attempt(request: Request) -> Iterator[AdminPasswordAttempt]:
+    """`enforce_admin_password_rate_limit` that settles an unreported attempt as failed.
+
+    FastAPI resolves this dependency before validating the body, so a 400/422 request never
+    reaches the endpoint. Left reserved, such a slot stayed "in flight" for the whole window:
+    still counted, but never forgiven by a later success the way a wrong password is.
+    """
+    try:
+        attempt = enforce_admin_password_rate_limit(request)
+    except ApiError as error:
+        # The endpoint never runs, so its operation record is written here (path only: it holds
+        # at most the approval request id; never the body or the client address).
+        _admin_logger.warning(
+            "Admin operation refused: path=%s result=%s", request.url.path, error.code,
+        )
+        raise
+    try:
+        yield attempt
+    finally:
+        attempt.failed()  # no-op once the endpoint reported failed() or succeeded()
+
+
+AdminAttempt = Annotated[AdminPasswordAttempt, Depends(admin_password_attempt, scope="function")]
 
 
 def reset_all_limits() -> None:

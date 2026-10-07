@@ -1,0 +1,26 @@
+name: Backend HTTP E2E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  http-mysql:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Verify actual HTTP server and MySQL
+        run: back-end/testing/run-e2e.sh
+      - name: Save test results and service logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-http-mysql-results
+          path: .local/test-results/
+          retention-days: 7
+          if-no-files-found: warn

@@ -18,11 +18,19 @@ COPY requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 COPY . .
 COPY --from=swagger /swagger-static ./swagger-static
-RUN python -m ruff check . && python -m pytest
+RUN python -m ruff check .
+
+# The shared pipeline uses the test target for static checks only. Functional tests and HTTP
+# E2E run separately after deployment; the runtime image excludes their code and fixtures.
+FROM python:3.12-slim AS runtime-source
+COPY . /src
+RUN rm -rf /src/tests /src/e2e /src/testing
 
 FROM dependencies AS runtime
-RUN useradd --create-home --uid 10001 app
-COPY --chown=app:app . .
+RUN useradd --create-home --uid 10001 app \
+  && install -d -o app -g app -m 700 /var/lib/jidan/media
+# Docker copies this owner and mode into a new empty named volume mounted here (compose.yml).
+COPY --from=runtime-source --chown=app:app /src ./
 COPY --from=swagger --chown=app:app /swagger-static ./swagger-static
 USER app
 EXPOSE 8000

@@ -92,7 +92,9 @@ Schema 검사는 개수 상한·필수 필드·요일 중복·30분 형식·자�
 
 - `app/worker_profile.py`가 조회·영역별 수정 API 4개를 제공한다. `app/profile_inputs.py`는 가입 입력의 이름·전화번호·생일·경력·가능 시간 규칙을 재사용한다.
 - 기존 `users`·`worker_profiles`·`worker_careers`·`availability_rules`·`availability_days`를 사용하며 스키마·환경변수 변경은 없다. `updatedAt`은 `users.updated_at`으로 반환하고 해당 프로필 영역에 실질 변경이 있을 때만 갱신한다.
-- 수정은 `User` 행을 먼저 `FOR UPDATE`로 잠그고 자식도 최신 잠금 조회로 읽는다. MySQL `REPEATABLE READ`에서 인증 조회로 만들어진 이전 snapshot을 재사용하지 않는다. 같은 회원의 영역별 저장을 직렬화해 마지막 저장과 타 영역 보존을 보장한다.
+- 수정은 인증 조회 트랜잭션을 끝낸 뒤 `User` 행을 `FOR UPDATE`로 잠근다. MySQL `REPEATABLE READ` snapshot이 잠금 이후에 만들어지므로 자식은 일반 조회로도 최신 값을 읽는다. 같은 회원의 영역별 저장을 직렬화해 마지막 저장과 타 영역 보존을 보장한다.
+- 자식 행은 `worker_id` 범위 잠금 조회·삭제 없이 기본 키로만 갱신·삭제한다. 기존 행은 위치별로 재사용하고 남는 행만 삭제해 `(worker_id, sort_order)`·`(rule_id, weekday)` 키를 같은 트랜잭션에서 지우고 다시 넣지 않는다. 서로 다른 회원의 동시 수정이 공유 index gap 잠금으로 deadlock(MySQL 1213)되지 않도록 하기 위해서다.
+- 그래도 이전 저장이 지운 고유 키(`(rule_id, weekday)`·`(worker_id, sort_order)`)를 purge 전에 다시 넣으면 InnoDB 중복 검사가 공유 gap 잠금을 걸어 드물게 deadlock이 난다(측정 약 2.5%). 스키마 변경 없이는 막을 수 없으므로, 잠금 경합(1213/1205)으로 실패한 저장은 요청 전체를 최대 3회 다시 실행한다. 다른 DB 오류는 재시도하지 않는다.
 - 응답 본문은 잠금을 보유한 트랜잭션 안에서 만들고 commit 성공 후 반환한다. 검증·자식 교체·commit 실패는 기존 프로필 전체를 유지한다.
 - 경력과 가능 시간 그룹은 요청 순서로 저장한다. 그룹 내 요일은 순서 없는 선택 집합으로 비교하고 응답은 `MON`~`SUN` 순으로 반환한다. 요일 순서만 바꾼 요청은 `updatedAt`을 변경하지 않는다.
 - 수정 API 3개는 OpenAPI의 `Idempotency-Key` 필수 대상이 아니다. 회원 세션·CSRF·Origin을 검증하며, 동일한 정규화 내용을 재저장하면 자식 행 ID와 `updatedAt`을 유지한다. 중간에 다른 변경이 있었다면 마지막 요청의 내용을 적용한다.

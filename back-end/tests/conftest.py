@@ -178,8 +178,12 @@ def db_engine(request, tmp_path, monkeypatch):
     engine = get_engine()
     yield engine
     with engine.begin() as connection:
+        # Self references (interview_turns) and the store_manuals <-> manual_versions cycle have
+        # no deletion order that satisfies every row-by-row FK check; empty all tables at once.
+        connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 0")
         for table in reversed(Base.metadata.sorted_tables):
             connection.execute(table.delete())
+        connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 1")
     reset_engine()
 
 
@@ -200,3 +204,76 @@ def mysql_session(mysql_engine):
         with Session(connection, join_transaction_mode="create_savepoint") as session:
             yield session
         transaction.rollback()
+
+
+@pytest.fixture
+def api(db_engine, monkeypatch):
+    """The real application on `db_engine`, with every /api response checked against OpenAPI.
+
+    Writes need `tests.api_contract.login(api, user_id).headers(...)` for Origin and CSRF.
+    """
+    from tests.api_contract import ORIGIN, ApiContractClient
+
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("ALLOWED_ORIGINS", ORIGIN)
+    from app.main import app
+
+    with ApiContractClient(app, raise_server_exceptions=False) as client:
+        yield client
+
+
+@pytest.fixture(autouse=True)
+def _no_background_jobs(monkeypatch):
+    """Periodic jobs never start in tests: they would sweep the fixed test dates on the real clock.
+
+    Tests of the jobs call them directly with an injected clock.
+    """
+    monkeypatch.setenv("BACKGROUND_JOBS", "off")
+
+
+@pytest.fixture(autouse=True)
+def fake_ai(request, monkeypatch):
+    """Every test talks to a deterministic FakeAiProvider and can never reach the network.
+
+    Tests marked `openai` keep the real environment; they run only when OPENAI_API_KEY and
+    JIDAN_RUN_OPENAI=1 are both set, so an exported key alone never makes a default run call
+    the API.
+    """
+    from app.ai import set_ai_provider
+    from app.ai.fake import FakeAiProvider
+
+    if "openai" in request.keywords:
+        if not os.getenv("OPENAI_API_KEY") or os.getenv("JIDAN_RUN_OPENAI") != "1":
+            pytest.skip("real OpenAI test: set OPENAI_API_KEY and JIDAN_RUN_OPENAI=1")
+        set_ai_provider(None)
+        yield None
+        set_ai_provider(None)
+        return
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("AI_PROVIDER", "fake")
+    provider = FakeAiProvider()
+    set_ai_provider(provider)
+    yield provider
+    set_ai_provider(None)
+
+
+@pytest.fixture(autouse=True)
+def manual_task_runner(monkeypatch):
+    """Background task threads never start in tests; tests run due tasks with `app.tasks.drain`."""
+    monkeypatch.setenv("TASK_RUNNER_MODE", "manual")
+
+
+def pytest_configure(config):
+    """`JIDAN_SPEC_COVERAGE=<file>` records which OpenAPI operations/statuses the run exercised
+    (tests/spec_coverage.py). Without it nothing is registered and the run is unchanged."""
+    from tests.spec_coverage import plugin_from_env
+
+    plugin = plugin_from_env()
+    if plugin is not None:
+        config.pluginmanager.register(plugin, "jidan-spec-coverage")
+
+
+from tests.draft_revision import (
+    draft_revision_guard,  # noqa: F401 - autouse: content writes bump revision
+)
+from tests.lock_scope import lock_scope_guard  # noqa: F401 - autouse: MySQL locks only by key

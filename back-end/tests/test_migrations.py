@@ -1,9 +1,13 @@
+import time
+
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect
+from alembic.util import CommandError
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import OperationalError
 
 from app.db.models import Base
 from tests.conftest import alembic_config, migrated_sqlite_engine
@@ -16,7 +20,22 @@ BASELINE_TABLES = {
 }
 SESSION_TABLES = {"auth_sessions", "registration_sessions"}
 IDEMPOTENCY_TABLES = {"idempotency_records"}
-EXPECTED_TABLES = BASELINE_TABLES | SESSION_TABLES | IDEMPOTENCY_TABLES | {"oauth_transactions"}
+TASK_TABLES = {"background_tasks"}
+MEDIA_TABLES = {"manual_media", "qa_media", "media_transcriptions"}
+MANUAL_TABLES = {
+    "store_manuals", "manual_versions", "manual_shifts", "manual_sections", "manual_steps",
+    "manual_photo_attachments", "manual_media_snapshot_refs", "interview_question_sets",
+    "interview_intents", "interview_sessions", "interview_session_intents",
+    "interview_intent_reviews", "interview_review_confirmations", "interview_probe_batches",
+    "interview_turns", "interview_turn_photos", "interview_evaluations", "manual_review_issues",
+    "manual_issue_acknowledgements", "manual_draft_corrections",
+}
+QA_TABLES = {"manual_qa_conversations", "manual_qa", "manual_qa_citations", "manual_qa_photos"}
+OUTBOX_TABLES = {"invitation_mail_outbox"}
+EXPECTED_TABLES = (
+    BASELINE_TABLES | SESSION_TABLES | IDEMPOTENCY_TABLES | {"oauth_transactions"} | OUTBOX_TABLES
+    | {"notifications", "favorite_stores"} | TASK_TABLES | MEDIA_TABLES | MANUAL_TABLES | QA_TABLES
+)
 
 
 def test_history_is_linear_with_a_single_head():
@@ -36,6 +55,23 @@ def test_revisions_form_a_chain_on_top_of_the_untouched_baseline():
     assert script.get_revision("0004").down_revision == "0003"
     assert script.get_revision("0005").down_revision == "0004"
     assert script.get_revision("0006").down_revision == "0005"
+    assert script.get_revision("0007").down_revision == "0006"
+    assert script.get_revision("0008").down_revision == "0007"
+    assert script.get_revision("0009").down_revision == "0008"
+    # 0020 and 0030 were applied to databases before the AI schema existed, so they stay
+    # right after 0009 and the AI revisions follow; every state that ever existed is a prefix.
+    assert script.get_revision("0020").down_revision == "0009"
+    assert script.get_revision("0030").down_revision == "0020"
+    assert script.get_revision("0032").down_revision == "0030"
+    assert script.get_revision("0033").down_revision == "0032"
+    assert script.get_revision("0034").down_revision == "0033"
+    assert script.get_revision("0035").down_revision == "0034"
+    assert script.get_revision("0036").down_revision == "0035"
+    for gone in ("0010", "0011", "0012", "0013"):
+        with pytest.raises(CommandError):
+            script.get_revision(gone)
+    assert script.get_revision("0040").down_revision == "0036"
+    assert script.get_revision("0041").down_revision == "0040"
 
 
 def test_upgrade_creates_every_baseline_table(engine):
@@ -48,14 +84,15 @@ def test_models_and_migrations_agree(engine):
         assert compare_metadata(context, Base.metadata) == []
 
 
-def test_downgrade_one_step_then_upgrade_again(engine):
+def test_downgrade_0006_then_upgrade_again(engine):
+    # Pinned to 0005 rather than "-1" so later revisions do not change what this checks.
     with engine.connect() as connection:
         config = alembic_config(connection)
-        command.downgrade(config, "-1")
+        command.downgrade(config, "0005")
         connection.commit()
         columns = {c["name"] for c in inspect(connection).get_columns("idempotency_records")}
         assert "response_headers" in columns and "response_body" in columns
-        assert "cancelled_at" not in {c["name"] for c in inspect(connection).get_columns("oauth_transactions")}
+        assert "invitation_mail_outbox" not in inspect(connection).get_table_names()
         command.upgrade(config, "head")
         connection.commit()
         assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
@@ -71,6 +108,23 @@ def test_downgrade_to_0002_drops_the_idempotency_table(engine):
         assert set(inspect(connection).get_table_names()) == BASELINE_TABLES | SESSION_TABLES | {"alembic_version"}
         command.upgrade(config, "head")
         connection.commit()
+
+
+def test_downgrade_0032_drops_only_the_ai_tables(engine):
+    with engine.connect() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, "0030")
+        connection.commit()
+        tables = set(inspect(connection).get_table_names())
+        assert not (TASK_TABLES | MEDIA_TABLES | MANUAL_TABLES | QA_TABLES) & tables
+        assert {"oauth_transactions", "favorite_stores", "invitation_mail_outbox"} <= tables
+        assert "ix_work_requests_status_expires_at" in {
+            index["name"] for index in inspect(connection).get_indexes("work_requests")}
+        outbox = {c["name"] for c in inspect(connection).get_columns("invitation_mail_outbox")}
+        assert {"next_attempt_at", "claim_token", "claimed_until"} <= outbox
+        command.upgrade(config, "head")
+        connection.commit()
+        assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
 
 
 def test_upgrade_is_idempotent_at_head(engine):
@@ -130,7 +184,8 @@ def test_mysql_stores_timestamps_in_utc(mysql_session):
 
 
 def uuid_columns():
-    """Every UUID-valued column: primary keys, foreign keys and the generated uniqueness helpers."""
+    """Every UUID-valued column: primary keys, foreign keys and the generated uniqueness helpers
+    (string-valued generated columns; an integer helper such as a depth is not a UUID)."""
     from sqlalchemy import Computed
 
     return [
@@ -139,7 +194,7 @@ def uuid_columns():
         for column in table.columns
         if column.primary_key and column.type.python_type is str
         or column.foreign_keys
-        or isinstance(column.computed, Computed)
+        or isinstance(column.computed, Computed) and column.type.python_type is str
     ]
 
 
@@ -188,8 +243,8 @@ def test_mysql_uuid_columns_are_char36_with_matching_collation(mysql_engine):
             assert f"`{column}` char(36)" in ddl and "GENERATED ALWAYS" in ddl
 
 
-def test_online_migration_engine_hides_sql_parameters(monkeypatch):
-    """Deploy runs `alembic upgrade head` with output in CI logs; errors must not echo values."""
+def online_engine_kwargs(monkeypatch) -> dict:
+    """Keyword arguments `alembic upgrade` passes to create_engine when deploy runs it."""
     import sqlalchemy
 
     captured = {}
@@ -206,4 +261,150 @@ def test_online_migration_engine_hides_sql_parameters(monkeypatch):
     monkeypatch.setattr(sqlalchemy, "create_engine", fake_create_engine)
     with pytest.raises(Stop):
         command.upgrade(alembic_config(), "head")
-    assert captured["hide_parameters"] is True
+    return captured
+
+
+def test_online_migration_engine_hides_sql_parameters(monkeypatch):
+    """Deploy runs `alembic upgrade head` with output in CI logs; errors must not echo values."""
+    assert online_engine_kwargs(monkeypatch)["hide_parameters"] is True
+
+
+@pytest.mark.mysql
+def test_online_migration_session_fails_fast_on_metadata_locks(mysql_engine, monkeypatch):
+    """An open reader transaction must fail the DDL in seconds, not queue the table for a year."""
+    init_command = online_engine_kwargs(monkeypatch)["connect_args"]["init_command"]
+    migrator = create_engine(mysql_engine.url, connect_args={"init_command": init_command})
+    try:
+        with mysql_engine.connect() as reader, migrator.connect() as connection:
+            assert connection.execute(text("SELECT @@session.time_zone")).scalar() == "+00:00"
+            assert 0 < connection.execute(text("SELECT @@session.lock_wait_timeout")).scalar() <= 30
+            connection.execute(text("SET SESSION lock_wait_timeout = 1"))  # keep the test fast
+            reader.execute(text("SELECT COUNT(*) FROM users"))  # holds a shared metadata lock
+            started = time.monotonic()
+            with pytest.raises(OperationalError) as error:
+                connection.execute(text("ALTER TABLE users ADD COLUMN mdl_probe INT NULL"))
+            assert error.value.orig.args[0] == 1205 and time.monotonic() - started < 10
+    finally:
+        migrator.dispose()
+        with mysql_engine.connect() as connection:  # never leave the shared schema altered
+            if "mdl_probe" in {c["name"] for c in inspect(connection).get_columns("users")}:
+                connection.execute(text("ALTER TABLE users DROP COLUMN mdl_probe"))
+
+
+def test_downgrade_0030_drops_only_the_expiry_index(engine):
+    def indexes(connection):
+        return {index["name"] for index in inspect(connection).get_indexes("work_requests")}
+
+    with engine.connect() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, "0020")
+        connection.commit()
+        assert "ix_work_requests_status_expires_at" not in indexes(connection)
+        assert "ix_work_requests_application_id" in indexes(connection)
+        assert not TASK_TABLES & set(inspect(connection).get_table_names())  # AI revisions sit above 0030
+        command.upgrade(config, "head")
+        connection.commit()
+        assert "ix_work_requests_status_expires_at" in indexes(connection)
+
+
+def test_downgrade_to_0009_leaves_the_pre_ai_mail_outbox(engine):
+    with engine.connect() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, "0009")
+        connection.commit()
+        tables = set(inspect(connection).get_table_names())
+        assert not (TASK_TABLES | MEDIA_TABLES | MANUAL_TABLES | QA_TABLES) & tables
+        outbox = {c["name"] for c in inspect(connection).get_columns("invitation_mail_outbox")}
+        assert not {"next_attempt_at", "claim_token", "claimed_until"} & outbox
+        command.upgrade(config, "head")
+        connection.commit()
+        assert EXPECTED_TABLES <= set(inspect(connection).get_table_names())
+
+
+@pytest.mark.mysql
+@pytest.mark.parametrize("released", ["0006", "0009", "0020", "0030", "0035"])
+def test_mysql_released_states_upgrade_to_the_fresh_head_schema(mysql_engine, released):
+    """Every revision ever applied somewhere (remote dev at 0006, local DBs that ran
+    0009 -> 0020 -> 0030 before the AI schema existed, and 0035 before 0036) must reach the same
+    head with rows kept."""
+    from sqlalchemy.orm import Session
+
+    from tests.factories import make_user
+    from tests.schema_snapshot import mysql_schema_snapshot, snapshot_diff
+
+    config = alembic_config()
+    try:
+        with mysql_engine.connect() as connection:
+            fresh = mysql_schema_snapshot(connection)
+        command.downgrade(config, released)
+        with mysql_engine.connect() as connection:
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == released
+            if released < "0032":  # the AI revisions come after every pre-AI state
+                assert not TASK_TABLES & set(inspect(connection).get_table_names())
+        with Session(mysql_engine) as session:  # users keeps its columns since 0001
+            user_id = make_user(session).id
+            session.commit()
+        command.upgrade(config, "head")
+        with mysql_engine.connect() as connection:
+            head = ScriptDirectory.from_config(config).get_current_head()
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == head
+            assert connection.execute(
+                text("SELECT COUNT(*) FROM users WHERE id = :id"), {"id": user_id}).scalar() == 1
+            assert snapshot_diff(fresh, mysql_schema_snapshot(connection)) == []
+            context = MigrationContext.configure(connection, opts={"compare_type": True})
+            assert compare_metadata(context, Base.metadata) == []
+    finally:
+        command.upgrade(config, "head")
+        with mysql_engine.begin() as connection:
+            connection.execute(text("DELETE FROM users"))
+
+
+EMAIL_COLUMNS = (
+    ("users", "google_email"), ("registration_sessions", "google_email"),
+    ("store_invitations", "invited_email"),
+)
+
+
+def _before_0036() -> str:
+    return ScriptDirectory.from_config(alembic_config()).get_revision("0036").down_revision
+
+
+def test_downgrade_0036_leaves_sqlite_email_columns_alone(engine):
+    with engine.connect() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, _before_0036())
+        connection.commit()
+        assert "ix_store_invitations_store_id_invited_email" in {
+            index["name"] for index in inspect(connection).get_indexes("store_invitations")}
+        command.upgrade(config, "head")
+        connection.commit()
+
+
+@pytest.mark.mysql
+def test_mysql_0036_switches_email_collation_and_keeps_the_index(mysql_engine):
+    def state():
+        with mysql_engine.connect() as connection:
+            collations = {key: connection.execute(text(
+                "SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+                "AND TABLE_NAME = :t AND COLUMN_NAME = :c"), {"t": key[0], "c": key[1]}).scalar_one()
+                for key in EMAIL_COLUMNS}
+            nullable = {key: column["nullable"] for key in EMAIL_COLUMNS
+                        for column in inspect(connection).get_columns(key[0]) if column["name"] == key[1]}
+            indexes = {index["name"]: index["column_names"]
+                       for index in inspect(connection).get_indexes("store_invitations")}
+        return collations, nullable, indexes
+
+    config = alembic_config()
+    try:
+        command.downgrade(config, _before_0036())
+        collations, nullable, indexes = state()
+        assert set(collations.values()) == {"utf8mb4_0900_ai_ci"}
+        assert not any(nullable.values())
+        assert indexes["ix_store_invitations_store_id_invited_email"] == ["store_id", "invited_email"]
+        command.upgrade(config, "head")
+        collations, nullable, indexes = state()
+        assert set(collations.values()) == {"utf8mb4_0900_as_ci"}
+        assert not any(nullable.values())
+        assert indexes["ix_store_invitations_store_id_invited_email"] == ["store_id", "invited_email"]
+    finally:
+        command.upgrade(config, "head")

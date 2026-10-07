@@ -1,12 +1,14 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import time
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import auth, worker_profile
-from app.db.models import AuthSession, User
+from app.db.models import AuthSession, AvailabilityDay, AvailabilityRule, User
+from tests import factories
 from tests.auth_contract import ContractClient
 from tests.test_profile_availabilities import AVAILABLE, GROUP, NIGHT
 from tests.test_profile_basic import BASIC
@@ -61,6 +63,17 @@ def test_all_writes_require_active_worker_and_csrf(profile_api, db_engine, metho
         for key in before.keys() - {"updatedAt"}:
             assert current[key] == before[key]
 
+
+
+@pytest.mark.parametrize("method,path,body", EDITS)
+@pytest.mark.parametrize("content", [b"{", b'{"name": "a",}', b"\xff"])
+def test_malformed_json_is_400_and_keeps_profile(profile_api, method, path, body, content):
+    before = profile_api.get(PATH).json()
+    values = {**headers(profile_api), "Content-Type": "application/json"}
+    response = profile_api.request(method, path, content=content, headers=values)
+    assert response.status_code == 400 and response.json()["code"] == "INVALID_REQUEST"
+    assert response.headers["cache-control"] == "no-store"
+    assert profile_api.get(PATH).json() == before
 
 @pytest.mark.parametrize("method,path,body", EDITS)
 def test_commit_failure_rolls_back_all_areas(profile_api, monkeypatch, caplog, method, path, body):
@@ -138,3 +151,72 @@ def test_concurrent_areas_preserve_other_values(profile_api, monkeypatch, first,
     result = ordered_edits(profile_api, monkeypatch, first, second)
     for key, value in expected.items():
         assert result[key] == value
+
+
+@pytest.mark.mysql
+@pytest.mark.parametrize("db_engine", ["mysql"], indirect=True)
+@pytest.mark.parametrize("path,bodies", [
+    (CAREERS, [career_body([CAREER, {**CAREER, "isCurrent": False, "endMonth": "2024-05"}]),
+               career_body([], "NEW"), career_body([CAREER])]),
+    (AVAILABLE, [{"availabilities": [GROUP, NIGHT]}, {"availabilities": [NIGHT]},
+                 {"availabilities": [{**GROUP, "days": ["MON", "TUE"]}]}]),
+])
+def test_different_workers_edit_concurrently_without_deadlock(profile_api, db_engine, path, bodies):
+    # Locking reads and worker_id range deletes took next-key locks on shared index gaps,
+    # so independent workers deadlocked each other (MySQL 1213 -> 500).
+    issued = []
+    with Session(db_engine) as db:
+        for _ in range(6):
+            user = factories.make_worker(db)
+            rule = AvailabilityRule(worker_id=user.id, sort_order=0, start_time=time(9),
+                                    end_time=time(10), ends_next_day=False)
+            db.add(rule)
+            db.flush()
+            db.add(AvailabilityDay(rule_id=rule.id, weekday="MON"))
+            issued.append((user.id, auth.create_session(user.id, db=db)))
+        db.commit()
+    barrier = threading.Barrier(len(issued))
+    def edit(session):
+        with ContractClient(profile_api.app, raise_server_exceptions=False) as api:
+            api.cookies.set(auth.SESSION_COOKIE_NAME, session.token)
+            values = {"Origin": "http://frontend.test", "X-CSRF-Token": session.csrf_token}
+            barrier.wait()
+            return [api.put(path, json=bodies[i % len(bodies)], headers=values) for i in range(15)]
+    with ThreadPoolExecutor(max_workers=len(issued)) as pool:
+        results = list(pool.map(edit, [session for _, session in issued]))
+    assert {r.status_code for responses in results for r in responses} == {200}
+    with Session(db_engine) as db:
+        for (user_id, _), responses in zip(issued, results, strict=True):
+            # Each worker's stored profile is exactly its own last response.
+            assert worker_profile.profile_body(db, db.get(User, user_id)) == responses[-1].json()
+
+
+@pytest.mark.parametrize("method,path,body", EDITS)
+@pytest.mark.parametrize("errno,failures,status", [(1213, 1, 200), (1205, 2, 200), (1213, 3, 500), (2013, 1, 500)])
+def test_lock_contention_retries_the_whole_write(profile_api, monkeypatch, method, path, body, errno, failures, status):
+    # A deadlock victim (1213) or lock wait timeout (1205) re-runs the write up to WRITE_ATTEMPTS
+    # times from a clean transaction; other database errors (2013 lost connection) never retry.
+    import pymysql
+    from sqlalchemy.exc import OperationalError
+
+    before = profile_api.get(PATH).json()
+    original = worker_profile.commit_profile
+    calls = []
+
+    def flaky(db, user):
+        calls.append(1)
+        if len(calls) <= failures:
+            raise OperationalError("INSERT ...", {}, pymysql.err.OperationalError(errno, "injected"))
+        return original(db, user)
+
+    monkeypatch.setattr(worker_profile, "commit_profile", flaky)
+    response = profile_api.request(method, path, json=body, headers=headers(profile_api))
+    assert response.status_code == status, response.text
+    expected_calls = {200: failures + 1, 500: min(failures, 1 if errno == 2013 else worker_profile.WRITE_ATTEMPTS)}
+    assert len(calls) == expected_calls[status]
+    monkeypatch.setattr(worker_profile, "commit_profile", original)
+    after = profile_api.get(PATH).json()
+    if status == 500:
+        assert after == before  # every failed attempt rolled back
+    else:
+        assert after != before and after == response.json()

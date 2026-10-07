@@ -84,15 +84,17 @@ def test_career_calendar_uses_seoul_month(profile_api, monkeypatch):
 def test_failure_after_delete_is_atomic(profile_api, monkeypatch):
     from app import worker_profile
 
-    assert profile_api.put(CAREERS, json=career_body([CAREER]), headers=headers(profile_api)).status_code == 200
+    ended = {**CAREER, "isCurrent": False, "endMonth": "2024-05"}
+    assert profile_api.put(CAREERS, json=career_body([CAREER, ended]), headers=headers(profile_api)).status_code == 200
     before = profile_api.get(PATH).json()
-    def fail(*args, **kwargs):
+    original = worker_profile.rewrite
+    def fail(db, *args):
+        original(db, *args)
+        db.flush()  # the in-place update and surplus delete reached the database
         raise RuntimeError("private career details")
-    original = worker_profile.WorkerCareer
-    monkeypatch.setattr(worker_profile, "WorkerCareer", fail)
+    monkeypatch.setattr(worker_profile, "rewrite", fail)
     response = profile_api.put(CAREERS, json=career_body([{**CAREER, "duties": "변경"}]), headers=headers(profile_api))
     assert response.status_code == 500 and "private career details" not in response.text
-    monkeypatch.setattr(worker_profile, "WorkerCareer", original)
     assert profile_api.get(PATH).json() == before
 
 

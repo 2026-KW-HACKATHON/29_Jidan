@@ -4,9 +4,10 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.db import session_scope, utcnow
+from app.db.keyed import delete_by_key
 from app.db.models import OAuthTransaction
 
 INTERVAL_SECONDS = 300
@@ -29,9 +30,7 @@ def purge_expired_oauth() -> int:
                 .with_for_update(skip_locked=True)))
             if not ids:
                 break
-            removed += db.execute(delete(OAuthTransaction).where(
-                OAuthTransaction.id.in_(ids), OAuthTransaction.expires_at <= cutoff,
-            )).rowcount
+            removed += delete_by_key(db, OAuthTransaction, ids, OAuthTransaction.expires_at <= cutoff)
         if len(ids) < BATCH_SIZE:
             break
     return removed
