@@ -1,0 +1,40 @@
+name: frontend CI/CD
+
+on:
+  pull_request:
+    branches: [main, front-end/dev]
+    paths:
+      - 'front-end/**'
+      - 'deploy/frontend/**'
+      - 'deploy/scripts/**'
+      - 'deploy/tests/**'
+      - '.github/workflows/component.yml'
+      - '.github/workflows/frontend.yml'
+  push:
+    branches: [main, front-end/dev]
+    paths:
+      - 'front-end/**'
+      - 'deploy/frontend/**'
+      - 'deploy/scripts/**'
+      - 'deploy/tests/**'
+      - '.github/workflows/component.yml'
+      - '.github/workflows/frontend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: jidan-frontend-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/front-end/dev'
+    uses: ./.github/workflows/component.yml
+    with:
+      component: frontend
+      source: front-end
+      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+      deploy: ${{ github.event_name != 'pull_request' }}

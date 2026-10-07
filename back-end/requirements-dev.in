@@ -1,0 +1,4 @@
+-r requirements.in
+ruff
+pytest
+httpx
