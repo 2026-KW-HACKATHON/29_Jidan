@@ -16,3 +16,4 @@ it('현재 요청을 우선하고 과거 취소 요청을 미응답으로 표시
  const pending=data.requests.items[0] as WorkRequest,job=data.job as JobPosting,expired={...pending,id:'old',status:'EXPIRED',endedAt:pending.expiresAt} as WorkRequest
  expect(currentRequest([expired,pending],job)?.id).toBe(pending.id);expect(currentRequest([{...expired,status:'CANCELLED'}],job)).toBeUndefined();expect(currentRequest([expired],{...job,status:'CLOSED'})).toBeUndefined()
 })
+it.each([false,true])('상태 화면의 철회 버튼 %s가 해당 확인 대화상자를 연다',async confirmed=>{const job=api(confirmed);render(<OwnerJobs view="job" id={job.id} storeId={job.store.id} storeName={job.store.name} route={vi.fn()}/>);fireEvent.click(await screen.findByRole('button',{name:confirmed?'확정 철회하기':'요청 철회하기'}));expect(await screen.findByRole('alertdialog')).toHaveTextContent(confirmed?'근무 확정을 철회할까요?':'근무 요청을 철회할까요?')})
