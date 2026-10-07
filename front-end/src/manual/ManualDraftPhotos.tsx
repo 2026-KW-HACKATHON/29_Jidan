@@ -1,7 +1,7 @@
 import {ManualPhotoEditor} from './ManualPhotoEditor'
 import {ManualError,newKey,type ManualService} from './service'
 import {nextPhotoTitle,validatePhoto,type PhotoTarget} from './photos'
-import {categoryLabels} from './ManualUnderstandingScreen'
+import {categoryLabels} from './categoryLabels'
 import type {ManualDraft,ManualPhotoAttachment} from './types'
 export function ManualDraftPhotos({service,draft,target,onUpdate,onClose}:{service:ManualService;draft:ManualDraft;target:PhotoTarget;onUpdate:(draft:ManualDraft)=>void;onClose:()=>void}) {
  const content=draft.content,section=content?.sections.find(s=>s.id===target.sectionId),photos=target.target==='WORK_STRUCTURE'?content?.structurePhotos??[]:section?.photos??[]

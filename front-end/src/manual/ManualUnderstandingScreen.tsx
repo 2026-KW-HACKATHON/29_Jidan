@@ -3,7 +3,7 @@ import {ManualPhotoGroup} from './ManualPhotoGroup'
 import type {ManualService} from './service'
 import type {ManualInterviewIntent,ManualInterviewReview,ManualShift,ManualSection} from './types'
 import type {PhotoTarget} from './photos'
-export const categoryLabels={COMMON_TASK:'공통 업무',SHIFT_TASK:'근무조별 업무',RULE:'매장 규정',EQUIPMENT:'설비 사용'}
+import {categoryLabels} from './categoryLabels'
 export function ManualShiftSummary({shifts}:{shifts:ManualShift[]}) {
  return <ManualCard title="근무조와 시간">{shifts.length?shifts.map(shift=><p key={shift.id}>✓ {shift.name}　{shift.startTime??'미정'}–{shift.endsNextDay?'다음 날 ':''}{shift.endTime??'미정'}</p>):<p>근무 구조가 아직 정해지지 않았어요.</p>}</ManualCard>
 }

@@ -1,7 +1,7 @@
 import {ManualPhotoEditor} from './ManualPhotoEditor'
 import {createPhotoAttachment,reviewPhotos,type PhotoTarget} from './photos'
 import {ManualError,type ManualService} from './service'
-import {categoryLabels} from './ManualUnderstandingScreen'
+import {categoryLabels} from './categoryLabels'
 import type {ManualIntentReview,ManualPhotoAttachment} from './types'
 export function ManualReviewPhotos({service,sessionId,review,target,onUpdate,onClose}:{service:ManualService;sessionId:string;review:ManualIntentReview;target:PhotoTarget;onUpdate:(review:ManualIntentReview)=>void;onClose:()=>void}) {
  let photos:ManualPhotoAttachment[]=[],invalid=false
