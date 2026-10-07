@@ -11,7 +11,7 @@
 .manual-muted{color:var(--ds-secondary)}
 .manual-card{background:var(--ds-white);padding:var(--ds-space-4);border-radius:var(--ds-radius-dialog);display:flex;flex-direction:column;gap:var(--ds-space-2)}
 .manual-card h3{font-size:var(--ds-body);color:var(--ds-primary-strong)}
-.manual-voice{display:flex;flex-direction:column;gap:var(--ds-space-4);text-align:center}
+.manual-voice{display:flex;flex-direction:column;gap:var(--ds-space-4);text-align:left}
 .manual-voice-title{font-size:17px;font-weight:700;color:var(--ds-primary-strong)}
 .manual-screen [role=alert]{color:var(--ds-danger)}
 .manual-screen .ds-button{width:100%}
@@ -34,3 +34,22 @@
 .manual-issue{display:flex;align-items:flex-start;gap:var(--ds-space-2)}
 .manual-issue .ds-checkbox{flex-shrink:0}
 .manual-entry-error{padding:var(--ds-space-4);background:var(--ds-white);color:var(--ds-danger);display:flex;flex-direction:column;gap:var(--ds-space-2)}
+
+.manual-photo-count-1{grid-template-columns:minmax(0,1fr)}
+.manual-photo-count-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.manual-caption{font-size:var(--ds-small)}
+.manual-photo-editor .manual-card{gap:var(--ds-space-3)}
+.manual-photo-editor .manual-card h3{font-size:var(--ds-heading);color:var(--ds-text)}
+.manual-photo-source .ds-modal-message{display:flex}
+.manual-photo-source .ds-modal-message>p{order:1}
+.manual-photo-source .ds-modal-message>.manual-stack{order:2;margin-top:var(--ds-space-2)}
+.manual-photo-source .ds-button-secondary{background:var(--ds-surface-muted,#f4f5f6);box-shadow:none}
+.manual-summary-card{border:0;text-align:left;width:100%;font:inherit;color:inherit;cursor:pointer}
+.manual-summary-card:focus-visible{outline:2px solid var(--ds-primary);outline-offset:3px}
+.manual-summary-card:disabled{cursor:default}
+.manual-summary-title{color:var(--ds-primary-strong);font-weight:700}
+
+.manual-understanding-header{display:flex;flex-direction:column;gap:var(--ds-space-2)}
+.manual-screen.manual-no-progress .ds-mobile-body{padding-top:var(--ds-space-6)}
+.manual-screen.manual-compact-footer .ds-mobile-footer{padding-top:var(--ds-space-4)}
+.manual-photo-group h3{color:var(--ds-text)}

@@ -1,0 +1,11 @@
+.manual-question-screen{display:flex;flex-direction:column;gap:var(--ds-space-3)}
+.manual-question-screen .manual-card{gap:var(--ds-space-4)}
+.manual-info-list{margin:0;padding-left:23px;display:flex;flex-direction:column;gap:var(--ds-space-4)}
+.manual-checklist{padding:0;margin:0;list-style:none;display:flex;flex-direction:column;gap:var(--ds-space-4)}
+.manual-checklist li{display:flex;align-items:flex-start;gap:var(--ds-space-2)}
+.manual-checklist [data-state=CURRENT]{color:var(--ds-primary-strong)}
+.manual-progress-box{flex-shrink:0;margin:5px 2px;width:16px;height:16px;border:1px solid var(--ds-muted);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:13px}
+[data-state=CURRENT] .manual-progress-box{border-color:var(--ds-primary)}
+[data-state=COMPLETED] .manual-progress-box{background:var(--ds-primary);border-color:var(--ds-primary)}
+.manual-progress-box img{width:10px;height:8px}
+[data-state=NEEDS_DETAIL] .manual-progress-box{color:var(--ds-danger);border-color:var(--ds-danger)}

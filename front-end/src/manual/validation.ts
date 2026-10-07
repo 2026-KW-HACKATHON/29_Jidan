@@ -1,5 +1,5 @@
 /** Response boundary checks the selected OpenAPI keywords; server still owns cross-resource rules. */
-export type Schema = { $ref?: string; type?: string | string[]; const?: unknown; enum?: unknown[]; properties?: Record<string, Schema>; required?: string[]; items?: Schema; minItems?: number; maxItems?: number; minLength?: number; maxLength?: number; minimum?: number; maximum?: number; pattern?: string; format?: string; additionalProperties?: boolean; uniqueItems?: boolean; oneOf?: Schema[]; anyOf?: Schema[]; allOf?: Schema[]; if?: Schema; then?: Schema; else?: Schema; not?: Schema; contains?: Schema }
+export type Schema = { $ref?: string; type?: string | string[]; const?: unknown; enum?: unknown[]; properties?: Record<string, Schema>; required?: string[]; items?: Schema; minItems?: number; maxItems?: number; minLength?: number; maxLength?: number; minimum?: number; maximum?: number; pattern?: string; format?: string; additionalProperties?: boolean; uniqueItems?: boolean; oneOf?: Schema[]; anyOf?: Schema[]; allOf?: Schema[]; if?: Schema; then?: Schema; else?: Schema; not?: Schema; contains?: Schema; minContains?: number; maxContains?: number }
 export function matches(schema: Schema, value: unknown, definitions: Record<string, Schema>): boolean {
  if(schema.$ref) return matches(definitions[schema.$ref.split('/').at(-1)!],value,definitions)
  const test=(s:Schema)=>matches(s,value,definitions)
@@ -21,7 +21,7 @@ export function matches(schema: Schema, value: unknown, definitions: Record<stri
  if(Array.isArray(value)){
   if(value.length<(schema.minItems??0)||value.length>(schema.maxItems??Infinity))return false
   if(schema.items && !value.every(v=>matches(schema.items!,v,definitions)))return false
-  if(schema.contains && !value.some(v=>matches(schema.contains!,v,definitions)))return false
+  if(schema.contains){const count=value.filter(v=>matches(schema.contains!,v,definitions)).length;if(count<(schema.minContains??1)||count>(schema.maxContains??Infinity))return false}
   if(schema.uniqueItems && new Set(value.map(v=>JSON.stringify(v))).size!==value.length)return false
  }
  if(value && typeof value==='object'&&!Array.isArray(value)){

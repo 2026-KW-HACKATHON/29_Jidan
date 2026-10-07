@@ -1,3 +1,4 @@
+import {Modal} from '../ui/Modal'
 import { useEffect,useRef,useState } from 'react'
 import { Button } from '../ui/Button'
 import { recordVoice,type ActiveRecording } from './recorder'
@@ -14,6 +15,6 @@ export function ManualVoiceComposer({onRecording,disabled=false,label='말해서
  function cancel(){controller.current?.abort();active.current?.cancel();active.current=null;saved.current=null;setHasSaved(false);setState('idle');setError('')}
  function retry(){if(!saved.current)return;const request=new AbortController();controller.current=request;void submit(saved.current,request)}
  return <div className="manual-voice" aria-live="polite">
-  {state==='recording'?<><p className="manual-voice-title">● 답변을 듣고 있어요</p><p className="manual-muted">{String(Math.floor(elapsed/60)).padStart(2,'0')}:{String(elapsed%60).padStart(2,'0')} · 말씀을 마치면 아래 버튼을 눌러주세요.</p><Button onClick={()=>active.current?.finish()}>답변 마치기</Button><Button intent="secondary" onClick={cancel}>녹음 취소</Button></>:state==='starting'?<><p role="status">마이크를 준비하고 있어요</p><Button intent="secondary" onClick={cancel}>녹음 취소</Button></>:state==='processing'?<><p className="manual-voice-title" role="status">답변을 정리하고 있어요</p><p className="manual-muted">잠시만 기다려 주세요.<br/>정리한 내용을 곧 보여드릴게요.</p></>:<>{error&&<p role="alert">{error}</p>}{state==='error'&&hasSaved&&canRetry&&<Button disabled={disabled} onClick={retry}>다시 시도</Button>}<Button disabled={disabled} onClick={()=>void start()}>{state==='error'?'다시 녹음하기':label}</Button></>}
+  {state==='recording'?<><p className="manual-voice-title">● 답변을 듣고 있어요</p><p className="manual-muted">{String(Math.floor(elapsed/60)).padStart(2,'0')}:{String(elapsed%60).padStart(2,'0')} · 말씀을 마치면 아래 버튼을 눌러주세요.</p><Button onClick={()=>active.current?.finish()}>답변 마치기</Button><Button intent="secondary" onClick={cancel}>녹음 취소</Button></>:state==='starting'?<><p role="status">마이크를 준비하고 있어요</p><Button intent="secondary" onClick={cancel}>녹음 취소</Button></>:state==='processing'?<><p className="manual-voice-title" role="status">답변을 정리하고 있어요</p><p className="manual-muted">잠시만 기다려 주세요.<br/>정리한 내용을 곧 보여드릴게요.</p></>:<><Button disabled={disabled} onClick={()=>void start()}>{label}</Button><Modal open={state==='error'} state="error" title="음성 답변을 확인해 주세요" description={error} onClose={cancel} confirmLabel={hasSaved&&canRetry?'다시 시도':'다시 녹음하기'} closeOnConfirm={false} onConfirm={hasSaved&&canRetry?retry:()=>void start()} summary={hasSaved&&canRetry?<Button intent="secondary" disabled={disabled} onClick={()=>void start()}>다시 녹음하기</Button>:undefined}/></>}
  </div>
 }
