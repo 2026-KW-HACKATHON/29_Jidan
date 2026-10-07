@@ -1,8 +1,8 @@
 {
   "approvedRemoteSha": "5fd6896955ca9133c5b8967485438dd86eceefc4",
-  "localVersion": "0.10.1",
+  "localVersion": "0.11.0",
   "policy": "Preserve all remote response declarations; user approved 25 additions, 2026-10-07",
-  "schemasHash": "2cdbf076c80ef4faef76db68860b2eafb5caa1fa7bcc18f28a93fd72076e5d67",
+  "schemasHash": "d4e140653eb6d6fee72fc827e177879cd3d66a83ff9c927200aaa489b4435790",
   "operations": [
     {
       "operationId": "startGoogleLogin",

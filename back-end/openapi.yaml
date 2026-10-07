@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 지단 API 설계 명세
-  version: 0.10.1
+  version: 0.11.0
   description: |-
     Figma 인증·회원·매장·근무자 관리, 공고·지원·근무 확정, 홈·캘린더·알림, 매뉴얼·AI 인터뷰·업무 질문을 위한 구현 전 계약입니다.
 
@@ -5081,6 +5081,210 @@ paths:
               schema:
                 $ref: '#/components/schemas/ManualInterviewSession'
               examples:
+                processingWithGuidance:
+                  summary: 답변 평가 중 · 표시 질문 복원
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 3
+                    status: IN_PROGRESS
+                    phase: PROCESSING
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: WORK_STRUCTURE
+                        stage: WORK_STRUCTURE
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions: []
+                    processing:
+                      taskId: fec19f33-1096-47c2-9612-78d336622930
+                      kind: EVALUATION
+                      attempt: 1
+                    error: null
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
+                    lastAnsweredQuestion: &a1
+                      id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                      intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      kind: BASE
+                      depth: 0
+                      batchId: null
+                      text: 근무조와 시간을 알려주세요.
+                      answered: true
+                      guidance: 처음 일하는 근무자도 따라 할 수 있게 알려주세요.
+                      guidanceCards:
+                        - id: 71000000-0000-4000-8000-000000000001
+                          type: LIST
+                          title: 근무 시간 예시
+                          items:
+                            - id: 71000000-0000-4000-8000-000000000002
+                              label: 오전조
+                              description: 시작 시간과 종료 시간
+                          footer: null
+                failedEvaluationWithGuidance:
+                  summary: 평가 실패 · 표시 질문 유지
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 4
+                    status: ERROR
+                    phase: ERROR
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: WORK_STRUCTURE
+                        stage: WORK_STRUCTURE
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions: []
+                    processing:
+                      taskId: fec19f33-1096-47c2-9612-78d336622930
+                      kind: EVALUATION
+                      attempt: 3
+                    error:
+                      code: AI_PROCESSING_FAILED
+                      message: 저장한 답변으로 다시 시도할 수 있어요.
+                      retryable: true
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
+                    lastAnsweredQuestion: *a1
+                guidancePhotosPending:
+                  summary: 사진 추천 · 연결할 요약 생성 전
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 2
+                    status: IN_PROGRESS
+                    phase: COLLECTING
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: WORK_STRUCTURE
+                        stage: WORK_STRUCTURE
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions:
+                      - id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                        intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        kind: BASE
+                        depth: 0
+                        batchId: null
+                        text: 근무조와 시간을 알려주세요.
+                        answered: false
+                        guidance: 처음 일하는 근무자도 따라 할 수 있게 알려주세요.
+                        guidanceCards:
+                          - id: 72000000-0000-4000-8000-000000000001
+                            type: PHOTO_SUGGESTIONS
+                            title: 첨부 추천 사진
+                            items:
+                              - id: 72000000-0000-4000-8000-000000000002
+                                label: 근무표
+                                description: 근무조별 시간을 확인할 수 있는 사진
+                            attachmentTarget: null
+                            footer: 지금은 추천만 표시해요. 요약이 준비되면 사진을 첨부할 수 있어요.
+                    processing: null
+                    error: null
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
+                guidanceList:
+                  summary: 일반 안내 목록
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 2
+                    status: IN_PROGRESS
+                    phase: COLLECTING
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: WORK_STRUCTURE
+                        stage: WORK_STRUCTURE
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions:
+                      - id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                        intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        kind: BASE
+                        depth: 0
+                        batchId: null
+                        text: 근무조와 시간을 알려주세요.
+                        answered: false
+                        guidance: 처음 일하는 근무자도 따라 할 수 있게 알려주세요.
+                        guidanceCards:
+                          - id: 71000000-0000-4000-8000-000000000001
+                            type: LIST
+                            title: 근무 시간 예시
+                            items:
+                              - id: 71000000-0000-4000-8000-000000000002
+                                label: 오전조
+                                description: 시작 시간과 종료 시간
+                            footer: null
+                    processing: null
+                    error: null
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
+                guidanceChecklist:
+                  summary: 업무 항목별 진행 체크리스트
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 2
+                    status: IN_PROGRESS
+                    phase: COLLECTING
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: COMMON_TASKS
+                        stage: COMMON_TASKS
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions:
+                      - id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                        intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        kind: BASE
+                        depth: 0
+                        batchId: null
+                        text: 시재 점검은 어떻게 하나요?
+                        answered: false
+                        guidance: 처음 일하는 근무자도 따라 할 수 있게 알려주세요.
+                        guidanceCards:
+                          - id: 71000000-0000-4000-8000-000000000001
+                            type: PROGRESS_CHECKLIST
+                            title: 작성할 업무 매뉴얼
+                            items:
+                              - id: 71000000-0000-4000-8000-000000000002
+                                label: 재고 정리
+                                status: COMPLETED
+                              - id: 71000000-0000-4000-8000-000000000003
+                                label: 시재 점검
+                                status: CURRENT
+                              - id: 71000000-0000-4000-8000-000000000004
+                                label: 매장 청소
+                                status: PENDING
+                              - id: 71000000-0000-4000-8000-000000000005
+                                label: 우천 시 업무
+                                status: NEEDS_DETAIL
+                            footer: null
+                    processing: null
+                    error: null
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
                 collecting:
                   value:
                     id: c701b623-889c-4d28-b055-501251ac6773
@@ -5650,6 +5854,50 @@ paths:
               schema:
                 $ref: '#/components/schemas/ManualInterviewSession'
               examples:
+                acceptedWithGuidance:
+                  summary: 음성 답변 접수 · 표시 질문 보존
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 3
+                    status: IN_PROGRESS
+                    phase: PROCESSING
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: WORK_STRUCTURE
+                        stage: WORK_STRUCTURE
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions: []
+                    processing:
+                      taskId: fec19f33-1096-47c2-9612-78d336622930
+                      kind: EVALUATION
+                      attempt: 1
+                    error: null
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
+                    lastAnsweredQuestion:
+                      id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                      intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      kind: BASE
+                      depth: 0
+                      batchId: null
+                      text: 근무조와 시간을 알려주세요.
+                      answered: true
+                      guidance: 처음 일하는 근무자도 따라 할 수 있게 알려주세요.
+                      guidanceCards:
+                        - id: 71000000-0000-4000-8000-000000000001
+                          type: LIST
+                          title: 근무 시간 예시
+                          items:
+                            - id: 71000000-0000-4000-8000-000000000002
+                              label: 오전조
+                              description: 시작 시간과 종료 시간
+                          footer: null
                 evaluating:
                   value:
                     id: c701b623-889c-4d28-b055-501251ac6773
@@ -18307,10 +18555,252 @@ components:
         - coverage
         - depth
         - finishedAt
+    ManualGuidanceItem:
+      type: object
+      additionalProperties: false
+      properties:
+        id: &a1
+          type: string
+          format: uuid
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: \S
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          pattern: \S
+      required:
+        - id
+        - label
+    ManualGuidanceProgressItem:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: \S
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          pattern: \S
+        status:
+          enum:
+            - PENDING
+            - CURRENT
+            - COMPLETED
+            - NEEDS_DETAIL
+          description: 서버가 결정하는 표시 상태. 사용자 체크 입력이 아니며 NEEDS_DETAIL은 완료로 표시하지 않습니다.
+      required:
+        - id
+        - label
+        - status
+    ManualGuidanceList:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *a1
+        type:
+          type: string
+          const: LIST
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: \S
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/ManualGuidanceItem"
+        footer:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          pattern: \S
+      required:
+        - id
+        - type
+        - title
+        - items
+    ManualGuidanceChecklist:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *a1
+        type:
+          type: string
+          const: PROGRESS_CHECKLIST
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: \S
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/ManualGuidanceProgressItem"
+          contains:
+            type: object
+            properties:
+              status:
+                const: CURRENT
+            required:
+              - status
+          minContains: 0
+          maxContains: 1
+        footer:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          pattern: \S
+      required:
+        - id
+        - type
+        - title
+        - items
+    ManualGuidancePhotoTarget:
+      type: object
+      additionalProperties: false
+      description: 동일 세션의 READY 인텐트 검토에 존재하는 사진 연결 대상. 첨부 직전 검토를 다시 조회해 최신 revision으로 기존 photos API를 호출합니다. 추천 항목
+        ID는 sectionId 또는 mediaId가 아닙니다.
+      properties:
+        intentId: &a1
+          type: string
+          format: uuid
+        target:
+          enum:
+            - WORK_STRUCTURE
+            - SECTION
+        sectionId:
+          type:
+            - string
+            - "null"
+          format: uuid
+      required:
+        - intentId
+        - target
+        - sectionId
+      oneOf:
+        - required: [target, sectionId]
+          properties:
+            target:
+              const: WORK_STRUCTURE
+            sectionId:
+              type: "null"
+        - required: [target, sectionId]
+          properties:
+            target:
+              const: SECTION
+            sectionId: *a1
+    ManualGuidancePhotos:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: PHOTO_SUGGESTIONS
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: \S
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/ManualGuidanceItem"
+        footer:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          pattern: \S
+        attachmentTarget:
+          description: null이면 연결할 READY 검토/section이 아직 없어 추천만 표시하고 첨부 동작은 제공하지 않습니다. 대상 생성 후 새 세션 revision에서 제공할 수 있습니다.
+            다른 매장·세션·삭제된 section 참조는 금지합니다.
+          oneOf:
+            - $ref: "#/components/schemas/ManualGuidancePhotoTarget"
+            - type: "null"
+      required:
+        - id
+        - type
+        - title
+        - items
+        - attachmentTarget
+      description: 위치·배치 사진 추천. 한 카드의 추천 사진은 같은 대상에 연결하며 대상이 다르면 카드를 분리합니다. 첨부는 선택이고 인터뷰 답변/인텐트 완료를 대신하지 않습니다.
+      examples:
+        - id: 72000000-0000-4000-8000-000000000001
+          type: PHOTO_SUGGESTIONS
+          title: 첨부 추천 사진
+          items: &a1
+            - id: 72000000-0000-4000-8000-000000000002
+              label: 근무표
+              description: 근무조별 시간을 확인할 수 있는 사진
+          attachmentTarget:
+            intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+            target: WORK_STRUCTURE
+            sectionId: null
+          footer: null
+        - id: 72000000-0000-4000-8000-000000000001
+          type: PHOTO_SUGGESTIONS
+          title: 첨부 추천 사진
+          items: *a1
+          attachmentTarget:
+            intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+            target: SECTION
+            sectionId: 72000000-0000-4000-8000-000000000003
+          footer: null
+    ManualGuidanceCard:
+      description: 표시 종류별 안내 카드. 배열 순서와 ID를 유지하며 클라이언트가 질문 문자열로 종류·상태를 추측하지 않습니다.
+      oneOf:
+        - $ref: "#/components/schemas/ManualGuidanceList"
+        - $ref: "#/components/schemas/ManualGuidanceChecklist"
+        - $ref: "#/components/schemas/ManualGuidancePhotos"
     ManualInterviewQuestion:
       type: object
       additionalProperties: false
       properties:
+        guidance:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 2000
+          pattern: \S
+          description: 질문 아래 보조 설명. 생략 또는 null이면 표시하지 않습니다.
+        guidanceCards:
+          type: array
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/ManualGuidanceCard"
+          description: 생략은 구 응답, 빈 배열은 안내 카드 없음. 카드·항목 ID는 세션 내 의미가 같으면 질문 전환·재조회에도 유지합니다. 카드 ID는 배열 내, 항목 ID는 카드 내 유일하며
+            업무 진행 카드는 최대 하나입니다. 항목 상태·순서가 바뀌면 세션 revision도 증가합니다. CURRENT는 현재 질문의 대상이고, 정보 부족으로 종료한 항목은
+            NEEDS_DETAIL입니다. 교차 참조·ID 유일성·주제 정합성은 서버에서 검증합니다.
         id:
           type: string
           format: uuid
@@ -18482,7 +18972,48 @@ components:
     ManualInterviewSession:
       type: object
       additionalProperties: false
+      allOf:
+        - if:
+            properties:
+              lastAnsweredQuestion:
+                type: object
+            required:
+              - lastAnsweredQuestion
+          then:
+            type: object
+            additionalProperties: true
+            properties:
+              phase:
+                enum:
+                  - PROCESSING
+                  - ERROR
+              currentIntentId:
+                type: string
+                format: uuid
+              processing:
+                type: object
+                additionalProperties: true
+                properties:
+                  kind:
+                    const: EVALUATION
+                required:
+                  - kind
+            required:
+              - processing
+              - currentIntentId
       properties:
+        lastAnsweredQuestion:
+          description: EVALUATION 처리 중 또는 해당 평가 실패 시 표시할 직전 답변 질문의 불변 스냅샷. guidance와 guidanceCards까지 답변 접수 당시 그대로 저장하며
+            answered=true입니다. 스냅샷의 CURRENT는 접수 당시 표시 상태이고 완료를 뜻하지 않습니다. 현재 답변 대상은 questions만 사용합니다. 그 외 상태에서는 null 또는
+            생략합니다. 필드 미지원 구 응답도 허용합니다.
+          oneOf:
+            - allOf:
+                - $ref: "#/components/schemas/ManualInterviewQuestion"
+                - type: object
+                  properties:
+                    answered:
+                      const: true
+            - type: "null"
         id:
           type: string
           format: uuid
