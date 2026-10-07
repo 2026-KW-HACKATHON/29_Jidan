@@ -9,11 +9,12 @@ vi.mock('./ManualVoiceComposer',()=>({ManualVoiceComposer:({onRecording,disabled
 beforeEach(()=>{vi.stubGlobal('URL',Object.assign(URL,{createObjectURL:vi.fn(()=> 'blob:photo'),revokeObjectURL:vi.fn()}))})
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();vi.useRealTimers()})
 function setup(scenario='draft') {const service=createManualPreviewService(true,scenario),call=vi.spyOn(service,'call'),onReload=vi.fn();render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={onReload}/>);return {service,call,onReload}}
-it('최종 검토 진입에서 confirmedAt 없이 생성하고 서버 초안을 다시 읽는다',async()=>{
+it('요약 확인 후 최종 검토 진입에서 생성하고 서버 초안을 다시 읽는다',async()=>{
  const service=createManualPreviewService(true,'ready'),call=vi.spyOn(service,'call');render(<ManualAuthoring service={service} onBack={vi.fn()}/> )
+ for(let i=0;i<4;i++){await waitFor(()=>expect(screen.getByRole('button',{name:'네, 맞아요'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'네, 맞아요'}));await act(async()=>{await Promise.resolve()})}
  const button=await screen.findByRole('button',{name:'최종 검토로'});await waitFor(()=>expect(button).toBeEnabled());fireEvent.click(button)
  await screen.findByRole('button',{name:'확인하고 게시'});expect(await screen.findAllByText('먼저 들어온 제품을 앞쪽에 진열하세요.')).toHaveLength(3)
- expect(call.mock.calls.some(c=>c[0]==='generateManualDraft')).toBe(true);expect(call.mock.calls.some(c=>c[0]==='confirmManualInterviewUnderstanding')).toBe(false);expect(call.mock.calls.some(c=>c[0]==='getManualDraft')).toBe(true)
+ expect(call.mock.calls.some(c=>c[0]==='generateManualDraft')).toBe(true);expect(call.mock.calls.some(c=>c[0]==='confirmManualInterviewUnderstanding')).toBe(true);expect(call.mock.calls.some(c=>c[0]==='getManualDraft')).toBe(true)
 })
 it('처리 중에도 기존 내용을 표시하고 게시·추가 정정을 막는다',async()=>{
  setup('correction-running');await screen.findByText('먼저 들어온 제품을 앞쪽에 진열하세요.')
