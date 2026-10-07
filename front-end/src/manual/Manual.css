@@ -48,3 +48,8 @@
 .manual-summary-card:focus-visible{outline:2px solid var(--ds-primary);outline-offset:3px}
 .manual-summary-card:disabled{cursor:default}
 .manual-summary-title{color:var(--ds-primary-strong);font-weight:700}
+
+.manual-understanding-header{display:flex;flex-direction:column;gap:var(--ds-space-2)}
+.manual-screen.manual-no-progress .ds-mobile-body{padding-top:var(--ds-space-6)}
+.manual-screen.manual-compact-footer .ds-mobile-footer{padding-top:var(--ds-space-4)}
+.manual-photo-group h3{color:var(--ds-text)}
