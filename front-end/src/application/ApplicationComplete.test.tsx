@@ -32,3 +32,9 @@ it('닫기와 해제 이후 지연된 철회 결과는 화면을 이동하지 �
   await act(async()=>resolve())
   expect(success).not.toHaveBeenCalled();expect(screen.getByText('승인 대기 중')).toBeInTheDocument()
 })
+
+it('확정된 지원은 서버 상태를 표시하고 철회를 숨긴다',()=>{
+ render(<ApplicationComplete application={{...application,statusLabel:'근무 확정',canWithdraw:false}} onHome={()=>{}} onBack={()=>{}} onWithdrawn={()=>{}}/>)
+ expect(screen.queryByRole('button',{name:'신청 철회하기'})).not.toBeInTheDocument()
+ expect(screen.getAllByText('근무 확정')).toHaveLength(2)
+})

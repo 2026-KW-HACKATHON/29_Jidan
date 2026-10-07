@@ -1,5 +1,5 @@
 import type { Job } from '../jobs/model'
-export type Application = { id:string; job:Job; introduction:string }
+export type Application = { id:string; job:Job; introduction:string; statusLabel?:string; canWithdraw?:boolean }
 /** Injectable UI effects, not an HTTP contract. */
 export type ApplicationService = {
   submit: (job:Job,introduction:string,signal:AbortSignal)=>Promise<Application>
