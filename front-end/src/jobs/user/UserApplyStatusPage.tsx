@@ -1,4 +1,3 @@
-import React from 'react';
 import './UserApplyStatusPage.css';
 
 export const UserApplyStatusPage = () => {

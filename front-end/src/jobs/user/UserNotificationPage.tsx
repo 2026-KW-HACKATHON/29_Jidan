@@ -1,4 +1,3 @@
-import React from 'react';
 import './UserNotificationPage.css';
 
 export const UserNotificationPage = () => {

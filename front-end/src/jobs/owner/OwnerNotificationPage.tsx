@@ -1,4 +1,3 @@
-import React from 'react';
 import './OwnerNotificationPage.css';
 
 export const OwnerNotificationPage = () => {
