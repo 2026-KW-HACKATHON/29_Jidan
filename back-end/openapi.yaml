@@ -5081,6 +5081,80 @@ paths:
               schema:
                 $ref: '#/components/schemas/ManualInterviewSession'
               examples:
+                processingWithGuidance:
+                  summary: 답변 평가 중 · 표시 질문 복원
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 3
+                    status: IN_PROGRESS
+                    phase: PROCESSING
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: WORK_STRUCTURE
+                        stage: WORK_STRUCTURE
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions: []
+                    processing:
+                      taskId: fec19f33-1096-47c2-9612-78d336622930
+                      kind: EVALUATION
+                      attempt: 1
+                    error: null
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
+                    lastAnsweredQuestion: &a1
+                      id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                      intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      kind: BASE
+                      depth: 0
+                      batchId: null
+                      text: 근무조와 시간을 알려주세요.
+                      answered: true
+                      guidance: 처음 일하는 근무자도 따라 할 수 있게 알려주세요.
+                      guidanceCards:
+                        - id: 71000000-0000-4000-8000-000000000001
+                          type: LIST
+                          title: 근무 시간 예시
+                          items:
+                            - id: 71000000-0000-4000-8000-000000000002
+                              label: 오전조
+                              description: 시작 시간과 종료 시간
+                          footer: null
+                failedEvaluationWithGuidance:
+                  summary: 평가 실패 · 표시 질문 유지
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 4
+                    status: ERROR
+                    phase: ERROR
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: WORK_STRUCTURE
+                        stage: WORK_STRUCTURE
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions: []
+                    processing:
+                      taskId: fec19f33-1096-47c2-9612-78d336622930
+                      kind: EVALUATION
+                      attempt: 3
+                    error:
+                      code: AI_PROCESSING_FAILED
+                      message: 저장한 답변으로 다시 시도할 수 있어요.
+                      retryable: true
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
+                    lastAnsweredQuestion: *a1
                 guidancePhotosPending:
                   summary: 사진 추천 · 연결할 요약 생성 전
                   value:
@@ -5780,6 +5854,50 @@ paths:
               schema:
                 $ref: '#/components/schemas/ManualInterviewSession'
               examples:
+                acceptedWithGuidance:
+                  summary: 음성 답변 접수 · 표시 질문 보존
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 3
+                    status: IN_PROGRESS
+                    phase: PROCESSING
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: WORK_STRUCTURE
+                        stage: WORK_STRUCTURE
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions: []
+                    processing:
+                      taskId: fec19f33-1096-47c2-9612-78d336622930
+                      kind: EVALUATION
+                      attempt: 1
+                    error: null
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
+                    lastAnsweredQuestion:
+                      id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                      intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                      kind: BASE
+                      depth: 0
+                      batchId: null
+                      text: 근무조와 시간을 알려주세요.
+                      answered: true
+                      guidance: 처음 일하는 근무자도 따라 할 수 있게 알려주세요.
+                      guidanceCards:
+                        - id: 71000000-0000-4000-8000-000000000001
+                          type: LIST
+                          title: 근무 시간 예시
+                          items:
+                            - id: 71000000-0000-4000-8000-000000000002
+                              label: 오전조
+                              description: 시작 시간과 종료 시간
+                          footer: null
                 evaluating:
                   value:
                     id: c701b623-889c-4d28-b055-501251ac6773
@@ -18852,7 +18970,45 @@ components:
     ManualInterviewSession:
       type: object
       additionalProperties: false
+      allOf:
+        - if:
+            properties:
+              lastAnsweredQuestion:
+                type: object
+            required:
+              - lastAnsweredQuestion
+          then:
+            properties:
+              phase:
+                enum:
+                  - PROCESSING
+                  - ERROR
+              currentIntentId:
+                type: string
+                format: uuid
+              processing:
+                type: object
+                properties:
+                  kind:
+                    const: EVALUATION
+                required:
+                  - kind
+            required:
+              - processing
+              - currentIntentId
       properties:
+        lastAnsweredQuestion:
+          description: EVALUATION 처리 중 또는 해당 평가 실패 시 표시할 직전 답변 질문의 불변 스냅샷. guidance와 guidanceCards까지 답변 접수 당시 그대로 저장하며
+            answered=true입니다. 스냅샷의 CURRENT는 접수 당시 표시 상태이고 완료를 뜻하지 않습니다. 현재 답변 대상은 questions만 사용합니다. 그 외 상태에서는 null 또는
+            생략합니다. 필드 미지원 구 응답도 허용합니다.
+          oneOf:
+            - allOf:
+                - $ref: "#/components/schemas/ManualInterviewQuestion"
+                - type: object
+                  properties:
+                    answered:
+                      const: true
+            - type: "null"
         id:
           type: string
           format: uuid
