@@ -21,15 +21,14 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Linux, ARM64, jidan, build, rpi4]
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 40
     permissions:
       contents: read
       packages: write
     outputs:
       ready: ${{ steps.source.outputs.ready }}
-      image: ${{ steps.image.outputs.image }}
+      image: ${{ steps.config.outputs.image }}@${{ steps.image.outputs.digest }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -52,46 +51,57 @@ jobs:
             echo 'ready=false' >> "$GITHUB_OUTPUT"
             echo "Application directory $SOURCE is not initialized; application build and deployment skipped." >> "$GITHUB_STEP_SUMMARY"
           fi
-      - name: Set up dedicated Jidan builder
-        id: builder
-        if: steps.source.outputs.ready == 'true'
-        run: |
-          docker buildx inspect jidan-ci >/dev/null 2>&1 || docker buildx create --name jidan-ci --driver docker-container
-          docker buildx inspect jidan-ci --bootstrap
-      - name: Test and build ARM64 image
+      - name: Configure image
+        id: config
         if: steps.source.outputs.ready == 'true'
         env:
-          SOURCE: ${{ inputs.source }}
           COMPONENT: ${{ inputs.component }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -euo pipefail
-          image="ghcr.io/2026-kw-hackathon/29_jidan-${COMPONENT}:${GITHUB_SHA}"
-          build_args=()
-          if [[ "$COMPONENT" == backend ]]; then
-            build_args=(--build-arg "DOCS_REVISION=$GITHUB_SHA")
-          fi
-          docker buildx build --builder jidan-ci --output=type=cacheonly --pull --target test "${build_args[@]}" -f "deploy/$COMPONENT/Dockerfile" "$SOURCE"
-          docker buildx build --builder jidan-ci --load --target runtime "${build_args[@]}" -f "deploy/$COMPONENT/Dockerfile" -t "$image" "$SOURCE"
-      - name: Publish image
-        id: image
+          preview=false
+          if [ "$COMPONENT" = frontend ] && [ "$ENVIRONMENT" = dev ]; then preview=true; fi
+          echo "preview=$preview" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/2026-kw-hackathon/29_jidan-${COMPONENT}" >> "$GITHUB_OUTPUT"
+      - name: Set up hosted builder
+        if: steps.source.outputs.ready == 'true'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Test ARM64 image
+        if: steps.source.outputs.ready == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.source }}
+          file: deploy/${{ inputs.component }}/Dockerfile
+          platforms: linux/arm64
+          target: test
+          outputs: type=cacheonly
+          pull: true
+          build-args: DOCS_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ inputs.component }}-test
+          cache-to: type=gha,scope=${{ inputs.component }}-test,mode=max
+      - name: Log in to GHCR
         if: inputs.deploy && steps.source.outputs.ready == 'true'
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COMPONENT: ${{ inputs.component }}
-          DOCKER_CONFIG: ${{ runner.temp }}/docker-${{ github.run_id }}-${{ inputs.component }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$DOCKER_CONFIG"
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          image="ghcr.io/2026-kw-hackathon/29_jidan-${COMPONENT}:${GITHUB_SHA}"
-          docker push "$image"
-          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
-          echo "image=$digest" >> "$GITHUB_OUTPUT"
-
-      - name: Retain Jidan images and cache
-        if: always() && steps.builder.outcome == 'success'
-        run: python3 deploy/scripts/retention.py build
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build runtime image
+        id: image
+        if: steps.source.outputs.ready == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.source }}
+          file: deploy/${{ inputs.component }}/Dockerfile
+          platforms: linux/arm64
+          target: runtime
+          push: ${{ inputs.deploy }}
+          tags: ${{ steps.config.outputs.image }}:${{ github.sha }}
+          build-args: |
+            VITE_ENABLE_PREVIEW=${{ steps.config.outputs.preview }}
+            DOCS_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ inputs.component }}-runtime-${{ inputs.environment }}
+          cache-to: type=gha,scope=${{ inputs.component }}-runtime-${{ inputs.environment }},mode=max
 
   deploy:
     needs: build
