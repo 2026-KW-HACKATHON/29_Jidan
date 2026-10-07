@@ -147,3 +147,11 @@ def test_transcription_errors_are_classified():
     client = StubClient(error=openai.APITimeoutError(request=httpx.Request("POST", "https://x")))
     with pytest.raises(AiError, match="timeout"):
         provider(client).transcribe(TranscriptionRequest(audio=b"abc", mime_type="audio/wav"))
+
+
+def test_question_output_budget_cuts_run_away_output_short():
+    from app.ai.openai_provider import MAX_OUTPUT_TOKENS
+
+    # Enough for a question with guidance and examples, small enough that a whitespace run-away
+    # fails within seconds instead of tying up the follow-up task for most of its timeout.
+    assert 1000 <= MAX_OUTPUT_TOKENS["generate_question"] <= 2000

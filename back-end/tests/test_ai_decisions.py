@@ -368,7 +368,7 @@ def test_each_operation_group_gets_its_effort_timeout_and_config_version():
     summary = provider.summarize_intent(IntentSummaryRequest(intent=INTENT, dialogue=(TURN,), needs_detail=True))
     answer = provider.answer_question(QaRequest(question="q", manual=StructureSnapshot()))
     efforts = [(c["reasoning"]["effort"], c["timeout"], c["max_output_tokens"]) for c in client.calls]
-    assert efforts == [("low", 30, 4000), ("medium", 90, 24000), ("low", 30, 8000)]
+    assert efforts == [("low", 30, 1500), ("medium", 90, 24000), ("low", 30, 8000)]
     assert question.meta.config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:effort=low"
     assert summary.meta.config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:effort=medium"
     assert answer.meta.config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:effort=low"

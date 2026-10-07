@@ -44,7 +44,10 @@ from app.ai.silence import pcm_wav_is_silent
 # Output budget per operation (reasoning tokens count against it as well).
 MAX_OUTPUT_TOKENS = {
     "judge_sufficiency": 4000,
-    "generate_question": 4000,
+    # A question with guidance and examples is a few hundred tokens at low effort. The cap keeps
+    # gpt-6-luna's rare whitespace run-away inside the JSON (seen live, ~5% of calls, 39 s at
+    # 4000) short: it ends as INVALID_OUTPUT in seconds and the runner retries.
+    "generate_question": 1500,
     "summarize_intent": 24000,
     "revise_structure": 32000,
     "compose_draft": 32000,
