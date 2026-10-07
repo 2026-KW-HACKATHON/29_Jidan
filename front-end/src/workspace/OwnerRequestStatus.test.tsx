@@ -1,4 +1,4 @@
-import {act,cleanup,fireEvent,render,screen} from '@testing-library/react'
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {OwnerJobs} from './Jobs'
 import {OwnerRequestStatus} from './OwnerRequestStatus'
@@ -25,4 +25,10 @@ it('요청 만료 시 서버를 다시 읽고 이탈 후 타이머를 해제한�
  vi.stubGlobal('fetch',vi.fn(async()=>json(data.applicants.items.find(a=>a.id===request.applicationId))));const reload=vi.fn()
  const {unmount}=render(<OwnerRequestStatus job={data.job as JobPosting} request={request} storeId={data.job.store.id} route={vi.fn()} onReload={reload}/>);
  await act(async()=>{await vi.advanceTimersByTimeAsync(0)});expect(screen.getByText('수락 대기 · 요청한 지 1분')).toBeInTheDocument();await act(async()=>{await vi.advanceTimersByTimeAsync(551)});expect(reload).toHaveBeenCalledOnce();unmount();await act(async()=>{await vi.advanceTimersByTimeAsync(120000)});expect(reload).toHaveBeenCalledOnce()
+})
+
+it('다른 지원자에게 요청 완료 후 최신 지원자 상태 경로로 이동한다',async()=>{
+ const job=data.job,a=data.applicants.items.find(a=>a.status==='APPLIED')!,request={...data.requests.items[0],applicationId:a.id,workerId:a.applicant.workerId,workerName:a.applicant.name}
+ vi.stubGlobal('fetch',vi.fn(async(url:unknown,init?:RequestInit)=>json(String(url).includes('/csrf')?{csrfToken:'token'}:init?.method==='POST'?request:String(url).includes('/work-requests')?{...data.requests,items:[]}:String(url).includes('/applications?')?data.applicants:job)))
+ const route=vi.fn();render(<OwnerJobs view="applicants" id={job.id} storeId={job.store.id} storeName={job.store.name} route={route}/>);fireEvent.click(await screen.findByRole('button',{name:`${a.applicant.name} 근무 요청`}));fireEvent.click(screen.getByRole('button',{name:'요청하기'}));const done=await screen.findByRole('button',{name:'지원자 확인'});await waitFor(()=>expect(done).toBeEnabled());fireEvent.click(done);await waitFor(()=>expect(route).toHaveBeenCalledWith('job',job.id))
 })
