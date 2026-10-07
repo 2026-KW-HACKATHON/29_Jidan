@@ -6,6 +6,7 @@ import { handlePreviewLink, navigatePreview, usePreviewLocation } from './naviga
 const OwnerNotifications = lazy(() => import('./OwnerNotificationPreview'))
 const UserNotifications = lazy(() => import('./UserNotificationPreview'))
 const UserApplications = lazy(() => import('./UserApplyStatusPreview'))
+const OwnerApplicantStatus = lazy(() => import('./OwnerApplicantPreview'))
 const Manual = lazy(() => import('./ManualPreview'))
 const Invitations = lazy(() => import('./InvitationsPreview'))
 const StoreManagement = lazy(() => import('./StoreManagementPreview'))
@@ -22,6 +23,7 @@ const Employment = lazy(() => import('./EmploymentPreview'))
 const ProfilePreview = lazy(() => import('./WorkerProfilePreview'))
 import './PreviewApp.css'
 const groups=[
+ {title:'점주 근무 요청 상태',links:[['지원자 수락 대기','/__owner/applicant'],['지원자 1시간 미응답','/__owner/applicant/no-response'],['지원자 근무 확정','/__owner/applicant/confirmed'],['근무 요청 미응답 알림','/__owner/applicant/no-response/alert']]},
  {title:'일반회원 신청 내역',links:[['신청 중 공고 조회','/__user/status'],['확정 공고 조회','/__user/status/confirmed'],['종료 공고 조회','/__user/status/ended']]},
  {title:'일반회원 알림',links:[['일반회원 전체 알림','/__user/noti'],['일반회원 안 읽은 알림','/__user/noti/unread'],['일반회원 모두 읽은 알림','/__user/noti/read-all']]},
  {title:'점주 알림',links:[['점주 전체 알림','/__owner/noti'],['점주 안 읽은 알림','/__owner/noti/unread'],['점주 모두 읽은 알림','/__owner/noti/read-all']]},
@@ -44,6 +46,7 @@ export default function PreviewApp(){const current=usePreviewLocation();const pa
  if(['/__owner/noti','/__owner/noti/unread','/__owner/noti/read-all'].includes(path))content=<OwnerNotifications/>
  else if(['/__user/noti','/__user/noti/unread','/__user/noti/read-all'].includes(path))content=<UserNotifications/>
  else if(['/__user/status','/__user/status/confirmed','/__user/status/ended'].includes(path))content=<UserApplications/>
+ else if(['/__owner/applicant','/__owner/applicant/no-response','/__owner/applicant/confirmed','/__owner/applicant/no-response/alert'].includes(path))content=<OwnerApplicantStatus/>
  else if(path==='/__manual')content=<Manual/>
  else if(path==='/__owner/jobs')content=<OwnerJobs/>
  else if(path==='/__invitations')content=<Invitations/>

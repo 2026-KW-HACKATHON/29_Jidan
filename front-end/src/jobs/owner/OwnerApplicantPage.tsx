@@ -1,22 +1,22 @@
-import { useState } from 'react';
 import './OwnerApplicantPage.css';
 
-export const OwnerApplicantPage = () => {
-  const path = window.location.pathname;
-  
-  let uiState: 'WAITING' | 'NO_RESPONSE' | 'CONFIRMED' = 'WAITING';
-  if (path.includes('no-response')) uiState = 'NO_RESPONSE';
-  if (path.includes('confirmed')) uiState = 'CONFIRMED';
+export type OwnerApplicantState = 'WAITING' | 'NO_RESPONSE' | 'CONFIRMED';
 
-  const initialModal = path.includes('alert') ? 'NO_RESPONSE_ALERT' : 'NONE';
-  const [modalState, setModalState] = useState<'NONE' | 'REQUEST' | 'NO_RESPONSE_ALERT'>(initialModal);
-
+export const OwnerApplicantPage = ({ state: uiState, showAlert = false, onBack, onViewApplication, onOtherApplicants, onOnboarding, onDismissAlert }: {
+  state: OwnerApplicantState;
+  showAlert?: boolean;
+  onBack: () => void;
+  onViewApplication: () => void;
+  onOtherApplicants: () => void;
+  onOnboarding: () => void;
+  onDismissAlert: () => void;
+}) => {
   return (
     <div className="my-isolated-wrapper">
       <div className="mobile-container">
         
         <div className="header-area">
-          <span style={{ cursor: 'pointer' }}>&lt;</span>
+          <button type="button" aria-label="뒤로 가기" onClick={onBack} style={{ border: 0, padding: 0, background: 'none', cursor: 'pointer' }}>&lt;</button>
           <span>지원자 확인</span>
         </div>
 
@@ -48,14 +48,14 @@ export const OwnerApplicantPage = () => {
           </p>
           
           <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-            <button className="card-inner-btn" style={{ flex: 1 }}>
+            <button className="card-inner-btn" style={{ flex: 1 }} onClick={onViewApplication}>
               지원서 보기
             </button>
             {uiState === 'CONFIRMED' && (
               <button 
                 className="card-inner-btn" 
                 style={{ flex: 1, background: '#255CF5', color: '#FFF', border: 'none', cursor: 'pointer' }}
-                onClick={() => setModalState('REQUEST')} 
+                onClick={onOnboarding}
               >
                 온보딩 보기
               </button>
@@ -79,7 +79,7 @@ export const OwnerApplicantPage = () => {
               1시간 동안 응답이 없어요.<br />
               다른 지원자를 확인할 수 있어요.
             </p>
-            <button style={{ padding: '12px', width: '100%', borderRadius: '8px', background: '#255CF5', color: '#FFF', border: 'none', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
+            <button onClick={onOtherApplicants} style={{ padding: '12px', width: '100%', borderRadius: '8px', background: '#255CF5', color: '#FFF', border: 'none', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
               다른 지원자 보기
             </button>
           </div>
@@ -97,46 +97,17 @@ export const OwnerApplicantPage = () => {
           {uiState === 'CONFIRMED' && '확정 철회하기'}
         </button>
 
-        {modalState !== 'NONE' && (
-          <div className="modal-overlay" onClick={() => setModalState('NONE')}>
-            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-              
-              {modalState === 'REQUEST' && (
-                <>
-                  <h2 className="modal-title">근무 요청을 보낼까요?</h2>
-                  <p className="modal-desc" style={{ color: '#1F2124', fontWeight: '700', marginBottom: '-8px' }}>
-                    김래원님에게 근무 요청을 보내요.
-                  </p>
-                  
-                  <div className="blue-summary-box" style={{ margin: '0', width: '100%', boxSizing: 'border-box' }}>
-                    <h4 className="summary-title" style={{ color: '#0A2C93' }}>주말 오픈 대타</h4>
-                    <p className="summary-text">명랑핫도그 광운대점<br />9월 27일 · 09:00~14:00</p>
-                  </div>
-                  
-                  <p className="modal-desc">
-                    지원자가 수락하면 근무가 확정돼요.<br/>
-                    1시간 동안 응답이 없으면 알림을 드릴게요.
-                  </p>
-                  <div className="modal-btn-group">
-                    <button className="modal-btn cancel" onClick={() => setModalState('NONE')}>취소</button>
-                    <button className="modal-btn confirm" onClick={() => setModalState('NONE')}>요청 보내기</button>
-                  </div>
-                </>
-              )}
-
-              {modalState === 'NO_RESPONSE_ALERT' && (
-                <>
-                  <h2 className="modal-title">근무 요청에 응답이 없어요</h2>
-                  <p className="modal-desc">
-                    박지원님이 1시간 동안 수락하지 않았어요.<br/>
-                    다른 지원자를 확인해 주세요.
-                  </p>
-                  <div className="modal-btn-group">
-                    <button className="modal-btn confirm" onClick={() => setModalState('NONE')}>지원자 확인</button>
-                  </div>
-                </>
-              )}
-
+        {showAlert && (
+          <div className="modal-overlay" onClick={onDismissAlert}>
+            <div className="modal-box" role="dialog" aria-modal="true" aria-labelledby="no-response-title" onClick={(e) => e.stopPropagation()}>
+              <h2 id="no-response-title" className="modal-title">근무 요청에 응답이 없어요</h2>
+              <p className="modal-desc">
+                박지원님이 1시간 동안 수락하지 않았어요.<br />
+                다른 지원자를 확인해 주세요.
+              </p>
+              <div className="modal-btn-group">
+                <button className="modal-btn confirm" onClick={onOtherApplicants}>지원자 확인</button>
+              </div>
             </div>
           </div>
         )}

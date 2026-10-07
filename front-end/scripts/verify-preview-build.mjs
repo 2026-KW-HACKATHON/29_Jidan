@@ -6,6 +6,7 @@ const build = enabled => {
  const files=readdirSync('dist/assets')
  const js=files.filter(file=>file.endsWith('.js')).map(file=>readFileSync(`dist/assets/${file}`,'utf8')).join('\n')
  assert.equal(files.some(file=>file.startsWith('PreviewApp-')),enabled,'Preview chunk boundary')
+ assert.equal(files.some(file=>file.startsWith('OwnerApplicantPreview-')),enabled,'Owner applicant preview boundary')
  assert.equal(files.some(file=>file.startsWith('UserApplyStatusPreview-')),enabled,'User application preview boundary')
  assert.equal(files.some(file=>file.startsWith('UserNotificationPreview-')),enabled,'User notification preview boundary')
  assert.equal(files.some(file=>file.startsWith('OwnerNotificationPreview-')),enabled,'Owner notification preview boundary')
