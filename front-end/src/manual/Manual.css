@@ -38,3 +38,9 @@
 .manual-photo-count-1{grid-template-columns:minmax(0,1fr)}
 .manual-photo-count-3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .manual-caption{font-size:var(--ds-small)}
+.manual-photo-editor .manual-card{gap:var(--ds-space-3)}
+.manual-photo-editor .manual-card h3{font-size:var(--ds-heading);color:var(--ds-text)}
+.manual-photo-source .ds-modal-message{display:flex}
+.manual-photo-source .ds-modal-message>p{order:1}
+.manual-photo-source .ds-modal-message>.manual-stack{order:2;margin-top:var(--ds-space-2)}
+.manual-photo-source .ds-button-secondary{background:var(--ds-surface-muted,#f4f5f6);box-shadow:none}
