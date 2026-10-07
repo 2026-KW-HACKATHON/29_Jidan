@@ -1,0 +1,15 @@
+/* Figma 506:3842 / 506:3834 and their unread/read variants. */
+.preview-notifications { background: var(--ds-primary-surface); }
+.preview-notifications .ds-app-bar h1 { line-height: 26px; }
+.preview-notifications .ds-mobile-body { padding: 8px var(--ds-space-6) var(--ds-space-6); }
+.preview-notifications .notification-content { display: flex; flex-direction: column; gap: var(--ds-space-4); }
+.preview-notifications .notification-filter { display: flex; align-items: flex-start; gap: var(--ds-space-2); }
+.preview-notifications .notification-filter h2 { flex: 1; min-width: 0; font-size: var(--ds-body); line-height: 23px; font-weight: 700; }
+.preview-notifications .notification-filter button { flex: none; border: 0; padding: 0; background: none; color: var(--ds-primary-strong); font-size: var(--ds-small); line-height: 20px; font-weight: 700; cursor: pointer; }
+.preview-notifications .notification-list { display: flex; flex-direction: column; gap: var(--ds-space-3); }
+.preview-notifications .notification-card { display: flex; flex-direction: column; gap: var(--ds-space-2); padding: var(--ds-space-4); border-radius: var(--ds-radius-dialog); background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.preview-notifications .notification-card-header { display: flex; align-items: center; gap: var(--ds-space-2); }
+.preview-notifications .notification-card-header h3 { flex: 1; min-width: 0; font-size: 17px; line-height: 26px; font-weight: 700; }
+.preview-notifications .unread-badge { flex: none; padding: 4px 8px; border-radius: 4px; background: var(--ds-primary-surface); color: var(--ds-primary-strong); font-size: var(--ds-small); line-height: 20px; font-weight: 700; }
+.preview-notifications .notification-description { color: var(--ds-secondary); font-size: var(--ds-body); line-height: 23px; white-space: pre-line; }
+.preview-notifications .notification-time { color: var(--ds-secondary); font-size: var(--ds-small); line-height: 20px; }
