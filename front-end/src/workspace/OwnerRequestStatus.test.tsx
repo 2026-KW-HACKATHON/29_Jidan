@@ -1,12 +1,12 @@
-import {cleanup,fireEvent,render,screen} from '@testing-library/react'
+import {act,cleanup,fireEvent,render,screen} from '@testing-library/react'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {OwnerJobs} from './Jobs'
-import {currentRequest} from './OwnerRequestStatus'
+import {OwnerRequestStatus,currentRequest} from './OwnerRequestStatus'
 import data from './ownerJob.fixture.test.json'
 import type {JobPosting,WorkRequest} from '../api/types.generated'
 const json=(v:unknown)=>new Response(JSON.stringify(v))
 beforeEach(()=>{Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:function(){this.setAttribute('open','')}});Object.defineProperty(HTMLDialogElement.prototype,'close',{configurable:true,value:function(){this.removeAttribute('open')}})})
-afterEach(()=>{cleanup();vi.unstubAllGlobals();Reflect.deleteProperty(HTMLDialogElement.prototype,'showModal');Reflect.deleteProperty(HTMLDialogElement.prototype,'close')})
+afterEach(()=>{cleanup();vi.useRealTimers();vi.unstubAllGlobals();Reflect.deleteProperty(HTMLDialogElement.prototype,'showModal');Reflect.deleteProperty(HTMLDialogElement.prototype,'close')})
 function api(confirmed=false,expired=false){const job=confirmed?data.confirmedJob:data.job,applicants=confirmed?data.confirmedApplicants:data.applicants,requests=confirmed?data.confirmedRequests:data.requests;const request=expired?{...requests.items[0],status:'EXPIRED',endedAt:requests.items[0].expiresAt}:requests.items[0];vi.stubGlobal('fetch',vi.fn(async(url:unknown)=>json(String(url).includes('/work-requests')?{...requests,items:[request]}:String(url).includes('/applications/')?applicants.items.find(a=>a.id===request.applicationId):String(url).includes('/applications?')?applicants:job)));return job}
 it('서버 요청의 지원자와 자기소개를 읽고 지원서에서 되돌아온다',async()=>{const job=api();const route=vi.fn();render(<OwnerJobs view="job" id={job.id} storeId={job.store.id} storeName={job.store.name} route={route}/>);fireEvent.click(await screen.findByRole('button',{name:'지원서 보기'}));await screen.findByText(data.applicants.items.find(a=>a.id===data.requests.items[0].applicationId)!.introduction);expect(screen.queryByRole('button',{name:'근무 요청 보내기'})).toBeNull();fireEvent.click(screen.getByRole('button',{name:'닫기'}));expect(screen.getByRole('button',{name:'지원서 보기'})).toBeInTheDocument()})
 it('확정 상태에서 실제 공고의 온보딩 경로를 연다',async()=>{const job=api(true),route=vi.fn();render(<OwnerJobs view="job" id={job.id} storeId={job.store.id} storeName={job.store.name} route={route}/>);fireEvent.click(await screen.findByRole('button',{name:'온보딩 보기'}));expect(route).toHaveBeenCalledWith('onboarding',job.id)})
@@ -18,3 +18,10 @@ it('현재 요청을 우선하고 과거 취소 요청을 미응답으로 표시
 })
 it.each([false,true])('상태 화면의 철회 버튼 %s가 해당 확인 대화상자를 연다',async confirmed=>{const job=api(confirmed);render(<OwnerJobs view="job" id={job.id} storeId={job.store.id} storeName={job.store.name} route={vi.fn()}/>);fireEvent.click(await screen.findByRole('button',{name:confirmed?'확정 철회하기':'요청 철회하기'}));expect(await screen.findByRole('alertdialog')).toHaveTextContent(confirmed?'근무 확정을 철회할까요?':'근무 요청을 철회할까요?')})
 it('미응답 상태의 마감 버튼에서 모집 마감 확인을 연다',async()=>{const job=api(false,true);render(<OwnerJobs view="job" id={job.id} storeId={job.store.id} storeName={job.store.name} route={vi.fn()}/>);fireEvent(await screen.findByRole('dialog'),new Event('cancel',{cancelable:true}));fireEvent.click(screen.getByRole('button',{name:'지원자 선정 없이 모집 마감'}));expect(await screen.findByRole('alertdialog')).toHaveTextContent('모집을 마감할까요?')})
+
+it('요청 만료 시 서버를 다시 읽고 이탈 후 타이머를 해제한다',async()=>{
+ vi.useFakeTimers();const now=Date.now(),request={...data.requests.items[0],requestedAt:new Date(now-60000).toISOString(),expiresAt:new Date(now+500).toISOString()} as WorkRequest
+ vi.stubGlobal('fetch',vi.fn(async()=>json(data.applicants.items.find(a=>a.id===request.applicationId))));const reload=vi.fn()
+ const {unmount}=render(<OwnerRequestStatus job={data.job as JobPosting} request={request} storeId={data.job.store.id} route={vi.fn()} onReload={reload}/>);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(0)});expect(screen.getByText('수락 대기 · 요청한 지 1분')).toBeInTheDocument();await act(async()=>{await vi.advanceTimersByTimeAsync(551)});expect(reload).toHaveBeenCalledOnce();unmount();await act(async()=>{await vi.advanceTimersByTimeAsync(120000)});expect(reload).toHaveBeenCalledOnce()
+})

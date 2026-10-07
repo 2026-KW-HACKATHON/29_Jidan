@@ -20,10 +20,13 @@ function Status({job,request,applicant,storeId,route,onReload}:{job:JobPosting;r
  const [action,setAction]=useState(false),closeService=useMemo(()=>jobClosure(storeId,job),[storeId,job])
  const [review,setReview]=useState(false),[alert,setAlert]=useState(request.status==='EXPIRED'),[now,setNow]=useState(Date.now)
  useEffect(()=>{
-  const deadline=Date.parse(request.status==='PENDING'?request.expiresAt:job.startAt),delay=deadline-Date.now()
+  const clock=Date.now(),start=Date.parse(job.startAt)
+  const deadline=Date.parse(request.status==='PENDING'?request.expiresAt:clock<start?job.startAt:job.endAt),delay=deadline-clock
   if(delay<=0)return
-  const timer=setTimeout(()=>{setNow(Date.now());onReload()},Math.min(delay+50,2147483647));return()=>clearTimeout(timer)
- },[request.status,request.expiresAt,job.startAt,onReload])
+  const timer=setTimeout(()=>{setNow(Date.now());onReload()},Math.min(delay+50,2147483647))
+  const minute=setInterval(()=>setNow(Date.now()),60000)
+  return()=>{clearTimeout(timer);clearInterval(minute)}
+ },[request.status,request.expiresAt,job.startAt,job.endAt,onReload])
  const state=request.status==='ACCEPTED'?'CONFIRMED':request.status==='EXPIRED'?'NO_RESPONSE':'WAITING'
  const minutes=Math.max(0,Math.floor((now-Date.parse(request.requestedAt))/60000))
  const windowMinutes=Math.max(1,Math.round((Date.parse(request.expiresAt)-Date.parse(request.requestedAt))/60000))
