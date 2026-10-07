@@ -137,10 +137,10 @@ def _evaluation_apply(db: Session, ctx: TaskContext, judgement: SufficiencyJudge
 
 def _evaluation_fail(db: Session, ctx: TaskContext, error: Exception) -> None:
     session = _failing_session(db, ctx)
-    provider = get_ai_provider()
+    meta = get_ai_provider().judge_meta()  # per-operation: backend (and effort) included
     db.add(_evaluation_row(
-        session, ctx, evaluation_config_version=provider.config_version[:200],
-        provider=provider.provider_name[:32], status="FAILED", error_code=task_error_code(error),
+        session, ctx, evaluation_config_version=meta.config_version[:200],
+        provider=meta.provider[:32], status="FAILED", error_code=task_error_code(error),
     ))
     _set_error(session)
 
