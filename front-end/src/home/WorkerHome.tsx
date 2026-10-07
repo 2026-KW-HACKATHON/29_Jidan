@@ -15,13 +15,14 @@ export type WorkerHomeData = {
   notificationCount?: number
 }
 
-export function WorkerHome({ displayName, data = {}, initialDate, onMonthChange, onManual, onNotifications, onProfile, onJobs }: {
+export function WorkerHome({ displayName, data = {}, initialDate, onMonthChange, onManual, onNotifications, onProfile, onJobs, onSelectJob }: {
   displayName: string
   data?: WorkerHomeData
   initialDate?: Date
   onMonthChange?: (year:number,month:number)=>void
   onManual?:()=>void
   onNotifications?:()=>void
+  onSelectJob?:(id:string)=>void
   onProfile?: () => void
   onJobs?: () => void
 }) {
@@ -41,7 +42,7 @@ export function WorkerHome({ displayName, data = {}, initialDate, onMonthChange,
         <div><span>정기 근무</span><strong>{activity.regularStores}곳</strong></div>
       </div></section>
       <section className="home-section" aria-labelledby="worker-home-jobs-title"><div className="home-section-heading"><h3 id="worker-home-jobs-title">추천 공고</h3></div>
-        {jobs.length ? jobs.map(job => <article className="worker-home-job home-card" key={job.id}><div><h4>{job.title}</h4><span className={job.status === '지원자 없음' ? 'worker-home-no-applicants' : undefined}>{job.status}</span></div><p>{job.schedule}</p></article>) : <p className="home-empty home-card">추천 공고가 없어요.</p>}
+        {jobs.length ? jobs.map(job => <article className="worker-home-job home-card" key={job.id}><div><h4>{onSelectJob?<button className="worker-home-job-link" onClick={()=>onSelectJob(job.id)}>{job.title}</button>:job.title}</h4><span className={job.status === '지원자 없음' ? 'worker-home-no-applicants' : undefined}>{job.status}</span></div><p>{job.schedule}</p></article>) : <p className="home-empty home-card">추천 공고가 없어요.</p>}
         <button type="button" className="worker-home-more" onClick={onJobs || (() => setUnavailable('공고 찾기'))}>+ 공고 더 찾아보기</button>
       </section>
       <section className="home-section" aria-labelledby="worker-home-calendar-title"><div className="home-section-heading"><h3 id="worker-home-calendar-title">근무 캘린더</h3></div>

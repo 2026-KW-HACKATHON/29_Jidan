@@ -16,7 +16,7 @@ import {Resource} from './Resource'
 export type Route=(view:string,id?:string)=>void
 export function WorkerJobs({view,id,route}:{view:string;id:string;route:Route}){
  const load=useMemo(()=>async(signal:AbortSignal)=>view==='application'?{application:await call('getMyJobApplication',{signal,params:{applicationId:id}})}:id?{job:await call('getJobPosting',{signal,params:{jobId:id}})}:{jobs:await workerJobs(signal)},[view,id])
- return <Resource load={load} onBack={()=>route('home')}>{data=>data.application?<ApplicationPage data={data.application} route={route}/>:data.job?<WorkerJobPage data={data.job} view={view} route={route}/>:<JobBrowse today={new Date()} jobs={data.jobs!.map(jobFromApi)} onSelect={job=>route('job',job.id)} onHome={()=>route('home')} onProfile={()=>route('profile')}/>}</Resource>
+ return <Resource load={load} onBack={()=>route('home')}>{data=>data.application?<ApplicationPage data={data.application} route={route}/>:data.job?<WorkerJobPage data={data.job} view={view} route={route}/>:<JobBrowse today={new Date()} jobs={data.jobs!.map(jobFromApi)} onSelect={job=>route('job',job.id)} onHome={()=>route('home')} onProfile={()=>route('profile')} onManual={()=>route('manual')}/>}</Resource>
 }
 function ApplicationPage({data,route}:{data:JobApplication;route:Route}){const service=useMemo(()=>createApplicationService(data),[data]);return <ApplicationComplete application={applicationFromApi(data)} service={service} onBack={()=>route('jobs')} onHome={()=>route('home')} onWithdrawn={()=>route('jobs')}/>}
 function WorkerJobPage({data,view,route}:{data:WorkerJobPosting;view:string;route:Route}){
