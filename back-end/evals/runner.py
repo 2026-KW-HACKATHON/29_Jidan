@@ -25,6 +25,7 @@ REQUESTS = {
     "summarize_intent": IntentSummaryRequest, "revise_structure": StructureRevisionRequest,
     "compose_draft": DraftRequest, "answer_question": QaRequest,
 }
+GROUNDED = ("summarize_intent", "revise_structure", "compose_draft")
 Operation = Literal[
     "judge_sufficiency", "generate_question", "summarize_intent", "revise_structure",
     "compose_draft", "answer_question",
@@ -37,7 +38,7 @@ class Strict(BaseModel):
 
 class Check(Strict):
     id: str = Field(min_length=1)
-    kind: Literal["equals", "contains_item", "probability_consistent", "preserve_scope"]
+    kind: Literal["equals", "contains_item", "probability_consistent", "preserve_scope", "evidence_cited"]
     path: str | None = None
     value: JsonValue = None
     critical: bool = True
@@ -47,6 +48,11 @@ class Check(Strict):
         if self.kind in ("equals", "contains_item"):
             if not self.path or "value" not in self.model_fields_set:
                 raise ValueError("value and nonempty path required")
+        elif self.kind == "evidence_cited":
+            # value: optional list of evidence IDs that some step/shift must cite (gold recall).
+            if self.path is not None or not (self.value is None or isinstance(self.value, list) and all(
+                    isinstance(item, str) for item in self.value)):
+                raise ValueError("evidence check takes no path and an optional list of IDs")
         elif self.path is not None or "value" in self.model_fields_set:
             raise ValueError("special checks take no path/value")
         return self
@@ -81,6 +87,9 @@ class Case(Strict):
         if (any(c.kind == "preserve_scope" for c in self.expected.checks)
                 and self.operation != "revise_structure"):
             raise ValueError("scope check requires revise_structure")
+        if any(c.kind == "evidence_cited" for c in self.expected.checks) and not (
+                self.operation in GROUNDED and self.request.get("evidence")):
+            raise ValueError("evidence check requires a grounded operation with evidence")
         return self
 
 
@@ -159,7 +168,27 @@ def at_path(value, path):
     return value
 
 
-def gold_check(check: Check, result: dict, request):
+def evidence_cited(raw_output: str, request, expected_ids) -> bool:
+    """Citation accuracy of the captured output itself (validation strips citations from the
+    result): every step, and every shift with a time value, cites at least one ID, every cited
+    ID is in the request's evidence, and each gold ID is cited somewhere."""
+    allowed = {chunk.id for chunk in request.evidence}
+    structure = json.loads(raw_output)["structure"]
+    cited: set[str] = set()
+    items = [step for section in structure["sections"] for step in section["steps"]]
+    items += [shift for shift in structure["shifts"]
+              if any(shift[k] is not None for k in ("start_time", "end_time", "ends_next_day"))]
+    for item in items:
+        ids = item.get("evidence_ids") or []
+        if not ids or not set(ids) <= allowed:
+            return False
+        cited.update(ids)
+    return set(expected_ids or ()) <= cited
+
+
+def gold_check(check: Check, result: dict, request, raw_output: str | None = None):
+    if check.kind == "evidence_cited":
+        return raw_output is not None and evidence_cited(raw_output, request, check.value)
     if check.kind == "probability_consistent":
         return result["sufficient"] == (result["probability"] >= 0.5)
     if check.kind == "preserve_scope":
@@ -226,7 +255,7 @@ def evaluate(dataset: Path, responses: Path):
                 row["gold_status"] = "pass"
                 for check in case.expected.checks:
                     try:
-                        passed = gold_check(check, result, request)
+                        passed = gold_check(check, result, request, response.raw_output)
                     except (KeyError, IndexError, TypeError, ValueError):
                         passed = False
                     if not passed:
