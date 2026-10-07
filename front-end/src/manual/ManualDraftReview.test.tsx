@@ -1,3 +1,4 @@
+import './dialogTestSetup'
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {ManualDraftReview} from './ManualDraftReview'
@@ -18,7 +19,7 @@ it('요약 확인 후 최종 검토 진입에서 생성하고 서버 초안을 �
 })
 it('처리 중에도 기존 내용을 표시하고 게시·추가 정정을 막는다',async()=>{
  setup('correction-running');await screen.findByRole('button',{name:/공통 업무 · 1개/})
- expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeDisabled();expect(screen.getByRole('button',{name:'수정하기'})).toBeDisabled();expect(screen.getByRole('status')).toHaveTextContent('수정한 내용을 정리')
+ expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeDisabled();expect(screen.getByRole('button',{name:'수정하기'})).toBeDisabled();expect(screen.getByRole('dialog')).toHaveTextContent('수정한 내용을 정리')
 })
 it('정정 실패는 이전 내용을 보존하며 명시적으로 재확인한 뒤 게시할 수 있다',async()=>{
  const {call}=setup('correction-clarify');await screen.findByRole('button',{name:'이전 내용을 확인했어요'})
@@ -27,8 +28,8 @@ it('정정 실패는 이전 내용을 보존하며 명시적으로 재확인한 
  const request=call.mock.calls.find(c=>c[0]==='publishManualDraft')![2];expect(request).toMatchObject({expectedVersionId:draftFixture.versionId,expectedRevision:1,confirmed:true})
 })
 it('부족 항목 확인은 서버에 저장한 최신 revision으로 게시하며 미리보기로 확인을 대체하지 않는다',async()=>{
- const {call}=setup('missing');await screen.findByRole('checkbox',{name:'야간조 종료 시간 확인 필요'})
- expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeDisabled();fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'부족한 내용을 확인했어요'}))
+ const {call}=setup('missing');await screen.findByRole('button',{name:'확인하고 게시'});await waitFor(()=>expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'확인하고 게시'}));await screen.findByRole('checkbox',{name:'야간조 종료 시간 확인 필요'})
+ expect(call.mock.calls.some(c=>c[0]==='publishManualDraft')).toBe(false);fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'부족한 내용을 확인했어요'}))
  await waitFor(()=>expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'확인하고 게시'}));await screen.findByRole('heading',{name:'매뉴얼을 게시했어요'})
  expect(call.mock.calls.find(c=>c[0]==='publishManualDraft')![2]).toMatchObject({expectedRevision:2,acknowledgedIssueIds:['eae0fb79-c6cd-40b1-a127-f3e3e93c5f87']})
 })
@@ -53,19 +54,19 @@ it('정정 무변경 성공은 revision과 부족 항목 확인을 유지한다'
 it('이전 초안에 도착한 결과와 version 교체는 현재 초안에 적용하지 않는다',async()=>{
  const service=createManualPreviewService(true,'draft'),original=service.call.bind(service)
  vi.spyOn(service,'call').mockImplementation(async(...args)=>{if(args[0]==='getManualDraft')return {data:{...draftFixture,versionId:crypto.randomUUID()},retryAfterMs:2000} as Awaited<ReturnType<typeof original>>;return original(...args)})
- render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={vi.fn()}/>);await screen.findByRole('alert');expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeDisabled();expect(screen.queryByText('먼저 들어온 제품을 앞쪽에 진열하세요.')).not.toBeInTheDocument()
+ render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={vi.fn()}/>);await screen.findByRole('alertdialog');expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeDisabled();expect(screen.queryByText('먼저 들어온 제품을 앞쪽에 진열하세요.')).not.toBeInTheDocument()
 })
 it('재시도 불가 conflict는 최신 초안 조회를 요구하고 게시 성공으로 표시하지 않는다',async()=>{
  const service=createManualPreviewService(true,'draft'),original=service.call.bind(service),onReload=vi.fn()
  vi.spyOn(service,'call').mockImplementation(async(...args)=>{if(args[0]==='publishManualDraft')throw new ManualError('REVISION_CONFLICT');return original(...args)})
- render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={onReload}/>);await screen.findByRole('button',{name:/공통 업무 · 1개/});fireEvent.click(screen.getByRole('button',{name:'확인하고 게시'}));await screen.findByRole('alert');fireEvent.click(screen.getByRole('button',{name:'최신 작성 상태 다시 불러오기'}));expect(onReload).toHaveBeenCalled();expect(screen.queryByRole('heading',{name:'매뉴얼을 게시했어요'})).not.toBeInTheDocument()
+ render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={onReload}/>);await screen.findByRole('button',{name:/공통 업무 · 1개/});fireEvent.click(screen.getByRole('button',{name:'확인하고 게시'}));await screen.findByRole('alertdialog');fireEvent.click(screen.getByRole('button',{name:'최신 내용 다시 불러오기'}));expect(onReload).toHaveBeenCalled();expect(screen.queryByRole('heading',{name:'매뉴얼을 게시했어요'})).not.toBeInTheDocument()
 })
 it('실제 내용 변경 성공은 서버가 초기화한 부족 항목을 다시 확인하게 하고 무변경은 확인을 유지한다',async()=>{
  for(const scenario of ['missing','noop-missing']){
-  const {call}=setup(scenario);await screen.findByRole('checkbox',{name:'야간조 종료 시간 확인 필요'});fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'부족한 내용을 확인했어요'}));await waitFor(()=>expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeEnabled())
+  const {call}=setup(scenario);await screen.findByRole('button',{name:'확인하고 게시'});await waitFor(()=>expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'확인하고 게시'}));await screen.findByRole('checkbox',{name:'야간조 종료 시간 확인 필요'});fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'부족한 내용을 확인했어요'}));await waitFor(()=>expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeEnabled())
   fireEvent.click(screen.getByRole('button',{name:/공통 업무 · 1개/}));fireEvent.click(screen.getByRole('button',{name:'재고 정리 수정할게요'}));fireEvent.click(screen.getByRole('button',{name:'테스트 음성 정정'}));await waitFor(()=>expect(call.mock.calls.some(c=>c[0]==='getManualDraftCorrection')).toBe(true));await screen.findByRole('button',{name:'전체 확인으로 돌아가기'});fireEvent.click(screen.getByRole('button',{name:'전체 확인으로 돌아가기'}));await waitFor(()=>expect(screen.getByRole('button',{name:'수정하기'})).toBeEnabled())
-  if(scenario==='missing'){expect(screen.getByRole('checkbox')).not.toBeChecked();expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeDisabled();fireEvent.click(screen.getByRole('button',{name:/공통 업무 · 1개/}));expect(screen.getByText('물품의 유통기한을 먼저 확인하세요.')).toBeInTheDocument()}
-  else{expect(screen.getByRole('checkbox')).toBeChecked();expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeEnabled()}
+  if(scenario==='missing'){fireEvent.click(screen.getByRole('button',{name:'확인하고 게시'}));await screen.findByRole('checkbox');expect(screen.getByRole('checkbox')).not.toBeChecked();expect(screen.queryByRole('button',{name:'확인하고 게시'})).toBeNull()}
+  else{expect(screen.queryByRole('checkbox')).toBeNull();expect(screen.getByRole('button',{name:'확인하고 게시'})).toBeEnabled()}
   cleanup()
  }
 })
