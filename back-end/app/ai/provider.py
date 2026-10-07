@@ -250,7 +250,12 @@ class AiProvider(ABC):
     def generate_question(self, request: QuestionRequest) -> GeneratedQuestion:
         if request.kind == "PROBE" and not request.missing_aspects:
             raise ValueError("a PROBE question needs the missing aspects from the judgement")
-        raw: RawQuestion = self._structured("generate_question", request.model_dump(mode="json"))
+        payload = request.model_dump(mode="json")
+        if request.kind == "PROBE":
+            # The one aspect this probe asks, named on its own: Jev lists the missing aspects in
+            # table order (core first), and the model must not pick a later one instead.
+            payload["target_aspect"] = request.missing_aspects[0]
+        raw: RawQuestion = self._structured("generate_question", payload)
         text = clean_text(raw.question)
         if not text:
             raise invalid("blank_question")
