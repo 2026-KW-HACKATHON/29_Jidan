@@ -88,6 +88,32 @@ docker compose -p <남은-jidan-e2e-프로젝트> -f back-end/testing/compose.ym
 
 GitHub Actions `backend CI/CD`는 전체 Python 및 HTTP·MySQL E2E를 실행하지 않고 정적 검사와 이미지 빌드·배포를 진행한다. 배포 후 에이전트가 실제 서버를 검증하고, 격리 회귀가 필요하면 `back-end/testing/run-e2e.sh` 또는 수동 `Backend HTTP E2E`를 실행한다. 수동 워크플로우의 XML과 로그는 artifact로 7일 보관한다. 이 하네스의 DB 초기화·실패 주입은 테스트 DB에만 적용하며 배포 서버 DB에 실행하지 않는다.
 
+## 매뉴얼 인터뷰 실호출 평가 (수동, 유료)
+
+실제 서버(`e2e.serve` → `app.main`, 백그라운드 작업 실행기)에 카페 점주 페르소나(`e2e/owner_persona.py`, 오픈조 07:00-15:00·마감조 15:00-22:30)가 인터뷰 전체를 답하고, 인터뷰의 모든 AI 연산을 OpenAI로 보낸 뒤 사람이 읽을 평가 리포트를 남긴다. 점주 답은 (인텐트, 깊이)로만 정해지는 고정 문장이다(LLM 아님). 대부분의 인텐트는 처음엔 모호하게 답해 PROBE를 끌어내고 후속 질문에서 구체화한다. RULES는 "해당 없음", EXCEPTIONS는 끝까지 모호하게 답해 depth 5 → NEEDS_DETAIL로 끝난다.
+
+```bash
+# 일회용 MySQL(수동 sandbox·운영 DB와 무관). 이미 *_test DB가 있으면 그것을 쓴다.
+docker run -d --name jidan-eval-mysql -p 127.0.0.1:13399:3306 --tmpfs /var/lib/mysql \
+  -e MYSQL_ROOT_PASSWORD=rootpw -e MYSQL_DATABASE=jidan_e2e_test -e MYSQL_USER=jidan -e MYSQL_PASSWORD=jidanpw \
+  mysql:8.4 --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+cd back-end
+export APP_ENV=local DB_HOST=127.0.0.1 DB_PORT=13399 DB_NAME=jidan_e2e_test DB_USER=jidan DB_PASSWORD=jidanpw
+.venv/bin/alembic upgrade head
+JIDAN_E2E_OPENAI=1 .venv/bin/python -m e2e.interview_eval --ai live --env-file ~/Downloads/ssh_key/api.env
+docker rm -f jidan-eval-mysql   # 끝나면 정리
+```
+
+- `--env-file`은 파일의 `OPENAI_*` 줄만 이 프로세스 환경에 넣는다(키를 출력하지 않음, shell `source`가 막힌 환경용). 이미 `OPENAI_API_KEY`가 환경에 있으면 생략한다. `JIDAN_E2E_OPENAI=1`과 키가 없으면 실행을 거부한다.
+- 실호출 연산: `--ai-live-ops`(또는 `E2E_AI_LIVE_OPS`) 기본 `interview` = `judge_sufficiency`(Decisions)·`generate_question`(low)·`summarize_intent`·`revise_structure`·`compose_draft`(medium, 근거 인용). 프리셋 `default`(데모 기본), `all`(전사·Q&A 포함)과 연산 이름을 쉼표로 섞을 수 있다. `e2e.demo_scenario --ai-live-ops`도 같은 프리셋을 받는다.
+- 호출 상한: `--ai-call-limit`(또는 `E2E_AI_CALL_LIMIT`) 기본 80 = 6개 인텐트가 모두 depth 5까지 가는 최악(72) + 요약 6 + 정정 1 + 초안 1. 넘으면 그 호출은 NOT_CONFIGURED로 실패한다(재시도 없음).
+- 예상 호출 수: Jev가 페르소나와 일치하면 42회(질문 17 + 판단 17 + 요약 6 + 정정 1 + 초안 1). `--skip-depth5`(또는 `E2E_SKIP_DEPTH5=1`)는 EXCEPTIONS를 depth 1에서 구체화해 34회.
+- 소요·비용: 2026-10-08 실측 1회 42회 호출, 전체 약 105초(AI 대기 합계 123초, 초안 23초). 토큰 입력 약 11.7만(캐시 1.75만 포함)·출력 약 9,800(추론 2,950). 리포트는 연산별 토큰을 보여 주며 `E2E_AI_PRICE_PER_1M=<입력 USD>,<출력 USD>`를 주면 추정 비용도 쓴다(가격은 하네스가 가정하지 않는다).
+- 리포트: `back-end/.e2e-reports/interview-eval-<UTC시각>-<run>.md`(gitignore) 또는 `--report <경로>`/`E2E_REPORT_PATH`. 단계가 실패해도 그때까지의 내용으로 작성한다. 인텐트별 질문 원문·점주 답·Jev 판단(충분 여부·확률·부족 aspect)·도달 깊이, 검토 요약·정정 전후 근무조, 최종 초안 구조(근무조·섹션·단계·미확정·이슈), 근거 통계(근거 조각 수, 근거 없어 제거된 단계·비운 근무조 시간 개수), 연산별 지연·실호출 수·토큰, 자동 관찰 포인트(페르소나 기대와 다른 깊이, 모호한 답을 충분으로/구체적인 답을 불충분으로 본 판단, 반복 질문, 실패 호출, "해당 없음"인데 섹션 생성 등)를 담는다. 키·prompt·provider 원문은 남기지 않는다(근거 제거는 서버 로그의 개수만 집계). 리포트에는 점주 답과 모델이 쓴 매뉴얼 문장이 들어 있으니 공유 범위에 유의한다.
+- 검증은 구조만 본다: 인텐트 순서, depth 0 BASE → PROBE +1, depth ≤ 5, 모든 검토 READY, needsDetail = depth 5에서도 불충분, 정정 후 revision 증가, 초안 READY·단계 1개 이상·섹션의 근무조 참조 유효, NEEDS_DETAIL 인텐트는 초안 이슈, 모든 응답의 OpenAPI 검증.
+- 키 없이 같은 흐름: `--ai fake`(페르소나 판단을 따르는 fake Jev, 깊이까지 정확히 검사). MySQL 회귀는 `tests/test_e2e_interview_eval.py`의 `mysql` 테스트가 같은 흐름을 실행한다.
+- 실행이 만든 계정은 `python -m e2e.demo_scenario --cleanup`으로 지운다.
+
 ## 검증 범위
 
 독립 재점검 후 로컬 전체 실행에서 도구 테스트 43개, 전체 Python 테스트 1,331개, 실제 HTTP E2E 148개가 통과했으며 실패·오류·skip은 모두 0개였다. 전체 Python에는 `mysql` 표시 테스트 502개가 포함된다. 이 표시 중 등록 트랜잭션 테스트의 2개 매개변수는 SQLite이므로 표시 개수를 실제 MySQL 실행 수로 해석하지 않는다. 실행 결과는 JUnit 및 pytest 요약으로 확인하며 테스트 수는 구현 추가에 따라 달라질 수 있다.
