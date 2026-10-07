@@ -8,9 +8,10 @@ store: another store's data is never read. `app.ai.retrieval` splits them into s
 Retries see the same evidence:
 * summary (REVIEW_UNDERSTANDING): retrieved when the task is enqueued and stored in its payload;
 * draft (DRAFT_GENERATION): retrieved at completion and frozen in the generation snapshot;
-* review correction (REVIEW_CORRECTION): rebuilt in `execute` like the rest of that request,
-  from turns up to the correction turn (`turn_no` bound) and the review content, which do not
-  change while the correction is PROCESSING — so every attempt rebuilds identical evidence.
+* review correction (REVIEW_CORRECTION): retrieved when the correction is accepted (from turns
+  up to the correction turn and the review's READY content) and stored in the task payload; a
+  review retry re-enqueues the same payload. Tasks queued before that rebuild it in `execute`
+  from the same turns (`turn_no` bound) and content, which do not change while PROCESSING.
 """
 
 from collections.abc import Iterable

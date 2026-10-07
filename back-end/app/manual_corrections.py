@@ -11,6 +11,12 @@ task. The AI call (`revise_structure`) runs outside any transaction; `_apply` re
 manual and the correction and applies the result only if the correction still waits for this
 task and attempt and the draft is still the same version at the base revision.
 
+Grounding (app.ai.validation.ground_structure). The only new facts a correction may add are
+the owner's instruction, so its sentences are the evidence (`<correctionId>#<n>`, rebuilt from
+the stored text, identical on every attempt): the draft's existing steps and shift times pass
+when returned unchanged, anything changed or added must cite the instruction, and an uncited
+step is removed (a section left empty becomes "steps unknown") like in interview writing.
+
 | Correction | Event | Result |
 | --- | --- | --- |
 | (new) RUNNING | accepted (attempt 1) | draft unchanged, later edits/acks/publication 409 |
@@ -32,11 +38,14 @@ from sqlalchemy.orm import Session
 
 from app.ai import get_ai_provider
 from app.ai.contracts import (
+    MAX_EVIDENCE,
+    EvidenceChunk,
     RevisionTarget,
     StructureRevision,
     StructureRevisionRequest,
     StructureSnapshot,
 )
+from app.ai.retrieval import Utterance, chunk_utterances
 from app.auth import CurrentOwner, DbSession
 from app.csrf import CsrfOwner
 from app.db import new_uuid, session_scope, utcnow
@@ -238,6 +247,15 @@ def retry_manual_draft_correction(
 
 # --- DRAFT_CORRECTION task ----------------------------------------------------------------------
 
+EVIDENCE_INTENT = "DRAFT_CORRECTION"
+
+
+def instruction_evidence(correction_id: str, text: str) -> tuple[EvidenceChunk, ...]:
+    """The instruction's sentences: the only citable source of new facts in a draft correction."""
+    utterance = Utterance(turn_id=correction_id, intent_key=EVIDENCE_INTENT, text=text)
+    return tuple(chunk_utterances([utterance])[:MAX_EVIDENCE])
+
+
 
 def _execute(ctx: TaskContext) -> StructureRevision | None:
     """Read the instruction and the draft at the base revision, then call the model (no
@@ -254,6 +272,7 @@ def _execute(ctx: TaskContext) -> StructureRevision | None:
             current=structure_snapshot(db, version.id), summary=None,
             target=RevisionTarget(kind=row.target_kind, target_id=row.target_id),
             instruction=row.input_text, require_manual_level=True,
+            evidence=instruction_evidence(row.id, row.input_text),
         )
     return get_ai_provider().revise_structure(request)
 

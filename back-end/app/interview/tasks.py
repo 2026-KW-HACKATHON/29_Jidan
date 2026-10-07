@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.ai import get_ai_provider
 from app.ai.contracts import (
+    EvidenceChunk,
     GeneratedQuestion,
     IntentSummary,
     IntentSummaryRequest,
@@ -192,26 +193,33 @@ def _understanding_apply(db: Session, ctx: TaskContext, summary: IntentSummary) 
     ))
 
 
-def correction_request(db: Session, session_id: str, intent_id: str, turn_id: str) -> StructureRevisionRequest:
+def correction_request(db: Session, session_id: str, intent_id: str, turn_id: str,
+                       frozen_evidence: list[dict[str, Any]] | None = None) -> StructureRevisionRequest:
     """The review's last READY content (unchanged while the correction is PROCESSING), the
     correction turn's text, the other reviews' shifts, the store wording context and the
-    owner's words up to this correction as evidence (app.interview.evidence)."""
+    owner's words up to this correction as evidence (app.interview.evidence). The evidence is the
+    one frozen in the task payload when the correction was accepted; tasks queued before it was
+    frozen there rebuild it (same turns, same review content, so the same chunks)."""
     review = db.get(InterviewIntentReview, (session_id, intent_id))
     content = review.ready_content
     session = db.get(InterviewSession, session_id)
     turn = db.get(InterviewTurn, turn_id)
     current = snapshot_from_content(content)
+    if frozen_evidence is None:
+        evidence = correction_evidence(db, session_id, db.get(InterviewIntent, intent_id).intent_key, turn, current)
+    else:
+        evidence = tuple(EvidenceChunk.model_validate(chunk) for chunk in frozen_evidence)
     return StructureRevisionRequest(
         current=current, summary=content["summary"], instruction=turn.content,
         external_shifts=tuple(available_shifts(db, session_id, intent_id)),
-        store=store_context(store_of(db, session)),
-        evidence=correction_evidence(db, session_id, db.get(InterviewIntent, intent_id).intent_key, turn, current),
+        store=store_context(store_of(db, session)), evidence=evidence,
     )
 
 
 def _correction_execute(ctx: TaskContext) -> StructureRevision:
     with session_scope() as db:
-        request = correction_request(db, ctx.subject_id, ctx.payload["intentId"], ctx.payload["correctionTurnId"])
+        request = correction_request(db, ctx.subject_id, ctx.payload["intentId"], ctx.payload["correctionTurnId"],
+                                     ctx.payload.get("evidence"))
     return get_ai_provider().revise_structure(request)
 
 

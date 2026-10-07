@@ -66,7 +66,8 @@ from app.interview.common import (
     state_conflict,
     turn_body,
 )
-from app.interview.content import photo_ids
+from app.interview.content import photo_ids, snapshot_from_content
+from app.interview.evidence import correction_evidence
 from app.interview.flow import (
     enqueue_base_question,
     enqueue_evaluation,
@@ -498,11 +499,16 @@ def correct_manual_interview_understanding(store_id: StoreIdPath, session_id: Se
         if review.confirmed_at is not None:
             previous = {"at": review.confirmed_at.isoformat(), "by": review.confirmed_by_owner_id}
         # The request is rebuilt in execute from the review (frozen while PROCESSING) and this turn,
-        # so a large review never exceeds the task payload limit. Enqueue first: the row may only
-        # become PROCESSING together with its task (CHECK).
+        # so a large review never exceeds the task payload limit. The evidence (bounded by its
+        # character budget) is retrieved now and frozen in the payload, like a summary's, so every
+        # attempt and review retry cites the same chunks. Enqueue first: the row may only become
+        # PROCESSING together with its task (CHECK).
+        evidence = correction_evidence(db, session.id, intent.intent_key, turn,
+                                       snapshot_from_content(review.ready_content))
         task_id = enqueue(
             db, "REVIEW_CORRECTION", session.id,
-            {"intentId": intent.id, "correctionTurnId": turn.id, "previousConfirmation": previous},
+            {"intentId": intent.id, "correctionTurnId": turn.id, "previousConfirmation": previous,
+             "evidence": [chunk.model_dump(mode="json") for chunk in evidence]},
             input_revision=review.revision + 1, attempt=1,
         )
         review.confirmed_at = review.confirmed_by_owner_id = None
