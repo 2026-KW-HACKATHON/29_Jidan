@@ -5,6 +5,7 @@ import { Fragment, lazy, Suspense } from 'react'
 import { handlePreviewLink, navigatePreview, usePreviewLocation } from './navigation'
 const OwnerNotifications = lazy(() => import('./OwnerNotificationPreview'))
 const UserNotifications = lazy(() => import('./UserNotificationPreview'))
+const UserApplications = lazy(() => import('./UserApplyStatusPreview'))
 const Manual = lazy(() => import('./ManualPreview'))
 const Invitations = lazy(() => import('./InvitationsPreview'))
 const StoreManagement = lazy(() => import('./StoreManagementPreview'))
@@ -21,6 +22,7 @@ const Employment = lazy(() => import('./EmploymentPreview'))
 const ProfilePreview = lazy(() => import('./WorkerProfilePreview'))
 import './PreviewApp.css'
 const groups=[
+ {title:'일반회원 신청 내역',links:[['신청 중 공고 조회','/__user/status'],['확정 공고 조회','/__user/status/confirmed'],['종료 공고 조회','/__user/status/ended']]},
  {title:'일반회원 알림',links:[['일반회원 전체 알림','/__user/noti'],['일반회원 안 읽은 알림','/__user/noti/unread'],['일반회원 모두 읽은 알림','/__user/noti/read-all']]},
  {title:'점주 알림',links:[['점주 전체 알림','/__owner/noti'],['점주 안 읽은 알림','/__owner/noti/unread'],['점주 모두 읽은 알림','/__owner/noti/read-all']]},
  {title:'점주 매뉴얼 작성',links:[['매뉴얼 시작 안내','/__manual'],['인터뷰 이어하기','/__manual?resume=1'],['요약 확인·음성 정정','/__manual?case=review'],['요약 실패·질문 계속','/__manual?case=review-error'],['추가 질문 상한·검수중','/__manual?case=depth5'],['최종 검토 준비','/__manual?case=ready'],['최종 초안·게시','/__manual?case=draft'],['부족 항목 확인','/__manual?case=missing'],['초안 정정 중','/__manual?case=correction-running'],['초안 정정 실패','/__manual?case=correction-error'],['정정 내용 다시 질문','/__manual?case=correction-clarify'],['변경 없는 정정','/__manual?case=correction-noop'],['초안 생성 실패','/__manual?case=generation-error']]},
@@ -41,6 +43,7 @@ function ScreenList({current}:{current:string}) {
 export default function PreviewApp(){const current=usePreviewLocation();const path=current.split('?')[0];let content
  if(['/__owner/noti','/__owner/noti/unread','/__owner/noti/read-all'].includes(path))content=<OwnerNotifications/>
  else if(['/__user/noti','/__user/noti/unread','/__user/noti/read-all'].includes(path))content=<UserNotifications/>
+ else if(['/__user/status','/__user/status/confirmed','/__user/status/ended'].includes(path))content=<UserApplications/>
  else if(path==='/__manual')content=<Manual/>
  else if(path==='/__owner/jobs')content=<OwnerJobs/>
  else if(path==='/__invitations')content=<Invitations/>

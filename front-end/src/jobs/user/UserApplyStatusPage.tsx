@@ -1,12 +1,12 @@
 import './UserApplyStatusPage.css';
 
-export const UserApplyStatusPage = () => {
-  const path = window.location.pathname;
-  let tabState: 'APPLYING' | 'CONFIRMED' | 'ENDED' = 'APPLYING';
+export type UserApplicationTab = 'APPLYING' | 'CONFIRMED' | 'ENDED';
 
-  if (path.includes('/confirmed')) tabState = 'CONFIRMED';
-  if (path.includes('/ended')) tabState = 'ENDED';
-
+export const UserApplyStatusPage = ({ tab: tabState, onTabChange, onBack }: {
+  tab: UserApplicationTab;
+  onTabChange: (tab: UserApplicationTab) => void;
+  onBack: () => void;
+}) => {
   const applyingList = [
     { id: 1, title: '주말 오픈 대타', desc: '컴포즈커피 광운대점', time: '9월 26일 | 09:00~14:00', badgeText: '신청 중', badgeType: 'blue' },
     { id: 2, title: '평일 저녁 홀 대타', desc: '국수천왕 광운대본점', time: '9월 29일 | 18:00~22:00', badgeText: '신청 중', badgeType: 'blue' },
@@ -31,7 +31,7 @@ export const UserApplyStatusPage = () => {
       <div className="mobile-container">
         
         <div className="header-area">
-          <span style={{ cursor: 'pointer' }}>&lt;</span>
+          <button type="button" aria-label="뒤로 가기" onClick={onBack} style={{ border: 0, padding: 0, background: 'none', cursor: 'pointer' }}>&lt;</button>
           <span>신청한 공고</span>
         </div>
 
@@ -43,19 +43,19 @@ export const UserApplyStatusPage = () => {
         <div className="tab-container">
           <button 
             className={`tab-btn ${tabState === 'APPLYING' ? 'active' : ''}`}
-            onClick={() => window.location.href = '/user/status'}
+            onClick={() => onTabChange('APPLYING')}
           >
             신청 중 3
           </button>
           <button 
             className={`tab-btn ${tabState === 'CONFIRMED' ? 'active' : ''}`}
-            onClick={() => window.location.href = '/user/status/confirmed'}
+            onClick={() => onTabChange('CONFIRMED')}
           >
             확정 1
           </button>
           <button 
             className={`tab-btn ${tabState === 'ENDED' ? 'active' : ''}`}
-            onClick={() => window.location.href = '/user/status/ended'}
+            onClick={() => onTabChange('ENDED')}
           >
             종료 2
           </button>
