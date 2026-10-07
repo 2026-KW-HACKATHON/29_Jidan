@@ -30,10 +30,10 @@ export function OwnerJobs({view,id,storeId,storeName,route}:{view:string;id:stri
  const service=useMemo(()=>jobCreation(storeId),[storeId])
  const [attempt,setAttempt]=useState(0)
  const reload=()=>setAttempt(v=>v+1)
- const load=useMemo(()=>async(signal:AbortSignal)=>id?{job:await call('getOwnerJobPosting',{signal,params:{storeId,jobId:id}}),applicants:await pages(page=>call('listJobApplicants',{signal,params:{storeId,jobId:id},query:{page,size:100}}),signal),requests:await pages(page=>call('listOwnerWorkRequests',{signal,params:{storeId,jobId:id},query:{page,size:100}}),signal)}:{jobs:await ownerJobs(storeId,signal)},[id,storeId,attempt])
+ const load=useMemo(()=>async(signal:AbortSignal)=>id?{job:await call('getOwnerJobPosting',{signal,params:{storeId,jobId:id}}),applicants:await pages(page=>call('listJobApplicants',{signal,params:{storeId,jobId:id},query:{page,size:100}}),signal),requests:await pages(page=>call('listOwnerWorkRequests',{signal,params:{storeId,jobId:id},query:{page,size:100}}),signal)}:{jobs:await ownerJobs(storeId,signal)},[id,storeId])
  if(view==='onboarding')return <OwnerOnboarding key={`${storeId}:${id}`} storeId={storeId} jobId={id} onBack={()=>route('job',id)}/>
  if(view==='create-job')return <JobRegistration service={service} onBack={()=>route('home')} onCreated={(job)=>route('job',job.id)}/>
- return <Resource load={load} onBack={()=>route('home')}>{data=>data.job?<OwnerJobPage data={data.job} applicants={data.applicants!} requests={data.requests!} view={view} storeId={storeId} route={route} onReload={reload}/>:<OwnerJobList jobs={data.jobs!.map(jobFromApi)} storeName={storeName} onBack={()=>route('home')} onSelect={j=>route('job',j.id)}/>}</Resource>
+ return <Resource key={attempt} load={load} onBack={()=>route('home')}>{data=>data.job?<OwnerJobPage data={data.job} applicants={data.applicants!} requests={data.requests!} view={view} storeId={storeId} route={route} onReload={reload}/>:<OwnerJobList jobs={data.jobs!.map(jobFromApi)} storeName={storeName} onBack={()=>route('home')} onSelect={j=>route('job',j.id)}/>}</Resource>
 }
 function OwnerJobPage({data,applicants,requests,view,storeId,route,onReload}:{data:JobPosting;applicants:OwnerJobApplication[];requests:WorkRequest[];view:string;storeId:string;route:Route;onReload:()=>void}){
  const [closing,setClosing]=useState(false),[requesting,setRequesting]=useState<JobApplicant|null>(null)
