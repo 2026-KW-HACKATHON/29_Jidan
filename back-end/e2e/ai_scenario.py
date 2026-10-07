@@ -19,10 +19,26 @@ environment (OPENAI_*), the rest stay on the fake, and the live calls are capped
 in `E2E_AI_COUNTER_FILE` (JSON per operation) so the runner can report them. The default live
 set is everything whose output the manual is made of, but not the question loop, so one run is
 a fixed number of calls (see `DEFAULT_LIVE_OPS`).
+
+`E2E_AI_LIVE_OPS` takes operation names and the presets in `LIVE_OPS_PRESETS` (`default`,
+`interview` = every interview operation including the question loop, `all`), comma separated.
+
+`E2E_AI_TRACE_FILE` (optional): one JSON line per AI call (live or fake) with the operation, the
+intent key / depth / kind it was for, outcome code, wall time, the Jev judgement (sufficient,
+probability, missing aspect labels), how many evidence chunks a writing call got, the grounding
+counts the provider logs (`dropped_steps`, `cleared_shifts`) and the provider's token usage
+numbers. Never prompts, answers or provider output text: the interview evaluation report
+(`e2e.interview_eval`) is built from it and from the public API.
+
+`E2E_AI_SCRIPT=persona`: the fake judges by the scripted owner persona (`e2e.owner_persona`)
+instead of the demo's fixed COMMON_TASKS/EQUIPMENT rule, so a fake evaluation run walks the path
+the persona is written for.
 """
 import json
+import logging
 import os
 import threading
+import time
 from pathlib import Path
 
 from app.ai.contracts import StructureSnapshot
@@ -37,6 +53,20 @@ NEEDS_DETAIL = "EQUIPMENT"
 SHIFT_08_30 = "08:30"
 # summarize_intent x6 + compose_draft + revise_structure x2 + answer_question x4 + transcribe x2 = 15.
 DEFAULT_LIVE_OPS = ("summarize_intent", "compose_draft", "revise_structure", "answer_question", "transcribe")
+# Every operation an interview makes: questions, Jev, reviews and their corrections, the draft.
+INTERVIEW_OPS = ("judge_sufficiency", "generate_question", "summarize_intent", "revise_structure", "compose_draft")
+LIVE_OPS_PRESETS = {"default": DEFAULT_LIVE_OPS, "interview": INTERVIEW_OPS, "all": OPERATIONS}
+
+
+def resolve_live_ops(spec: str | None) -> tuple[str, ...]:
+    """Operation names and preset names (comma separated) -> operations, first-seen order.
+    Empty or None is the default set; unknown names are kept for RoutedAiProvider to refuse."""
+    ops: list[str] = []
+    for token in (spec or "").split(","):
+        token = token.strip()
+        if token:
+            ops.extend(LIVE_OPS_PRESETS.get(token.lower(), (token,)))
+    return tuple(dict.fromkeys(ops)) or DEFAULT_LIVE_OPS
 
 
 def _shift(ref, name, start, end):
@@ -130,14 +160,179 @@ class CallBudget:
             self.path.write_text(json.dumps({"limit": self.limit, "calls": self.counts, "refused": self.refused}))
 
 
-class RoutedAiProvider(AiProvider):
-    """`live_ops` go to `live` (counted against `budget`), the rest to `fake`."""
+_current = threading.local()  # the trace record of the call running on this thread
 
-    def __init__(self, fake: AiProvider, live: AiProvider, live_ops, budget: CallBudget) -> None:
+
+class _GroundingCounts(logging.Handler):
+    """Adds the provider's `ai grounding` log counts to the running call's trace record."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        entry = getattr(_current, "entry", None)
+        args = record.args if isinstance(record.args, tuple) else ()
+        if entry is None or not str(record.msg).startswith("ai grounding") or len(args) != 3:
+            return
+        _op, dropped, cleared = args
+        entry["dropped_steps"] = entry.get("dropped_steps", 0) + int(dropped)
+        entry["cleared_shifts"] = entry.get("cleared_shifts", 0) + int(cleared)
+
+
+_grounding_handler = _GroundingCounts()
+
+
+def usage_numbers(usage) -> dict[str, int]:
+    """Token counts of a Responses / Decisions usage object or dict: numbers only, one level of
+    `*_details` flattened as `<details>.<name>`."""
+    if usage is None:
+        return {}
+    if not isinstance(usage, dict):
+        dump = getattr(usage, "model_dump", None)
+        usage = dump() if callable(dump) else {}
+    numbers: dict[str, int] = {}
+    for name, value in usage.items():
+        if isinstance(value, int) and not isinstance(value, bool):
+            numbers[name] = value
+        elif isinstance(value, dict):
+            for sub, inner in value.items():
+                if isinstance(inner, int) and not isinstance(inner, bool):
+                    numbers[f"{name}.{sub}"] = inner
+    return numbers
+
+
+def _add_usage(usage) -> None:
+    entry = getattr(_current, "entry", None)
+    if entry is None:
+        return
+    total = entry.setdefault("usage", {})
+    for name, value in usage_numbers(usage).items():
+        total[name] = total.get(name, 0) + value
+
+
+class _UsageResponses:
+    def __init__(self, responses) -> None:
+        self._responses = responses
+
+    def create(self, *args, **kwargs):
+        response = self._responses.create(*args, **kwargs)
+        _add_usage(getattr(response, "usage", None))
+        return response
+
+
+class _UsageClient:
+    """Wraps an OpenAI client: records the token usage of `responses.create` and of the Decisions
+    `post`, and passes everything else through. No text is read or kept."""
+
+    def __init__(self, client) -> None:
+        self._client = client
+        self.responses = _UsageResponses(client.responses)
+
+    def post(self, *args, **kwargs):
+        response = self._client.post(*args, **kwargs)
+        try:
+            body = json.loads(response.content)
+            _add_usage(body.get("usage") if isinstance(body, dict) else None)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        return response
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    def __repr__(self) -> str:  # never show the wrapped client (it holds the key)
+        return "_UsageClient()"
+
+
+def count_usage(provider: AiProvider) -> None:
+    """Record the token usage of `provider`'s OpenAI client (and its fallback's), if it has one."""
+    for backend in (provider, getattr(provider, "primary", None), getattr(provider, "fallback", None)):
+        client = getattr(backend, "_client", None)
+        if client is not None and not isinstance(client, _UsageClient) and hasattr(client, "responses"):
+            backend._client = _UsageClient(client)
+
+
+def _request_facts(operation: str, request) -> dict:
+    """Which intent / depth / kind a request is for, and how much evidence it carries."""
+    facts: dict = {}
+    intent = getattr(request, "intent", None)
+    if intent is not None:
+        facts["intent"] = intent.key
+    for name in ("depth", "kind", "needs_detail"):
+        value = getattr(request, name, None)
+        if value is not None:
+            facts[name] = value
+    evidence = getattr(request, "evidence", None)
+    if evidence is not None:
+        facts["evidence"] = len(evidence)
+    if operation == "revise_structure":
+        facts["target"] = request.target.kind
+        facts["review"] = request.summary is not None
+    return facts
+
+
+def _result_facts(operation: str, result) -> dict:
+    meta = getattr(result, "meta", None)
+    facts = {"config": meta.config_version} if meta is not None else {}
+    if operation == "judge_sufficiency":
+        facts.update(sufficient=result.sufficient, probability=round(result.probability, 4),
+                     missing_aspects=list(result.missing_aspects))
+    return facts
+
+
+class CallTrace:
+    """Appends one JSON line per AI call to `path` (fields: see the module docstring)."""
+
+    def __init__(self, path: str | None) -> None:
+        self.path = Path(path) if path else None
+        self._lock = threading.Lock()
+        if self.path is not None:
+            self.path.write_text("", encoding="utf-8")
+            ai_logger = logging.getLogger("jidan.ai")
+            if _grounding_handler not in ai_logger.handlers:
+                ai_logger.addHandler(_grounding_handler)
+            if ai_logger.getEffectiveLevel() > logging.INFO:
+                ai_logger.setLevel(logging.INFO)
+
+    def run(self, operation: str, request, live: bool, call):
+        if self.path is None:
+            return call()
+        entry = {"op": operation, "live": live, **_request_facts(operation, request)}
+        _current.entry = entry
+        started = time.monotonic()
+        try:
+            result = call()
+            entry.update(outcome="ok", **_result_facts(operation, result))
+            return result
+        except AiError as error:
+            entry["outcome"] = error.code.value
+            raise
+        except Exception as error:  # an unexpected failure is still one traced call
+            entry["outcome"] = type(error).__name__
+            raise
+        finally:
+            _current.entry = None
+            entry["ms"] = int((time.monotonic() - started) * 1000)
+            with self._lock, self.path.open("a", encoding="utf-8") as out:
+                out.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def read_trace(path) -> list[dict]:
+    """The records `CallTrace` wrote to `path` (none when it does not exist)."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+class RoutedAiProvider(AiProvider):
+    """`live_ops` go to `live` (counted against `budget`), the rest to `fake`; every call is
+    recorded by `trace` when it has a file."""
+
+    def __init__(self, fake: AiProvider, live: AiProvider, live_ops, budget: CallBudget,
+                 trace: CallTrace | None = None) -> None:
         unknown = set(live_ops) - set(OPERATIONS)
         if unknown:
             raise ValueError(f"unknown AI operations: {sorted(unknown)}")
         self.fake, self.live, self.live_ops, self.budget = fake, live, frozenset(live_ops), budget
+        self.trace = trace or CallTrace(None)
         self.provider_name, self.model, self.transcribe_model = live.provider_name, live.model, live.transcribe_model
 
     @property
@@ -152,9 +347,9 @@ class RoutedAiProvider(AiProvider):
 
     def _call(self, operation: str, request):
         if operation not in self.live_ops:
-            return getattr(self.fake, operation)(request)
+            return self.trace.run(operation, request, False, lambda: getattr(self.fake, operation)(request))
         self.budget.take(operation)
-        return getattr(self.live, operation)(request)
+        return self.trace.run(operation, request, True, lambda: getattr(self.live, operation)(request))
 
     def judge_sufficiency(self, request):
         return self._call("judge_sufficiency", request)
@@ -184,14 +379,25 @@ def build_from_env() -> AiProvider | None:
     if not mode:
         return None
     timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "").strip() or 60)
-    fake = install(FakeAiProvider(timeout_seconds=timeout))
-    if mode == "fake":
-        return fake
-    if mode != "live":
+    if mode not in ("fake", "live"):
         raise ValueError("E2E_AI must be fake or live")
+    fake = install(FakeAiProvider(timeout_seconds=timeout))
+    script = os.getenv("E2E_AI_SCRIPT", "").strip().lower()
+    if script == "persona":
+        from e2e import owner_persona
+
+        owner_persona.install_fake(fake)
+    elif script:
+        raise ValueError("E2E_AI_SCRIPT must be persona or unset")
+    trace = CallTrace(os.getenv("E2E_AI_TRACE_FILE") or None)
+    if mode == "fake":
+        # Traced fake calls let the evaluation report run without a key.
+        return fake if trace.path is None else RoutedAiProvider(fake, fake, (), CallBudget(0, None), trace)
     from app.ai import build_provider_from_env
 
     live = build_provider_from_env()  # AI_PROVIDER=openai with OPENAI_API_KEY from the environment
-    ops = [op.strip() for op in os.getenv("E2E_AI_LIVE_OPS", ",".join(DEFAULT_LIVE_OPS)).split(",") if op.strip()]
+    if trace.path is not None:
+        count_usage(live)
+    ops = resolve_live_ops(os.getenv("E2E_AI_LIVE_OPS"))
     budget = CallBudget(int(os.getenv("E2E_AI_CALL_LIMIT", "20")), os.getenv("E2E_AI_COUNTER_FILE"))
-    return RoutedAiProvider(fake, live, ops, budget)
+    return RoutedAiProvider(fake, live, ops, budget, trace)
