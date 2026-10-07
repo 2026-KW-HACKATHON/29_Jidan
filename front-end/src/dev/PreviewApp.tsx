@@ -3,6 +3,7 @@ import { MobileLayout } from '../ui/MobileLayout'
 import { AuthFlow } from '../auth/AuthFlow'
 import { Fragment, lazy, Suspense } from 'react'
 import { handlePreviewLink, navigatePreview, usePreviewLocation } from './navigation'
+const OwnerNotifications = lazy(() => import('./OwnerNotificationPreview'))
 const Manual = lazy(() => import('./ManualPreview'))
 const Invitations = lazy(() => import('./InvitationsPreview'))
 const StoreManagement = lazy(() => import('./StoreManagementPreview'))
@@ -19,6 +20,7 @@ const Employment = lazy(() => import('./EmploymentPreview'))
 const ProfilePreview = lazy(() => import('./WorkerProfilePreview'))
 import './PreviewApp.css'
 const groups=[
+ {title:'점주 알림',links:[['점주 전체 알림','/__owner/noti'],['점주 안 읽은 알림','/__owner/noti/unread'],['점주 모두 읽은 알림','/__owner/noti/read-all']]},
  {title:'점주 매뉴얼 작성',links:[['매뉴얼 시작 안내','/__manual'],['인터뷰 이어하기','/__manual?resume=1'],['요약 확인·음성 정정','/__manual?case=review'],['요약 실패·질문 계속','/__manual?case=review-error'],['추가 질문 상한·검수중','/__manual?case=depth5'],['최종 검토 준비','/__manual?case=ready'],['최종 초안·게시','/__manual?case=draft'],['부족 항목 확인','/__manual?case=missing'],['초안 정정 중','/__manual?case=correction-running'],['초안 정정 실패','/__manual?case=correction-error'],['정정 내용 다시 질문','/__manual?case=correction-clarify'],['변경 없는 정정','/__manual?case=correction-noop'],['초안 생성 실패','/__manual?case=generation-error']]},
  {title:'점주 지원자 확인',links:[['지원자 목록','/__owner/jobs?view=applicants&id=open'],['지원자 없음','/__owner/jobs?view=applicants&id=open&noApplicants=1'],['박지원 지원서','/__owner/jobs?view=applicants&id=open&review=park'],['김래원 지원서·열람 전용','/__owner/jobs?view=applicants&id=open&review=kim&readonly=1'],['근무 요청 확인','/__owner/jobs?view=applicants&id=open&overlay=request&applicant=park'],['근무 요청 완료','/__owner/jobs?view=applicants&id=open&overlay=request-complete&applicant=park'],['근무 요청 실패·재시도','/__owner/jobs?view=applicants&id=open&overlay=request&applicant=park&requestFail=1']]},
  {title:'점주 공고 관리',links:[['모집 중 공고','/__owner/jobs'],['마감 공고','/__owner/jobs?tab=closed'],['공고 없는 상태','/__owner/jobs?empty=1'],['모집 마감 확인','/__owner/jobs?view=detail&id=open&overlay=close'],['모집 마감 완료','/__owner/jobs?view=detail&id=open&overlay=closed'],['모집 마감 실패','/__owner/jobs?view=detail&id=open&overlay=close&fail=1']]},
@@ -35,7 +37,8 @@ function ScreenList({current}:{current:string}) {
  return <>{groups.map(group=><section key={group.title}><h3>{group.title}</h3>{group.links.map(([title,url])=><a key={url} href={url} aria-current={url===current?'page':undefined}>{title}</a>)}</section>)}</>
 }
 export default function PreviewApp(){const current=usePreviewLocation();const path=current.split('?')[0];let content
- if(path==='/__manual')content=<Manual/>
+ if(['/__owner/noti','/__owner/noti/unread','/__owner/noti/read-all'].includes(path))content=<OwnerNotifications/>
+ else if(path==='/__manual')content=<Manual/>
  else if(path==='/__owner/jobs')content=<OwnerJobs/>
  else if(path==='/__invitations')content=<Invitations/>
  else if(path==='/__store/manage')content=<StoreManagement/>

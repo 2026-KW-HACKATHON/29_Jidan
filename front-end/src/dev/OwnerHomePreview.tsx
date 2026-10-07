@@ -16,5 +16,5 @@ const sample: OwnerHomeData = {
 }
 
 export default function OwnerHomePreview() {
-  return <OwnerHome onSelectJob={job=>navigatePreview(`/__owner/jobs?view=applicants&id=${encodeURIComponent(job.id)}`)} onCreateJob={()=>navigatePreview('/__owner/jobs?view=create&from=home')} onJobs={()=>navigatePreview('/__owner/jobs')} onManage={()=>navigatePreview('/__store/manage')} displayName="000" data={new URLSearchParams(location.search).has('empty') ? { store: sample.store } : sample} initialDate={new Date(2025, 6, 19)} />
+  return <OwnerHome onNotifications={()=>navigatePreview('/__owner/noti')} onSelectJob={job=>navigatePreview(`/__owner/jobs?view=applicants&id=${encodeURIComponent(job.id)}`)} onCreateJob={()=>navigatePreview('/__owner/jobs?view=create&from=home')} onJobs={()=>navigatePreview('/__owner/jobs')} onManage={()=>navigatePreview('/__store/manage')} displayName="000" data={new URLSearchParams(location.search).has('empty') ? { store: sample.store } : sample} initialDate={new Date(2025, 6, 19)} />
 }

@@ -1,13 +1,12 @@
 import './OwnerNotificationPage.css';
 
-export const OwnerNotificationPage = () => {
-  // 크롬 주소창 경로 확인으로 화면 상태 변경
-  const path = window.location.pathname;
-  let uiState: 'ALL' | 'UNREAD' | 'READ_ALL' = 'ALL';
-  
-  if (path.includes('unread')) uiState = 'UNREAD';
-  if (path.includes('read-all')) uiState = 'READ_ALL';
+export type OwnerNotificationState = 'ALL' | 'UNREAD' | 'READ_ALL';
 
+export const OwnerNotificationPage = ({ state: uiState, onFilter, onBack }: {
+  state: OwnerNotificationState;
+  onFilter: (state: 'ALL' | 'UNREAD') => void;
+  onBack: () => void;
+}) => {
   // 알림 데이터 목록 
   const allNotifications = [
     { id: 1, title: '새 지원자가 있어요', desc: '주말 오픈 대타 공고에 지원자가 신청했어요.', time: '방금 전', isUnread: true },
@@ -32,7 +31,7 @@ export const OwnerNotificationPage = () => {
         
         {/* 상단 헤더 */}
         <div className="header-area">
-          <span style={{ cursor: 'pointer' }}>&lt;</span>
+          <button type="button" aria-label="뒤로 가기" onClick={onBack} style={{ border: 0, padding: 0, background: 'none', cursor: 'pointer' }}>&lt;</button>
           <span>알림</span>
         </div>
 
@@ -41,7 +40,7 @@ export const OwnerNotificationPage = () => {
           {uiState === 'ALL' && (
             <>
               <h3 className="filter-title">전체 알림</h3>
-              <button className="filter-btn" onClick={() => window.location.href = '/unread'}>
+              <button className="filter-btn" onClick={() => onFilter('UNREAD')}>
                 안 읽은 알림만 보기
               </button>
             </>
@@ -49,7 +48,7 @@ export const OwnerNotificationPage = () => {
           {uiState === 'UNREAD' && (
             <>
               <h3 className="filter-title">안 읽은 알림 3개</h3>
-              <button className="filter-btn" onClick={() => window.location.href = '/'}>
+              <button className="filter-btn" onClick={() => onFilter('ALL')}>
                 전체 알림 보기
               </button>
             </>
