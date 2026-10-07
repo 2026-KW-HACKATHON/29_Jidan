@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { HomeCalendar, type CalendarMark } from './HomeCalendar'
@@ -11,13 +11,15 @@ export type OwnerEvent = { id: string; date: string; descriptions: string[]; sub
 export type OwnerHomeData = {
   store?: { name: string; status: 'operating' | 'pending' }
   jobs?: OwnerJob[]
+  recruitingCount?:number
   events?: OwnerEvent[]
   marks?: CalendarMark[]
   notificationCount?: number
 }
 
-export function OwnerHome({ displayName, data = {}, initialDate, onMonthChange, onManual, onNotifications, onManage, onCreateJob, onJobs, onSelectJob, onAddStore, readOnlyCalendar=false }: {
+export function OwnerHome({ displayName, data = {}, initialDate, onMonthChange, onManual, onNotifications, onManage, onCreateJob, onJobs, onSelectJob, onAddStore, readOnlyCalendar=false, storePicker }: {
   displayName: string
+  storePicker?:ReactNode
   data?: OwnerHomeData
   initialDate?: Date
   onMonthChange?: (year:number,month:number)=>void
@@ -35,21 +37,22 @@ export function OwnerHome({ displayName, data = {}, initialDate, onMonthChange, 
   const [visibleMonth, setVisibleMonth] = useState(() => isoMonth(today.getFullYear(), today.getMonth()))
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const jobs = data.jobs || []
+  const totalJobs=data.recruitingCount??jobs.length
   const events = eventsInView(data.events || [], visibleMonth, selectedDate, selectedDate ? undefined : 3)
   return <>
     <HomeShell onManual={onManual} onNotifications={onNotifications} role="owner" onJobs={onJobs} notificationCount={data.notificationCount}>
       <div className="home-greeting"><h2>안녕하세요, {displayName} 점주님</h2><p>오늘의 매장 운영 현황을 확인하세요.</p></div>
       <section className="home-section owner-home-store-section" aria-label="관리 매장">
-        <div className="owner-home-store home-card"><p>관리 매장</p>
+        <div className="owner-home-store home-card">{storePicker}<p>관리 매장</p>
           {data.store ? <><div className="owner-home-store-title"><h3>{data.store.name}</h3><span className={data.store.status === 'operating' ? 'owner-home-operating' : 'owner-home-pending'}>{data.store.status === 'operating' ? '운영 중' : '승인 대기 중'}</span></div>
             <div className="owner-home-store-actions"><Button intent="secondary" onClick={onManage || (() => setUnavailable('매장 관리'))}>매장 관리</Button><Button intent="secondary" onClick={onCreateJob || (() => setUnavailable('공고 등록'))}>공고 등록</Button></div></> : <div className="owner-home-no-store">매장 정보를 불러오지 못했어요.</div>}
         </div>
         <button type="button" className="owner-home-add-store" onClick={onAddStore||(() => setUnavailable('매장 추가'))}>+ 매장 추가</button>
       </section>
       <section className="home-section" aria-labelledby="owner-home-jobs-title">
-        <div className="home-section-heading"><h3 id="owner-home-jobs-title">모집 중 공고</h3><span>{jobs.length}건</span></div>
+        <div className="home-section-heading"><h3 id="owner-home-jobs-title">모집 중 공고</h3><span>{totalJobs}건</span></div>
         {jobs.length ? jobs.slice(0, 3).map(job => <button type="button" className="owner-home-job home-card" key={job.id} onClick={() => onSelectJob ? onSelectJob(job) : setUnavailable('공고 상세')}><div><h4>{job.title}</h4><span className={job.applicants ? 'owner-home-applicants' : 'owner-home-no-applicants'}>{job.applicants ? `지원자 ${job.applicants}명` : '지원자 없음'}</span></div><p>{job.schedule}</p></button>) : <p className="home-empty home-card">모집 중인 공고가 없어요.</p>}
-        {jobs.length > 3 && <button type="button" className="owner-home-more" onClick={onJobs || (() => setUnavailable('공고 모두 보기'))}>+ 공고 모두 보기</button>}
+        {totalJobs > 3 && <button type="button" className="owner-home-more" onClick={onJobs || (() => setUnavailable('공고 모두 보기'))}>+ 공고 모두 보기</button>}
       </section>
       <section className="home-section" aria-labelledby="owner-home-calendar-title">
         <div className="home-section-heading"><h3 id="owner-home-calendar-title">매장 캘린더</h3>{!readOnlyCalendar&&<button type="button" className="owner-home-add-event" onClick={() => setUnavailable('일정 등록')}>+ 일정 등록</button>}</div>

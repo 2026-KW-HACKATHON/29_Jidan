@@ -13,7 +13,6 @@ import {OwnerJobs,WorkerJobs,type Route} from './Jobs'
 import {StorePages} from './Stores'
 import {InvitationPages} from './Invitations'
 import {Resource} from './Resource'
-import {Button} from '../ui/Button'
 import {pendingInvitation,clearInvitation} from '../invitation/link'
 import {TokenInvitation} from './TokenInvitation'
 import {AddStore} from './AddStore'
@@ -51,14 +50,15 @@ export function Workspace({session,search,navigate}:{session:Session;search:stri
   if(['invitations','invite'].includes(view)&&selected.permissions.includes('INVITE_WORKERS'))return <InvitationPages view={view} storeId={selected.id} storeName={selected.name} route={selectedRoute}/>
   if(view==='manual'&&selected.permissions.includes('MANAGE_MANUALS'))return <OwnerManual storeId={selected.id} onBack={()=>selectedRoute('home')}/>
  }
- return <><label>관리 매장 <select aria-label="관리 매장 선택" value={selected?.id||''} onChange={e=>navigate(`/home?store=${encodeURIComponent(e.target.value)}`)}>{home.stores.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><OwnerDashboard home={home} month={month} changeMonth={changeMonth} route={selectedRoute}/>{view!=='home'&&<p role="alert">이 매장에서는 해당 기능을 사용할 수 없어요.</p>}</>
+ return <><OwnerDashboard home={home} month={month} changeMonth={changeMonth} route={selectedRoute} onStoreChange={id=>navigate(`/home?store=${encodeURIComponent(id)}`)}/>{view!=='home'&&<p role="alert">이 매장에서는 해당 기능을 사용할 수 없어요.</p>}</>
  }}</Resource>
 }
-function OwnerDashboard({home,month,changeMonth,route}:{home:Awaited<ReturnType<typeof call<'getOwnerHome'>>>;month:string;changeMonth:(y:number,m:number)=>void;route:Route}){
- const load=useMemo(()=>(signal:AbortSignal)=>call('getOwnerWorkCalendarMonth',{signal,query:{month,storeId:home.selectedStoreId||undefined}}),[month,home.selectedStoreId])
- return <Resource key={month} load={load} onBack={()=>route('home')}>{calendar=><OwnerHome displayName={home.name} data={ownerHomeData(home,calendar)} initialDate={new Date(`${seoulDate(new Date().toISOString()).startsWith(month)?seoulDate(new Date().toISOString()):`${month}-01`}T12:00:00`)} onMonthChange={changeMonth} readOnlyCalendar onAddStore={()=>route('add-store')} onManage={()=>route('store')} onCreateJob={()=>route('create-job')} onJobs={()=>route('jobs')} onSelectJob={j=>route('job',j.id)} onManual={()=>route('manual')} onNotifications={()=>route('notifications')}/>}</Resource>
+function OwnerDashboard({home,month,changeMonth,route,onStoreChange}:{home:Awaited<ReturnType<typeof call<'getOwnerHome'>>>;month:string;changeMonth:(y:number,m:number)=>void;route:Route;onStoreChange:(id:string)=>void}){
+ const selected=home.stores.find(s=>s.id===home.selectedStoreId)
+ const load=useMemo(()=>(signal:AbortSignal)=>selected?.approvalStatus==='PENDING'?Promise.resolve({month,timezone:'Asia/Seoul' as const,events:[],asOf:home.asOf}):call('getOwnerWorkCalendarMonth',{signal,query:{month,storeId:home.selectedStoreId||undefined}}),[month,home.selectedStoreId,home.asOf,selected?.approvalStatus])
+ return <Resource key={month} load={load} onBack={()=>route('home')}>{calendar=><OwnerHome storePicker={home.stores.length>1?<label>관리 매장 선택 <select value={home.selectedStoreId||''} onChange={e=>onStoreChange(e.target.value)}>{home.stores.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>:undefined} displayName={home.name} data={ownerHomeData(home,calendar)} initialDate={new Date(`${seoulDate(new Date().toISOString()).startsWith(month)?seoulDate(new Date().toISOString()):`${month}-01`}T12:00:00`)} onMonthChange={changeMonth} readOnlyCalendar onAddStore={()=>route('add-store')} onManage={()=>route('store')} onCreateJob={()=>route('create-job')} onJobs={()=>route('jobs')} onSelectJob={j=>route('job',j.id)} onManual={()=>route('manual')} onNotifications={()=>route('notifications')}/>}</Resource>
 }
 function OwnerManual({storeId,onBack}:{storeId:string;onBack:()=>void}){
  const service=useMemo(()=>liveManualService(storeId),[storeId])
- return <><ManualAuthoring service={service} onBack={onBack}/><Button intent="secondary" onClick={onBack}>홈으로</Button></>
+ return <ManualAuthoring service={service} onBack={onBack}/>
 }
