@@ -14,7 +14,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-08.2"  # RAG evidence citations for writing operations (summary, revision, draft) on top of #158 guidance.
+PROMPT_VERSION = "2026-10-08.3"  # Neutral BASE / first-missing-aspect PROBE questions; no not-applicable or content-free steps, checklist rules.
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.
