@@ -133,7 +133,8 @@ def _evaluation_apply(db: Session, ctx: TaskContext, judgement: SufficiencyJudge
         needs_follow_up=judgement.needs_follow_up, probability=judgement.probability, applied_at=now,
     ))
     db.flush()  # the (session, intent, applied_depth) UNIQUE rejects a second applied result
-    apply_judgement(db, session, judgement.sufficient, judgement.missing_aspects, now)
+    apply_judgement(db, session, judgement.sufficient, judgement.missing_aspects, now,
+                    not_applicable=judgement.not_applicable)
 
 
 def _evaluation_fail(db: Session, ctx: TaskContext, error: Exception) -> None:

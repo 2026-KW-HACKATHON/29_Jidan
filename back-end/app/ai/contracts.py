@@ -193,6 +193,10 @@ class IntentSummaryRequest(_Model):
     store: StoreContext | None = None
     # Grounding (RAG). Empty keeps the pre-grounding behaviour (no citation check).
     evidence: tuple[EvidenceChunk, ...] = Field(default=(), max_length=MAX_EVIDENCE)
+    # Jev judged that the owner clearly said the whole intent does not apply to the store
+    # (SufficiencyJudgement.not_applicable). The summary then states that and writes no
+    # structure: "there are no store rules" is not a manual section.
+    not_applicable: bool = False
 
 
 class RevisionTarget(_Model):
@@ -262,6 +266,9 @@ class SufficiencyJudgement(_Model):
     probability: float = Field(ge=0.0, le=1.0)  # confidence that the information is sufficient
     missing_aspects: tuple[str, ...] = Field(default=(), max_length=MAX_ASPECTS)
     meta: CallMeta
+    # Sufficient because the owner clearly said the whole intent does not apply (the Decisions
+    # `not_applicable` predicate at or above its threshold). Always False on the Responses path.
+    not_applicable: bool = False
 
     @property
     def needs_follow_up(self) -> bool:

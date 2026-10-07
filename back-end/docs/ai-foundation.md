@@ -88,7 +88,10 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 - 미확정 정보 ID는 같은 (대상, 대상 ID, 필드)이면 입력의 ID를 유지한다 → 부족 항목 확인 이력이 같은 issue를 계속 가리킨다.
 - `revise_structure`: SHIFT/SECTION 대상이면 대상 외 기존 항목이 하나라도 바뀌면 거절, 근무조 삭제로 다른 업무 참조가 깨지면 **서버가** `REFERENCE_CONFLICT`, 내용이 같으면 `NO_CHANGE`(revision을 올리지 않는다). `CLARIFICATION_REQUIRED`/`REFERENCE_CONFLICT`/`NO_CHANGE`이면 `structure`는 `None`이다. 검토 요약을 정정할 때는 `summary`를 넘기면 새 요약을 받는다.
 - `compose_draft`: 입력 검토의 모든 근무조·섹션 ID가 결과에 남아야 한다(사진 보존).
-- 근거 인용(작성 3연산, `evidence`가 있을 때, `validation.ground_structure`): 단계와 시간 값이 있는 근무조는 `evidence_ids`로 근거 조각을 인용한다. 입력 evidence에 없는 ID 인용은 `INVALID_OUTPUT`(`unknown_evidence_id`). 인용 없는 단계는 **제거**하고 단계가 모두 빠진 섹션에 SECTION/steps 미확정을, 인용 없는 시간 값은 null로 바꾸고 SHIFT 미확정을 붙인다(제거·미확정은 개수만 로그). 입력의 기존 항목을 그대로 돌려준 경우(정정의 미변경 단계·시간, 초안이 다듬은 검토 단계)는 인용이 없어도 된다. 인용 ID는 검증 뒤 버려지며 `StructureSnapshot`·API·DB 구조는 그대로다. `evidence`가 비어 있으면 검사하지 않는다(초안 정정 #118 등 기존 호출).
+- 근거 인용(작성 3연산, `evidence`가 있을 때, `validation.ground_structure`): 단계와 시간 값이 있는 근무조는 `evidence_ids`로 근거 조각을 인용한다. 입력 evidence에 없는 ID 인용은 `INVALID_OUTPUT`(`unknown_evidence_id`). 인용 없는 단계는 **제거**하고 단계가 모두 빠진 섹션에 SECTION/steps 미확정을, 인용 없는 시간 값은 null로 바꾸고 SHIFT 미확정을 붙인다(제거·미확정은 개수만 로그). 입력의 기존 항목을 그대로 돌려준 경우(정정의 미변경 단계·시간, 초안이 다듬은 검토 단계)는 인용이 없어도 된다. 인용 ID는 검증 뒤 버려지며 `StructureSnapshot`·API·DB 구조는 그대로다. `evidence`가 비어 있으면 검사하지 않는다(근거 도입 전에 쌓인 요청). 다른 단계가 남은 섹션에서 빠진 단계는 미확정 규칙(값이 비어 있을 때만 미확정)상 기록할 곳이 없어 로그에 개수(`dropped_in_kept_sections`)만 남긴다.
+- 초안 정정(#118)의 근거는 **정정 지시문 자체**다(`<correctionId>#<문장번호>`, 저장된 지시문에서 매번 같게 만든다). 초안의 기존 단계·시간은 그대로면 통과하고, 바꾸거나 새로 쓴 단계·시간은 지시문 조각을 인용해야 한다.
+- 내용 없는 단계(작성 3연산, `validation.drop_contentless_steps`): 프롬프트가 1차 방어이고 서버는 가장 분명한 경우만 막는다. "상황에 맞게 처리해요"처럼 모호한 처리 지시만 있는 짧은 한 절 단계는 제거하고, 섹션이 비면 SECTION/steps 미확정을 붙인다. "따로 정해 둔 규칙은 없어요"처럼 없음을 말하는 단계는 제거하고, 그것만 있던 새 섹션은 섹션째 지운다(검토된 기존 섹션은 비우고 미확정). 정정에서 바뀌지 않은 기존 단계는 건드리지 않는다.
+- 해당 없음(`not_applicable`): Decisions Jev가 인텐트 전체 해당 없음(`not_applicable` ≥ 임계값)으로 충분 판정하면 `SufficiencyJudgement.not_applicable`이 참이 되고, 이 값이 요약 요청(`IntentSummaryRequest.not_applicable`, 작업 payload에 고정)에 실린다. 그때 요약은 문장만 남기고 서버가 구조(근무조·섹션·미확정)를 비운다. Responses Jev는 이 신호가 없어 프롬프트 규칙만 적용된다.
 - `answer_question`: `ANSWERED`는 인용 1개 이상, `NEEDS_OWNER`는 0개. 인용 섹션·단계는 입력 게시본에 있어야 하고, **발췌(excerpt)는 서버가 해당 단계 원문을 이어 만든다**(최대 1000자). 모델이 쓴 문장을 근거로 저장하지 않는다.
 
 ### 오류 분류 → 공개 오류
@@ -113,7 +116,7 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 
 ### 근거 검색 (RAG, `app.ai.retrieval`·`app.interview.evidence`)
 
-벡터 DB·임베딩 없이 MySQL에 저장된 **같은 인터뷰 세션**의 점주 턴(답변·정정)만 근거 풀로 쓴다(다른 매장 데이터 불가). 턴을 문장 단위 조각으로 나누고 ID는 `<turnId>#<문장번호>`(안정적). 작성 대상(인텐트 질문·기준, 정정 지시·섹션 제목, 초안의 검토 요약·제목·미확정)으로 문자 bigram BM25 순위를 매겨(조사 변형에 강함, 순수 파이썬, 동점은 원래 순서) 상위 k개를 고르고, 대상 인텐트 자체 조각은 항상 먼저 넣는다. 전체는 문자 수 예산(요약·정정 12000자, 초안 16000자)으로 상한한다. 요약은 evidence가 있으면 `dialogue` 대신 evidence(첫 조각에 질문 맥락)를 모델에 보낸다. 재시도 시 같은 입력: 요약은 작업 payload, 초안은 `generation_input_snapshot["evidence"]`에 고정하고, 인텐트 정정은 정정 턴 번호까지의 불변 턴으로 execute에서 같은 결과를 다시 만든다.
+벡터 DB·임베딩 없이 MySQL에 저장된 **같은 인터뷰 세션**의 점주 턴(답변·정정)만 근거 풀로 쓴다(다른 매장 데이터 불가). 턴을 문장 단위 조각으로 나누고 ID는 `<turnId>#<문장번호>`(안정적). 작성 대상(인텐트 질문·기준, 정정 지시·섹션 제목, 초안의 검토 요약·제목·미확정)으로 문자 bigram BM25 순위를 매겨(조사 변형에 강함, 순수 파이썬, 동점은 원래 순서) 상위 k개를 고르고, 대상 인텐트 자체 조각은 항상 먼저 넣는다. 전체는 문자 수 예산(요약·정정 12000자, 초안 16000자)으로 상한한다. 요약은 evidence가 있으면 `dialogue` 대신 evidence(첫 조각에 질문 맥락)를 모델에 보낸다. 재시도 시 같은 입력: 요약과 인텐트 정정은 작업 payload(정정은 접수 시점에 검색해 고정, 검토 재시도도 같은 payload), 초안은 `generation_input_snapshot["evidence"]`에 고정한다. payload에 근거가 없는 이전 정정 작업은 정정 턴 번호까지의 불변 턴으로 execute에서 같은 결과를 다시 만든다.
 
 ### 프롬프트 정책과 인젝션 방어
 

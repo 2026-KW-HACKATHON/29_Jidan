@@ -245,8 +245,10 @@ def enqueue_evaluation(db: Session, session: InterviewSession, progress: Intervi
 
 
 def apply_judgement(db: Session, session: InterviewSession, sufficient: bool,
-                    aspects: tuple[str, ...], now: datetime) -> None:
-    """Move on from a successful evaluation of the current intent (caller wrote the row)."""
+                    aspects: tuple[str, ...], now: datetime, *, not_applicable: bool = False) -> None:
+    """Move on from a successful evaluation of the current intent (caller wrote the row).
+    `not_applicable`: sufficient because the owner said the whole intent does not apply; the
+    summary request carries it so no manual section is written for it."""
     intent = db.get(InterviewIntent, session.current_intent_id)
     progress = db.get(InterviewSessionIntent, (session.id, intent.id))
     store = store_of(db, session)
@@ -254,12 +256,13 @@ def apply_judgement(db: Session, session: InterviewSession, sufficient: bool,
     if not sufficient and progress.depth < MAX_DEPTH:
         enqueue_probe(db, session, progress, intent, store, aspects)
     else:
-        finish_intent(db, session, progress, intent, store, covered=sufficient, aspects=aspects, now=now)
+        finish_intent(db, session, progress, intent, store, covered=sufficient, aspects=aspects, now=now,
+                      not_applicable=sufficient and not_applicable)
 
 
 def finish_intent(db: Session, session: InterviewSession, progress: InterviewSessionIntent,
                   intent: InterviewIntent, store: Store, *, covered: bool, aspects: tuple[str, ...],
-                  now: datetime) -> None:
+                  now: datetime, not_applicable: bool = False) -> None:
     progress.finished_at = now
     if covered:
         progress.coverage_status, progress.covered_at = "COVERED", now
@@ -267,7 +270,8 @@ def finish_intent(db: Session, session: InterviewSession, progress: InterviewSes
         # Internal only: what Jev still missed at depth 5 (owner-facing issue text in the draft).
         progress.coverage_status, progress.coverage_note = "NEEDS_DETAIL", "\n".join(aspects) or None
     db.flush()
-    enqueue_understanding(db, session, intent, store, needs_detail=not covered)
+    enqueue_understanding(db, session, intent, store, needs_detail=not covered,
+                          not_applicable=covered and not_applicable)
     advance(db, session, intent, store)
 
 
@@ -286,7 +290,7 @@ def advance(db: Session, session: InterviewSession, finished: InterviewIntent, s
 
 
 def enqueue_understanding(db: Session, session: InterviewSession, intent: InterviewIntent, store: Store,
-                          *, needs_detail: bool) -> InterviewIntentReview:
+                          *, needs_detail: bool, not_applicable: bool = False) -> InterviewIntentReview:
     """The finished intent's review, created PROCESSING with its summary task (same tx).
 
     Summary failures stay on the review (ERROR + review retries); question progress goes on."""
@@ -295,6 +299,7 @@ def enqueue_understanding(db: Session, session: InterviewSession, intent: Interv
         needs_detail=needs_detail, available_shifts=tuple(available_shifts(db, session.id, intent.id)),
         store=store_context(store),
         evidence=summary_evidence(db, session.id, intent),  # frozen in the payload (retries)
+        not_applicable=not_applicable,  # so is Jev's "does not apply" (no section is written)
     )
     review = InterviewIntentReview(session_id=session.id, intent_id=intent.id, revision=1, status="PROCESSING")
     payload = {"intentId": intent.id, "needsDetail": needs_detail, "request": request.model_dump(mode="json")}

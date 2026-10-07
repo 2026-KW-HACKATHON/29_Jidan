@@ -51,22 +51,27 @@ from app.ai.contracts import (
     TranscriptionRequest,
     clean_text,
 )
-from app.ai.decisions import Thresholds, build_request, config_tag, decide
+from app.ai.decisions import Thresholds, build_request, config_tag, decide, parse_answers
 from app.ai.errors import AiError, AiErrorCode
 from app.ai.prompts import INSTRUCTIONS, PROMPT_VERSION, data_message
 from app.ai.schemas import (
     OUTPUTS,
     RawDraft,
     RawJudgement,
+    RawMissing,
     RawQa,
     RawQuestion,
     RawRevision,
     RawSummary,
 )
 from app.ai.validation import (
+    SHIFT_FIELDS,
+    UNGROUNDED_TIME,
     build_citations,
     check_revision_scope,
     dangling_shift_references,
+    drop_contentless_steps,
+    empty_structure,
     ground_structure,
     invalid,
     known_ids,
@@ -77,6 +82,7 @@ from app.ai.validation import (
 logger = logging.getLogger("jidan.ai")
 
 JUDGE_BACKENDS = ("decisions", "responses")
+SHIFT_TIME_ATTRIBUTES = tuple(SHIFT_FIELDS.values())  # start_time, end_time, ends_next_day
 
 
 @dataclass(frozen=True)
@@ -100,8 +106,18 @@ def _ground(operation: str, raw_structure, evidence, **exempt):
     """`ground_structure` against the request's evidence; logs counts only (never text)."""
     structure, grounding = ground_structure(raw_structure, (chunk.id for chunk in evidence), **exempt)
     if grounding.dropped_steps or grounding.cleared_shifts:
-        logger.info("ai grounding op=%s dropped_steps=%d cleared_shifts=%d", operation,
-                    grounding.dropped_steps, grounding.cleared_shifts)
+        logger.info("ai grounding op=%s dropped_steps=%d dropped_in_kept_sections=%d cleared_shifts=%d",
+                    operation, grounding.dropped_steps, grounding.dropped_in_kept_sections,
+                    grounding.cleared_shifts)
+    return structure
+
+
+def _contentless(operation: str, raw_structure, **options):
+    """`drop_contentless_steps` (vague / "no rule" steps); logs counts only (never text)."""
+    structure, dropped = drop_contentless_steps(raw_structure, **options)
+    if dropped.vague_steps or dropped.no_rule_steps:
+        logger.info("ai contentless op=%s vague_steps=%d no_rule_steps=%d removed_sections=%d", operation,
+                    dropped.vague_steps, dropped.no_rule_steps, dropped.removed_sections)
     return structure
 
 
@@ -211,7 +227,11 @@ class AiProvider(ABC):
         started = time.monotonic()
         outcome = "ok"
         try:
-            result = decide(body, labels, self._decide(body), self.judge_thresholds)
+            raw = self._decide(body)
+            result = decide(body, labels, raw, self.judge_thresholds)
+            # decide() validated the answers; the last one is the intent-level not_applicable.
+            not_applicable = result.sufficient and (parse_answers(body, raw)[-1] or 0.0) >= (
+                self.judge_thresholds.not_applicable)
         except AiError as error:
             outcome = error.code.value
             raise
@@ -222,7 +242,7 @@ class AiProvider(ABC):
             )
         return SufficiencyJudgement(
             sufficient=result.sufficient, probability=result.probability,
-            missing_aspects=result.missing_aspects,
+            missing_aspects=result.missing_aspects, not_applicable=not_applicable,
             meta=self.meta("judge_sufficiency", backend="decisions"),
         )
 
@@ -268,8 +288,17 @@ class AiProvider(ABC):
         # instead of the whole dialogue; without it, the request is sent as before.
         exclude = {"dialogue"} if request.evidence else None
         raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json", exclude=exclude))
+        written = raw.structure
+        if request.not_applicable:
+            # The owner said the intent does not apply: the summary says so, and nothing becomes
+            # manual content (a "no rules" section would reach the draft as a rule).
+            if written.shifts or written.sections or written.missing_information:
+                logger.info("ai not_applicable op=summarize_intent removed_shifts=%d removed_sections=%d "
+                            "removed_missing=%d", len(written.shifts), len(written.sections),
+                            len(written.missing_information))
+            written = empty_structure()
         structure = materialize_structure(
-            _ground("summarize_intent", raw.structure, request.evidence),
+            _ground("summarize_intent", _contentless("summarize_intent", written), request.evidence),
             known_shift_ids=[shift.id for shift in request.available_shifts],
             external_shifts=request.available_shifts,
         )
@@ -294,8 +323,12 @@ class AiProvider(ABC):
             return StructureRevision(outcome=raw.outcome, meta=meta)
         external_ids = {shift.id for shift in request.external_shifts}
         try:
+            written = _contentless(
+                "revise_structure", raw.structure, kept_section_refs=ids["section"],
+                existing_steps={step.id: step.instruction for section in current.sections for step in section.steps},
+            )
             grounded = _ground(
-                "revise_structure", raw.structure, request.evidence,
+                "revise_structure", written, request.evidence,
                 grounded_steps={step.id: step.instruction for section in current.sections for step in section.steps},
                 grounded_shifts={shift.id: (shift.start_time, shift.end_time, shift.ends_next_day)
                                  for shift in current.shifts},
@@ -340,9 +373,31 @@ class AiProvider(ABC):
             section_ids |= ids["section"]
             step_ids |= ids["step"]
             previous.extend(review.structure.missing_information)
+        # Reviewed shift times are what the owner confirmed or corrected in the review; evidence
+        # holds earlier answers too, so a draft must not move them back (a cited change would pass
+        # grounding). They are restored as reviewed, unknown ones included (unknown stays unknown).
+        reviewed_missing = {(m.target_id, m.field): m.description for m in previous if m.target == "SHIFT"}
+        shifts, missing, restored = [], list(raw.structure.missing_information), 0
+        for shift in raw.structure.shifts:
+            reviewed = reviewed_shifts.get(shift.ref)
+            if reviewed is not None and (shift.start_time, shift.end_time, shift.ends_next_day) != reviewed:
+                restored += 1
+                shift = shift.model_copy(update=dict(zip(SHIFT_TIME_ATTRIBUTES, reviewed, strict=True)))
+                # An unknown time keeps the review's own entry (same ID via previous_missing).
+                missing.extend(
+                    RawMissing(target="SHIFT", target_ref=shift.ref, field=field,
+                               description=reviewed_missing.get((shift.ref, field), UNGROUNDED_TIME))
+                    for field, value in zip(SHIFT_FIELDS, reviewed, strict=True) if value is None
+                )
+            shifts.append(shift)
+        written = raw.structure
+        if restored:
+            logger.info("ai reviewed_shift_times op=compose_draft restored=%d", restored)
+            written = written.model_copy(update={"shifts": shifts, "missing_information": missing})
         # Reviewed steps were grounded when their review was written and may be reworded here;
         # anything new must cite the evidence.
-        grounded = _ground("compose_draft", raw.structure, request.evidence,
+        written = _contentless("compose_draft", written, kept_section_refs=section_ids)
+        grounded = _ground("compose_draft", written, request.evidence,
                            grounded_steps=dict.fromkeys(step_ids), grounded_shifts=reviewed_shifts)
         structure = materialize_structure(
             grounded, known_shift_ids=shift_ids, known_section_ids=section_ids,

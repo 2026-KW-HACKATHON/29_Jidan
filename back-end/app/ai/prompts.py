@@ -49,6 +49,28 @@ _GROUNDING = """
 - evidence가 비어 있으면 evidence_ids는 모두 빈 배열로 둔다.
 """
 
+# Writing operations: what a step is (no "not applicable" or "as appropriate" steps, one action
+# per step, completion criteria as their own step) and when checklist_item is true. The server
+# backs up the clearest cases (app.ai.validation.drop_contentless_steps).
+_WRITING = """
+[단계 작성 규칙 — summarize/revise/compose 공통]
+- 단계(step)는 근무자가 실제로 할 수 있는 구체적인 행동 하나다. 무엇을(대상) 어떻게 하는지가 드러나야 한다.
+- 해당 없음은 매뉴얼 내용이 아니다. 점주가 그 일·규칙·설비가 이 매장에 없다고 했거나 "따로 정한 것이 없다"고 했다면
+  그것을 단계나 섹션으로 쓰지 않는다("따로 정해 둔 매장 규칙은 없어요" 같은 단계 금지). 요약(summary) 문장에만 적는다.
+  이미 설명한 일의 세부(예: 완료 기준)를 따로 정하지 않았다고 했으면 그 세부를 지어내지 않고 단계에도 쓰지 않는다.
+- 내용 없는 지시는 단계가 아니다. "상황에 맞게 처리해요", "알아서 해요", "그때그때 잘 처리해요", "눈치껏 해요",
+  "상식적으로 하면 돼요"처럼 무엇을 할지 알려 주지 않는 점주 답변은 단계로 옮기지 않는다. 그 섹션에 다른 구체적인
+  단계가 없으면 steps를 빈 배열로 두고 missing_information(SECTION·steps)에 무엇이 정해지지 않았는지(예: "손님
+  불만이 생겼을 때 직원이 할 일이 아직 정해지지 않았어요") 적는다. 요약에는 점주가 아직 정하지 않았다고 적는다.
+- 한 단계에는 행동 하나만 쓴다. 완료 기준(언제 끝난 것인지)을 다른 행동 문장 뒤에 덧붙이지 않는다
+  (나쁜 예: "행주로 테이블을 닦아요. 물기가 없으면 완료예요."). 점주가 완료 기준을 말했다면 그 섹션의 마지막 단계로
+  따로 쓴다(예: "컵과 쓰레기가 없고 물기 없이 닦였는지 확인해요."). 점주가 말하지 않은 완료 기준은 만들지 않는다.
+- checklist_item은 근무자가 정해진 시점(출근·오픈·마감·교대·정기 점검)에 했는지 하나씩 체크할 만한 단계에만
+  true로 쓴다: 오픈·마감 준비처럼 근무조마다 한 번 하는 일, 정기 청소·세척·점검, 마지막 확인 단계(문 잠금, 정산 등).
+  다음은 false다: 손님·주문마다 반복하는 응대 절차(주문 받기, 음료 만들기 등), 설비의 일반 사용 방법,
+  주의 사항·금지 사항·규정(RULE), 상황 설명이나 조건. 모든 단계를 true로 하지 않는다. 판단이 어려우면 false.
+"""
+
 INSTRUCTIONS: dict[str, str] = {
     "judge_sufficiency": _COMMON + """
 [작업: 충분성 판단(Jev)]
@@ -103,7 +125,7 @@ INSTRUCTIONS: dict[str, str] = {
   항목 이름으로 쓴다(예: 근무 구조 → "오전조" / "시작 시간과 종료 시간"). 선택지처럼 답을 유도하지 않는다.
   필요 없으면 빈 배열.
 """,
-    "summarize_intent": _COMMON + _GROUNDING + """
+    "summarize_intent": _COMMON + _GROUNDING + _WRITING + """
 [작업: 인텐트 이해 요약]
 완료된 인텐트의 질문·답변(evidence가 있으면 evidence 중 intent_key가 이 인텐트인 조각이 이 인텐트의 답변이고,
 다른 intent_key 조각은 같은 인터뷰의 관련 답변이다)만으로 점주가 확인할 요약(summary)과 매뉴얼 구조(structure)를 만든다.
@@ -116,10 +138,15 @@ INSTRUCTIONS: dict[str, str] = {
 - 시간은 HH:MM. 점주가 말하지 않은 시간은 null, 단계를 모르면 steps는 빈 배열로 두고 해당 값마다
   missing_information 항목(대상·필드·설명)을 넣는다. 확정된 값에는 missing_information을 붙이지 않는다.
 - needs_detail=true이면 아직 부족하다고 판단된 인텐트다. 아는 범위만 정리하고 부족한 값을 미확정으로 남긴다.
+  모호하게만 답한 내용("상황에 맞게", "알아서")은 단계가 아니라 missing_information이다.
 - 점주가 모르겠다고 했거나 답하지 않은 값은 미확정(null/빈 배열 + missing_information)이다. 점주가 "따로 정한
-  규칙 없음"이라고 분명히 말한 세부는 그 사실을 그대로 적는다(지어낸 기준으로 채우지 않는다).
+  규칙 없음"이라고 분명히 말한 내용은 summary에만 그 사실을 적는다(단계·섹션으로 만들지 않고, 지어낸 기준으로
+  채우지도 않는다).
+- not_applicable=true이면 점주가 이 인텐트 전체가 이 매장에 해당하지 않는다고 분명히 말한 것이다. shifts·sections·
+  missing_information은 모두 빈 배열로 두고, summary에 해당 없다고 한 사실만 적는다(예: "따로 정해 둔 매장 규칙은
+  없다고 하셨어요."). not_applicable이 없거나 false여도 점주가 이 인텐트 전체가 없다고 분명히 말했다면 같은 방식으로 쓴다.
 """,
-    "revise_structure": _COMMON + _GROUNDING + """
+    "revise_structure": _COMMON + _GROUNDING + _WRITING + """
 [작업: 정정 반영]
 current 내용에 점주의 정정 지시(instruction)를 반영한다. 정정 지시도 evidence에 점주의 말로 들어 있으면 그 조각을
 인용한다.
@@ -132,15 +159,26 @@ current 내용에 점주의 정정 지시(instruction)를 반영한다. 정정 �
   APPLIED가 아니면 structure는 current를 그대로 돌려준다.
 - summary가 입력에 있으면(인텐트 요약) APPLIED일 때 정정이 반영된 요약을, 아니면 null을 돌려준다.
 - 미확정 값 규칙은 동일하다: 모르는 값은 null/빈 배열 + missing_information.
+- evidence가 정정 지시만 담고 있으면(매뉴얼 초안 정정) 바꾸거나 새로 만든 단계·시간은 정정 지시 조각을 인용한다.
+  정정 지시에 없는 사실을 덧붙이지 않는다.
 """,
-    "compose_draft": _COMMON + _GROUNDING + """
+    "compose_draft": _COMMON + _GROUNDING + _WRITING + """
 [작업: 매뉴얼 초안 구성]
 모든 인텐트 검토(reviews)를 합쳐 하나의 매뉴얼 구조를 만든다.
 - 입력에 있는 모든 근무조·섹션은 같은 id(ref)로 정확히 한 번씩 포함한다. 삭제하거나 합치지 않는다.
   표현을 다듬거나 순서를 근무 흐름에 맞게 정리할 수 있다. 새 섹션이 꼭 필요하면 new-1 같은 ref로 추가한다.
 - 검토(reviews)와 evidence에 없는 사실을 추가하지 않는다. 검토의 단계를 다듬기만 했다면 evidence_ids는 빈 배열이어도
   되지만, 새로 만든 단계는 evidence를 인용한다. 미확정 값은 그대로 미확정으로 유지하고 missing_information을 넣는다.
+- 검토의 내용은 점주가 확인·정정까지 마친 결과다. 검토의 근무조 시간과 단계의 사실은 evidence와 달라도 검토를
+  따른다(evidence의 이전 답변으로 되돌리지 않는다). evidence는 검토에 없는 내용을 보탤 때만 쓴다.
 - 근무조가 하나도 없거나 섹션이 하나도 없으면 MANUAL 대상(shifts/sections) 미확정 항목을 넣는다.
+- 구조가 비어 있는 검토(점주가 해당 없다고 한 인텐트)는 요약만 있다. 그 요약이나 evidence의 "없어요"를 근거로
+  섹션·단계를 새로 만들지 않는다.
+- 검토의 섹션에 해당 없음("따로 정한 규칙은 없어요")이나 내용 없는 지시("상황에 맞게 처리해요")만 있으면 그 섹션도
+  삭제하지 말고 같은 id로 두되 steps를 빈 배열로 하고, 그 섹션에 missing_information(SECTION·steps)을 넣는다.
+- 검토의 단계가 위 단계 작성 규칙에 맞지 않으면(완료 기준이 덧붙은 문장, 모든 단계가 체크리스트) 같은 사실 범위
+  안에서 바로잡는다. checklist_item은 규칙대로 고친다. 문장을 둘로 나눌 때 새 단계(new-N)는 그 사실의 evidence를
+  인용해야 하며, 인용할 조각을 찾지 못하면 나누지 말고 원래 단계를 그대로 둔다.
 """,
     "answer_question": _COMMON + """
 [작업: 근무자 업무 질문 답변]

@@ -216,6 +216,10 @@ class Grounding:
 
     dropped_steps: int = 0
     cleared_shifts: int = 0
+    # Of dropped_steps, those removed from a section that kept other steps. Nothing in the
+    # content records them: a missing-information entry is only valid for an unknown value
+    # (`_materialize_missing`), and a section with steps is not unknown. Logged only.
+    dropped_in_kept_sections: int = 0
 
 
 def _times(shift: RawShift | ShiftItem) -> ShiftTimes:
@@ -231,7 +235,7 @@ def ground_structure(
 ) -> tuple[RawStructure, Grounding]:
     """Enforce citations against the request's evidence before `materialize_structure`.
 
-    With no evidence (requests built before grounding, draft corrections) nothing is checked
+    With no evidence (requests built before grounding) nothing is checked
     and citations are ignored, so those callers behave exactly as before.
 
     With evidence:
@@ -281,7 +285,7 @@ def ground_structure(
         )
 
     sections = []
-    dropped = 0
+    dropped = partial = 0
     for section in raw.sections:
         kept = []
         for step in section.steps:
@@ -296,13 +300,111 @@ def ground_structure(
         if section.steps and not kept:
             missing.append(RawMissing(target="SECTION", target_ref=section.ref, field="steps",
                                       description=UNGROUNDED_STEPS))
+        elif kept:
+            partial += len(section.steps) - len(kept)
         sections.append(section.model_copy(update={"steps": kept}) if len(kept) != len(section.steps)
                         else section)
 
     if not cleared and not dropped:
         return raw, Grounding()
     grounded = raw.model_copy(update={"shifts": shifts, "sections": sections, "missing_information": missing})
-    return grounded, Grounding(dropped_steps=dropped, cleared_shifts=cleared)
+    return grounded, Grounding(dropped_steps=dropped, cleared_shifts=cleared, dropped_in_kept_sections=partial)
+
+
+# --- content-free steps (backstop for the writing prompts) --------------------------------------
+#
+# The prompts say that a step is a concrete action and that "do it as the situation requires"
+# or "there are no rules" is not one. These patterns are only a backstop for the clearest cases
+# the model still writes (seen in live runs); they are deliberately narrow: a vague phrase must
+# be followed directly by a handling verb, and the step must be a single short clause, so a step
+# with any concrete action ("먼저 사과하고, 나머지는 상황에 맞게 처리해요") is kept.
+
+_VAGUE_HANDLING = re.compile(
+    r"(상황에\s*맞게|상황을?\s*봐\s*서|상황에\s*따라|그때그때|알아서|적당히|눈치껏|상식적으로|"
+    r"융통성\s*있게|유연하게|센스\s*있게|자연스럽게)\s*(잘\s*)?"
+    r"(처리|대응|판단|행동|해요|해\s*주세요|하세요|하면\s*돼요|하면\s*됩니다)")
+_NO_RULE = re.compile(
+    r"(정해\s*(둔|놓은|진)|정한|따로\s*있는)\s*[^.!?]{0,30}?(없어요|없습니다|없음|없다)|해당\s*(사항\s*)?없")
+_CLAUSE_JOIN = re.compile(r"[,;·]|고\s|한\s*(뒤|후|다음)|하면서")
+MAX_CONTENTLESS_CHARS = 80
+VAGUE_STEPS = "구체적인 처리 방법을 아직 정하지 않았어요. 점주 확인이 필요해요."
+NO_RULE_STEPS = "점주가 따로 정한 내용이 없다고 했어요."
+
+
+def contentless_kind(instruction: str) -> str | None:
+    """"vague" ("상황에 맞게 처리해요"), "no_rule" ("따로 정해 둔 규칙은 없어요") or None."""
+    text = clean_text(instruction)
+    if len(text) > MAX_CONTENTLESS_CHARS or _CLAUSE_JOIN.search(text):
+        return None
+    if _NO_RULE.search(text):
+        return "no_rule"
+    if _VAGUE_HANDLING.search(text):
+        return "vague"
+    return None
+
+
+@dataclass(frozen=True)
+class Contentless:
+    """What `drop_contentless_steps` removed (counts only, safe to log)."""
+
+    vague_steps: int = 0
+    no_rule_steps: int = 0
+    removed_sections: int = 0
+
+
+def drop_contentless_steps(
+    raw: RawStructure,
+    *,
+    kept_section_refs: Iterable[str] = (),
+    existing_steps: Mapping[str, str] | None = None,
+) -> tuple[RawStructure, Contentless]:
+    """Remove steps that tell a worker nothing to do.
+
+    A vague step is what the owner did not settle: a section left without steps gets a
+    SECTION/steps missing entry (the existing unknown-value rule). A "no rule" step states that
+    nothing exists, which is a fact, not an unknown: a new section made only of such steps is
+    removed, while an existing section (`kept_section_refs`: reviewed sections a draft or a
+    correction must keep) stays empty with a missing entry so the owner sees and settles it.
+    `existing_steps` (step ID -> instruction) are left alone when returned unchanged, so a
+    correction never touches content outside its target.
+    """
+    kept_refs = set(kept_section_refs)
+    existing = existing_steps or {}
+
+    def kind_of(step) -> str | None:
+        if step.ref in existing and clean_text(existing[step.ref]) == clean_text(step.instruction):
+            return None
+        return contentless_kind(step.instruction)
+
+    missing = list(raw.missing_information)
+    sections = []
+    vague = no_rule = removed = 0
+    for section in raw.sections:
+        kinds = [kind_of(step) for step in section.steps]
+        if not any(kinds):
+            sections.append(section)
+            continue
+        vague += kinds.count("vague")
+        no_rule += kinds.count("no_rule")
+        kept = [step for step, kind in zip(section.steps, kinds, strict=True) if kind is None]
+        if kept:
+            sections.append(section.model_copy(update={"steps": kept}))
+            continue
+        if section.ref not in kept_refs and "vague" not in kinds:
+            removed += 1
+            missing = [m for m in missing if m.target_ref != section.ref]
+            continue
+        sections.append(section.model_copy(update={"steps": []}))
+        missing.append(RawMissing(target="SECTION", target_ref=section.ref, field="steps",
+                                  description=VAGUE_STEPS if "vague" in kinds else NO_RULE_STEPS))
+    if not (vague or no_rule):
+        return raw, Contentless()
+    cleaned = raw.model_copy(update={"sections": sections, "missing_information": missing})
+    return cleaned, Contentless(vague_steps=vague, no_rule_steps=no_rule, removed_sections=removed)
+
+
+def empty_structure() -> RawStructure:
+    return RawStructure(shifts=[], sections=[], missing_information=[])
 
 
 def known_ids(snapshot: StructureSnapshot) -> dict[str, set[str]]:
