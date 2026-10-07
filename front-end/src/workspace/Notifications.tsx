@@ -11,7 +11,7 @@ export function Notifications({owner,navigate,onBack}:{owner:boolean;navigate:(u
 }
 function NotificationList({items,owner,navigate,onBack}:{items:Notification[];owner:boolean;navigate:(url:string)=>void;onBack:()=>void}){
  const [filter,setFilter]=useState<'ALL'|'UNREAD'>('ALL')
- const {busy,failed,run}=useCommand(),write=useMemo(mutation,[])
+ const {busy,failed,run}=useCommand(),write=useMemo(()=>mutation(),[])
  async function open(id:string|number){
   const n=items.find(n=>n.id===id);if(!n)return
   if(n.readAt){navigate(notificationRoute(n,owner));return}
