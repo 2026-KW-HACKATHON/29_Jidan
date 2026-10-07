@@ -10,7 +10,7 @@ export function ManualGuidanceCard({card,onPhotos}:{card:Card;onPhotos?:(target:
   {card.type==='PROGRESS_CHECKLIST'?<ul className="manual-checklist">{card.items.map(item=><li key={item.id} data-state={item.status} aria-current={item.status==='CURRENT'?'step':undefined}>
    <span className="manual-progress-box" aria-label={statusLabels[item.status]}>{item.status==='COMPLETED'&&<img src={checkIcon} alt=""/>}{item.status==='NEEDS_DETAIL'&&'!'}</span>
    <div><p>{item.label}</p>{item.description&&<p className="manual-muted">{item.description}</p>}{item.status==='NEEDS_DETAIL'&&<small>보완 필요</small>}</div>
-  </li>)}</ul>:<ul className="manual-info-list">{card.items.map(item=><li key={item.id}><p>{item.label}</p>{item.description&&<p className="manual-muted">{item.description}</p>}</li>)}</ul>}
+  </li>)}</ul>:card.type==='PHOTO_SUGGESTIONS'?<ul className="manual-checklist">{card.items.map(item=><li key={item.id}><span className="manual-progress-box" aria-hidden="true"/><div><strong>{item.label}</strong>{item.description&&<p className="manual-muted">{item.description}</p>}</div></li>)}</ul>:<ul className="manual-info-list">{card.items.map(item=><li key={item.id}><p>{item.label}</p>{item.description&&<p className="manual-muted">{item.description}</p>}</li>)}</ul>}
   {card.footer&&<p className="manual-muted">{card.footer}</p>}
   {card.type==='PHOTO_SUGGESTIONS'&&card.attachmentTarget&&onPhotos&&<Button intent="secondary" onClick={()=>onPhotos(card.attachmentTarget!)}>사진 첨부하기</Button>}
  </ManualCard>
