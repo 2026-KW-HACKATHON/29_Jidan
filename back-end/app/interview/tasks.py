@@ -11,6 +11,7 @@ interview. Jev and draft failures make the session ERROR; summary/correction fai
 that review ERROR. Each keeps its stored input for the retry endpoints.
 """
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -36,6 +37,7 @@ from app.db.models import (
     InterviewTurn,
 )
 from app.interview import drafting
+from app.interview.cards import InvalidGuidance, example_card
 from app.interview.common import lock_review, lock_session_row
 from app.interview.content import content_from_structure, photo_ids, snapshot_from_content
 from app.interview.evidence import correction_evidence
@@ -50,6 +52,8 @@ from app.interview.flow import (
 )
 from app.media.references import replace_snapshot_refs
 from app.tasks import TaskContext, TaskDeferred, TaskHandler, register_handler, task_error_code
+
+logger = logging.getLogger(__name__)
 
 PUBLIC_FAILURE = "AI_PROCESSING_FAILED"
 FALLBACK_SOURCE = "fallback:template"
@@ -86,7 +90,14 @@ def _question_execute(ctx: TaskContext) -> GeneratedQuestion:
 
 def _question_apply(db: Session, ctx: TaskContext, result: GeneratedQuestion) -> None:
     session = _waiting_session(db, ctx)
-    write_question(db, session, ctx.payload, result.text, result.meta.config_version)
+    try:
+        card = example_card(session.id, ctx.payload["intentId"],
+                            [(example.label, example.description) for example in result.examples])
+    except InvalidGuidance as error:  # examples are only decoration: the question goes on
+        logger.warning("interview examples dropped: session=%s reason=%s", session.id, error)
+        card = None
+    write_question(db, session, ctx.payload, result.text, result.meta.config_version,
+                   guidance=result.guidance, cards=[card] if card else [])
 
 
 def _question_fail(db: Session, ctx: TaskContext, _error: Exception) -> None:

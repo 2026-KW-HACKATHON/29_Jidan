@@ -360,7 +360,7 @@ SUMMARY = {"summary": "요약", "structure": {"shifts": [], "sections": [], "mis
 
 
 def test_each_operation_group_gets_its_effort_timeout_and_config_version():
-    client = StubResponses([{"question": "공통 업무는 무엇인가요?"}, SUMMARY,
+    client = StubResponses([{"question": "공통 업무는 무엇인가요?", "guidance": None, "examples": []}, SUMMARY,
                             {"outcome": "NEEDS_OWNER", "answer": "확인이 필요해요.", "citations": []}])
     provider = OpenAiProvider(api_key="", model="gpt-6-luna", transcribe_model="gpt-transcribe",
                               timeout_seconds=30, writing_timeout_seconds=90, client=client)

@@ -9,6 +9,7 @@ RUN npm run lint && npm run test:ci
 
 FROM dependencies AS build
 # API calls use same-origin /api; never embed secrets in VITE_* variables.
+ARG VITE_ENABLE_PREVIEW=false
 ENV VITE_API_BASE_URL=/api
 RUN npm run build
 

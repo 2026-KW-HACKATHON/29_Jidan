@@ -125,8 +125,10 @@ class ManualSteps:
     def draft(self) -> dict:
         return self.state["owner"].call("GET", self.manual_url("/draft"), expect=200).json()
 
-    def run_interview(self, *, voice_transcription: str | None = None, photo: str | None = None) -> dict:
-        """Answer every open question until READY_TO_GENERATE; returns {intentKey: [question kinds]}."""
+    def run_interview(self, *, voice_transcription: str | None = None, photo: str | None = None,
+                      fail_once: bool = False) -> dict:
+        """Answer every open question until READY_TO_GENERATE; returns {intentKey: [question kinds]}.
+        `fail_once` (fake AI only) makes the SHIFT_TASKS answer's first evaluation fail."""
         intents = {i["id"]: i["key"] for i in self.session()["intents"]}
         asked: dict[str, list[tuple[str, int]]] = {}
         limit = len(intents) * 6  # depth 0-5 per intent; retries keep the depth
@@ -148,9 +150,35 @@ class ManualSteps:
                 body["input"] = {"method": "VOICE", "transcriptionId": voice_transcription}
             if photo and intent == "WORK_STRUCTURE" and question["kind"] == "BASE":
                 body["photoIds"] = [photo]
-            self.owner_write("POST", f"/interviews/{self.state['interview']}/answers", body, 202)
+            failing = fail_once and not self.live and intent == "SHIFT_TASKS" and question["kind"] == "BASE"
+            if failing:
+                body["input"]["text"] += f" {ai_scenario.FAIL_ONCE}"
+            accepted = self.owner_write("POST", f"/interviews/{self.state['interview']}/answers", body, 202).json()
+            # The answered question stays on screen while its evaluation runs (OpenAPI 0.11.0).
+            _check(accepted["questions"] == [] and accepted["processing"]["kind"] == "EVALUATION",
+                   "an accepted answer starts its evaluation")
+            _check(accepted["lastAnsweredQuestion"] == {**question, "answered": True},
+                   "the accepted answer keeps its question, guidance and cards as shown")
+            self.state.setdefault("guided_questions", []).append(question)
+            if failing:
+                self.failed_evaluation_keeps_its_question(accepted["lastAnsweredQuestion"])
         _check(False, f"the interview asked more than {limit} questions")
         return asked
+
+    def failed_evaluation_keeps_its_question(self, snapshot: dict) -> None:
+        """A failed evaluation is ERROR with the answered question still shown; the retry keeps it
+        and, once judged, moves on without it."""
+        sid = self.state["interview"]
+        failed = self.wait_session(lambda s: s["phase"] == "ERROR", "the evaluation fails once")
+        _check(failed["processing"]["kind"] == "EVALUATION" and failed["lastAnsweredQuestion"] == snapshot,
+               "the failed evaluation keeps its answered question")
+        retried = self.owner_write("POST", f"/interviews/{sid}/retries",
+                                   {"expectedRevision": failed["revision"]}, 202).json()
+        _check(retried["lastAnsweredQuestion"] == snapshot and retried["error"] is None,
+               "the retry shows the same question while it runs")
+        moved = self.wait_session(lambda s: s["phase"] != "PROCESSING" or s["processing"]["kind"] != "EVALUATION",
+                                  "the retried evaluation is applied")
+        _check(moved["lastAnsweredQuestion"] is None, "a judged answer leaves no question behind")
 
     def start_interview(self) -> dict:
         started = self.owner_write("POST", "/interviews", {}, 201).json()
@@ -250,6 +278,13 @@ class ManualSteps:
         _check((question["kind"], question["depth"], question["answered"]) == ("BASE", 0, False),
                "one BASE question at depth 0")
         _check(question["intentId"] == state["intents"][0]["id"], "the interview starts with the first intent")
+        _check(state["lastAnsweredQuestion"] is None, "nothing is evaluated before the first answer")
+        if not self.live:
+            [card] = question["guidanceCards"]
+            _check(question["guidance"] == ai_scenario.QUESTION_GUIDANCE, "the question shows its guidance")
+            _check((card["type"], [(i["label"], i["description"]) for i in card["items"]]) == (
+                "LIST", [(ai_scenario.EXAMPLE_LABEL, ai_scenario.EXAMPLE_DESCRIPTION)]),
+                "the generator's example is one LIST card")
         busy = self.owner_write("POST", "/interviews", {}, 409)
         _check(busy.json()["code"] == "INTERVIEW_ALREADY_EXISTS", "one interview per store", busy)
 
@@ -262,7 +297,8 @@ class ManualSteps:
             "expectedRevision": state["revision"] + 5, "questionId": question["id"],
             "input": {"method": "TEXT", "text": "오래된 화면에서 보낸 답이에요."}}, 409)
         _check(stale.json()["code"] == "REVISION_CONFLICT", "a stale revision is refused", stale)
-        asked = self.run_interview(voice_transcription=self.state["transcription"], photo=self.state["photo"])
+        asked = self.run_interview(voice_transcription=self.state["transcription"], photo=self.state["photo"],
+                                   fail_once=True)
         turns = owner.call("GET", self.manual_url(f"/interviews/{sid}/turns"), params={"size": 100},
                            expect=200).json()["items"]
         answers = [t for t in turns if t["kind"] == "ANSWER"]
@@ -277,6 +313,18 @@ class ManualSteps:
         _check(replay.json()["code"] == "QUESTION_ALREADY_ANSWERED", "an answered question is closed", replay)
         questions = sum(len(kinds) for kinds in asked.values())
         _check(len(answers) == questions, "one answer per question")
+        from sqlalchemy import select
+
+        from app.db import session_scope
+        from app.db.models import InterviewTurn
+
+        with session_scope() as db:  # the server's committed rows, on the runner's own connection
+            stored = {turn.id: (turn.guidance, turn.guidance_cards or []) for turn in db.scalars(
+                select(InterviewTurn).where(InterviewTurn.session_id == sid, InterviewTurn.turn_kind == "QUESTION"))}
+        shown = self.state["guided_questions"]
+        _check(len(stored) == len(shown) == questions
+               and all(stored[q["id"]] == (q["guidance"], q["guidanceCards"]) for q in shown),
+               "every question's guidance and cards are stored as shown")
         if not self.live:
             _check(asked[ai_scenario.PROBED_ONCE] == [("BASE", 0), ("PROBE", 1)], "one probe at depth 1")
             _check(asked[ai_scenario.NEEDS_DETAIL] == [("BASE", 0)] + [("PROBE", d) for d in range(1, 6)],

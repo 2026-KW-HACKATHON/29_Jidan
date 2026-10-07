@@ -629,6 +629,7 @@ def server_env(origin: str, smtp_port: int, smtp_host: str = "127.0.0.1", *, ai:
         "INVITATION_MAIL_BACKEND": "smtp", "SMTP_HOST": smtp_host, "SMTP_PORT": str(smtp_port),
         "SMTP_SECURITY": "none", "MAIL_FROM": "Jidan <no-reply@jidan.example>", "COOKIE_SECURE": "false",
         "BACKGROUND_JOBS": "on", "TASK_RUNNER_MODE": "background",
+        "INTERVIEW_GUIDANCE_RESPONSES": "true",  # OpenAPI 0.11.0 question guidance fields
         "E2E_AI": ai, "AI_PROVIDER": "openai" if ai == "live" else "fake",
         **({"MEDIA_ROOT": media_root} if media_root else {}),
         **({"E2E_AI_CALL_LIMIT": str(ai_call_limit), "E2E_AI_LIVE_OPS": ai_live_ops,

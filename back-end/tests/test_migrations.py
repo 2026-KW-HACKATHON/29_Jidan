@@ -72,6 +72,7 @@ def test_revisions_form_a_chain_on_top_of_the_untouched_baseline():
             script.get_revision(gone)
     assert script.get_revision("0040").down_revision == "0036"
     assert script.get_revision("0041").down_revision == "0040"
+    assert script.get_revision("0042").down_revision == "0041"
 
 
 def test_upgrade_creates_every_baseline_table(engine):
@@ -408,3 +409,42 @@ def test_mysql_0036_switches_email_collation_and_keeps_the_index(mysql_engine):
         assert indexes["ix_store_invitations_store_id_invited_email"] == ["store_id", "invited_email"]
     finally:
         command.upgrade(config, "head")
+
+
+def test_0042_keeps_existing_turns_and_applies_its_check(engine):
+    """Turns written before 0042 read as NULL guidance; the CHECK holds for them afterwards, and a
+    downgrade keeps every other column."""
+    with engine.connect() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, "0041")
+        connection.commit()
+        # Turns only; their parents are not needed. A PRAGMA inside a transaction is ignored, so it
+        # goes to the driver connection, outside SQLAlchemy's autobegin.
+        connection.connection.driver_connection.execute("PRAGMA foreign_keys = OFF")
+        insert = text(
+            "INSERT INTO interview_turns (id, session_id, turn_no, speaker, turn_kind, question_kind, intent_id,"
+            " depth, probe_batch_id, reply_to_question_turn_id, input_method, content, created_at)"
+            " VALUES (:id, 's', :no, :speaker, :kind, :qkind, 'i', 0, NULL, :reply, :method, :content,"
+            " '2026-10-01 00:00:00')")
+        connection.execute(insert, {"id": "q", "no": 1, "speaker": "AI", "kind": "QUESTION", "qkind": "BASE",
+                                    "reply": None, "method": None, "content": "질문?"})
+        connection.execute(insert, {"id": "a", "no": 2, "speaker": "OWNER", "kind": "ANSWER", "qkind": None,
+                                    "reply": "q", "method": "TEXT", "content": "답변"})
+        connection.commit()
+        command.upgrade(config, "head")
+        connection.commit()
+        assert connection.execute(text(
+            "SELECT id, guidance, guidance_cards FROM interview_turns ORDER BY turn_no")).all() == [
+            ("q", None, None), ("a", None, None)]
+        connection.execute(text("UPDATE interview_turns SET guidance = '안내' WHERE id = 'q'"))
+        with pytest.raises(Exception, match="CHECK"):
+            connection.execute(text("UPDATE interview_turns SET guidance = '안내' WHERE id = 'a'"))
+        connection.commit()
+        command.downgrade(config, "0041")
+        connection.commit()
+        assert "guidance" not in {c["name"] for c in inspect(connection).get_columns("interview_turns")}
+        assert connection.execute(text(
+            "SELECT id, content, reply_to_question_turn_id FROM interview_turns ORDER BY turn_no")).all() == [
+            ("q", "질문?", None), ("a", "답변", "q")]
+        command.upgrade(config, "head")
+        connection.commit()

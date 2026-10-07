@@ -18,6 +18,8 @@ revisions are recorded as `contextReviews`). A later correction only affects tas
 after it (docs/erd/manual.md 실행 제약).
 """
 
+import logging
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -46,9 +48,12 @@ from app.db.models import (
     Store,
     StoreManual,
 )
+from app.interview.cards import InvalidGuidance, check_guidance, clean_cards
 from app.interview.common import reviews_in_order, session_intents
 from app.interview.evidence import summary_evidence
 from app.tasks import enqueue
+
+logger = logging.getLogger(__name__)
 
 MAX_DEPTH = 5
 INDUSTRY_LABELS = {"CAFE": "카페", "RESTAURANT": "음식점", "CONVENIENCE_STORE": "편의점", "OTHER": "매장"}
@@ -179,12 +184,26 @@ def enqueue_probe(db: Session, session: InterviewSession, progress: InterviewSes
 
 
 def write_question(db: Session, session: InterviewSession, payload: dict[str, Any], text: str,
-                   source: str) -> InterviewTurn:
+                   source: str, *, guidance: str | None = None,
+                   cards: Sequence[dict[str, Any]] = ()) -> InterviewTurn:
+    """Store the question with its guidance (app.interview.cards) in the same revision. Guidance
+    that breaks the rules is left out and logged; it never blocks the question."""
     batch_id = payload["batchId"]
+    try:
+        guidance = check_guidance(guidance)
+    except InvalidGuidance as error:
+        logger.warning("interview guidance left out: session=%s intent=%s reason=%s",
+                       session.id, payload["intentId"], error)
+        guidance = None
+    cards, notes = clean_cards(db, session.id, list(cards))
+    for note in notes:
+        logger.warning("interview guidance card: session=%s intent=%s reason=%s",
+                       session.id, payload["intentId"], note)
     turn = InterviewTurn(
         session_id=session.id, turn_no=next_turn_no(db, session.id), speaker="AI", turn_kind="QUESTION",
         question_kind="PROBE" if batch_id else "BASE", intent_id=payload["intentId"],
         depth=payload["depth"], probe_batch_id=batch_id, content=text,
+        guidance=guidance, guidance_cards=cards,
     )
     db.add(turn)
     if batch_id:
