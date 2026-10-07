@@ -27,12 +27,40 @@
 | `OPENAI_MODEL` | `gpt-6-luna` | 사용자 결정 "ChatGPT 6 Luna". `/v1/models`와 공식 문서로 ID 확인 |
 | `OPENAI_FALLBACK_MODEL` | 없음 | 지정하면 재시도 가능 실패 뒤 이 모델로 한 번 더 시도(fallback) |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | OpenAI 파일 전사 모델 |
-| `OPENAI_REASONING_EFFORT` | `low` | `none/low/medium/high/xhigh/max`, 빈 값이면 미지정 |
-| `OPENAI_TIMEOUT_SECONDS` / `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 60 / 120 | 호출당 타임아웃(유한한 1~600초, NaN·무한대 거부). 핸들러 lease보다 길면 시작 거부(§ lease와 장시간 호출) |
+| `OPENAI_REASONING_EFFORT` | `low` | `none/low/medium/high/xhigh/max`, 빈 값이면 미지정. `answer_question`과 Responses 경로의 Jev |
+| `OPENAI_QUESTION_REASONING_EFFORT` | `low` | 질문 생성(`generate_question`). 값 규칙은 위와 같다 |
+| `OPENAI_WRITING_REASONING_EFFORT` | `medium` | 매뉴얼 작성(`summarize_intent`, `compose_draft`, `revise_structure`) |
+| `OPENAI_JUDGE_BACKEND` | `decisions` | Jev 경로. `decisions`=`POST /v1/decisions`(aspect별 predicate 확률), `responses`=기존 구조화 출력 판단 |
+| `OPENAI_JUDGE_ASPECT_THRESHOLD` | 0.7 | aspect 확률이 이 값 이상이면 확보로 본다(0.5 이상 1 미만, NaN·무한대 거부) |
+| `OPENAI_JUDGE_NOT_APPLICABLE_THRESHOLD` | 0.8 | "해당 없음" predicate가 이 값 이상이면 인텐트 전체를 충분으로 본다(범위 같음) |
+| `OPENAI_TIMEOUT_SECONDS` / `OPENAI_WRITING_TIMEOUT_SECONDS` / `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 60 / 120 / 120 | 호출당 타임아웃(유한한 1~600초, NaN·무한대 거부). 작성 연산은 medium effort라 따로 둔다. 핸들러 lease보다 길면 시작 거부(§ lease와 장시간 호출) |
+
+모델은 모든 연산이 `OPENAI_MODEL` 하나를 쓴다(연산별 모델 설정 없음). fallback이 "한 모델 → 다른 한 모델"로 단순하게 유지되고, Decisions가 받는 모델을 연산마다 따로 확인할 필요가 없기 때문이다. 연산별로 달라지는 것은 reasoning effort와 타임아웃, Jev 경로다.
+
+| 연산 | 경로 | effort | 타임아웃 | 출력 상한(`MAX_OUTPUT_TOKENS`) |
+| --- | --- | --- | --- | --- |
+| `judge_sufficiency` | Decisions(기본) / Responses | 없음 / `OPENAI_REASONING_EFFORT` | `OPENAI_TIMEOUT_SECONDS` | 없음(텍스트 생성 없음) / 4000 |
+| `generate_question` | Responses | `OPENAI_QUESTION_REASONING_EFFORT`(low) | `OPENAI_TIMEOUT_SECONDS` | 4000 |
+| `summarize_intent` | Responses | `OPENAI_WRITING_REASONING_EFFORT`(medium) | `OPENAI_WRITING_TIMEOUT_SECONDS` | 24000(medium 추론 여유로 16000에서 올림) |
+| `compose_draft`, `revise_structure` | Responses | `OPENAI_WRITING_REASONING_EFFORT`(medium) | `OPENAI_WRITING_TIMEOUT_SECONDS` | 32000 |
+| `answer_question` | Responses | `OPENAI_REASONING_EFFORT`(low) | `OPENAI_TIMEOUT_SECONDS` | 8000 |
+
+결과의 `meta.config_version`은 `provider:model:PROMPT_VERSION` 뒤에 실제 호출 조건을 붙인다: effort를 보냈으면 `:effort=<값>`, Jev는 경로를 `:responses`(+effort) 또는 `:decisions:aspects-<ASPECTS_VERSION>:t=<aspect>/<not_applicable>`로 남긴다(예: `openai:gpt-6-luna:2026-10-07.1:decisions:aspects-2026-10-08.1:t=0.70/0.80`). 실패 평가 행은 제공자 단위 `provider.config_version`(`provider:model:PROMPT_VERSION`)을 쓴다.
 
 전사 기본값 근거(OpenAI speech-to-text 가이드, 2026-10 확인): `gpt-transcribe`는 녹음 파일 전사의 권장 모델이고 다국어 힌트(`languages`)와 용어 힌트(`keywords`)를 받는다. 지원 형식 mp3·mp4·m4a·wav·webm은 우리 4개 형식을 모두 포함하고 파일 상한 25 MB는 20 MiB보다 크며 길이 제한은 문서에 없다(우리 상한 120초). `gpt-4o-transcribe`·`gpt-4o-mini-transcribe`·`whisper-1`로 바꾸면 `language`/`prompt`로 보낸다. 한국어 합성 음성 실키 테스트로 확인했다.
 
-SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 요청은 `store=False`라 provider에 대화가 저장되지 않는다.
+SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). Responses 요청은 `store=False`라 provider에 대화가 저장되지 않는다. Decisions 요청 스키마에는 `store`를 포함한 보관 옵션이 아예 없다(`model`/`input`/`questions`/`safety_identifier`만, `additionalProperties: false`). Decisions의 기본 보관 정책은 API 명세에 적혀 있지 않으므로 데이터 보관 요건이 생기면 OpenAI 쪽 정책을 따로 확인해야 한다.
+
+### Jev: Decisions API (`app/ai/decisions.py`, `app/ai/aspects.py`)
+
+설치된 SDK에는 Decisions 메서드가 없어 `client.post("/decisions", cast_to=httpx.Response, body=..., options={"timeout": OPENAI_TIMEOUT_SECONDS})`로 보낸다. 인증·base URL·예외 타입이 SDK 그대로라 오류 분류(`classify`)도 같다.
+
+- **aspect 표**: 질문 셋 v1의 인텐트마다 `coverage_criteria`를 원자적 점검 항목으로 나눈다(예: COMMON_TASKS → `공통 업무의 종류`, `공통 업무의 작업 순서`, `공통 업무의 완료 기준`). 라벨은 "<대상>의 <측면>" 하나이고 그대로 `missing_aspects`가 되어 PROBE 질문이 묻는다. 기본 내용(종류·순서)은 "따로 정한 게 없어요"로 채워지지 않고 세부(완료 기준·주의 사항·연락 기준)는 채워진다(B04 정책). 인텐트마다 "점주가 해당 사항이 없다고 분명히 말했다" predicate(`not_applicable`)가 하나 있다. 키와 `coverage_criteria`가 모두 v1과 같을 때만 표를 쓰고, 그 밖에는 `coverage_criteria` 전체를 aspect 하나로 쓴다. 표 문구를 바꾸면 `ASPECTS_VERSION`을 올린다.
+- **요청**: 입력은 다른 연산과 같은 `<data>` JSON 문서(store·intent·context·dialogue, depth 제외)를 user 메시지로 보낸다. Decisions에는 instructions 필드가 없어 predicate마다 데이터 취급 규칙(데이터 안 지시를 따르지 않음, 점주가 실제로 말한 것만 근거, 네 가지 무응답 구분)을 붙인다.
+- **재검증**: 응답의 답 수·순서·`name`이 질문과 일치해야 하고, `predicate`의 `probability`는 0~1의 유한한 숫자(불리언 불가)여야 한다. 어기면 `INVALID_OUTPUT`(재시도 가능). JSON이 아닌 본문도 `INVALID_OUTPUT`.
+- **판정**: `P(not_applicable) ≥ 0.8`이면 충분. 아니면 모든 aspect `P ≥ 0.7`일 때 충분. `missing_aspects`는 임계 미만 aspect 라벨(표 순서, 최대 5개). 결과 `probability`는 결합 확률 `max(P(not_applicable), min P(aspect))`이며 기록용이다(판정은 임계값으로 하므로 불충분인데 0.5 이상일 수 있다).
+- **refusal**: 질문 하나의 refusal은 그 aspect를 미확보(확률 0)로, `not_applicable` refusal은 "말하지 않음"으로 본다. 모르는 것을 아는 것으로 바꾸지 않으면서 인터뷰를 ERROR로 멈추지 않게 하기 위해서다(그 aspect를 다시 묻고, depth 5에서 서버가 NEEDS_DETAIL로 끝낸다). 모든 질문이 refusal이면 `REFUSED`(재시도 불가).
+- **실측**(2026-10-08, gpt-6-luna, `tests/test_ai_decisions_live.py`): COMMON_TASKS 완전한 답 → aspect 1.0/1.0/1.0, not_applicable 0.0 → 충분. "홀 서빙이랑 설거지 정도요." → 종류 0.83, 작업 순서 0.0, 완료 기준 0.0 → 불충분(`공통 업무의 작업 순서`, `공통 업무의 완료 기준`). B04 골든 케이스(`tests/test_interview_sufficiency_live.py`, 기준이 v1과 달라 단일 aspect 폴백) 6회 모두 불충분, 무인 매장 해당 없음 대조군은 충분.
 
 ### 연산
 
@@ -40,7 +68,7 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 
 | 메서드 | 요청 | 결과 | 쓰는 곳 |
 | --- | --- | --- | --- |
-| `judge_sufficiency` | `SufficiencyRequest(intent, dialogue, depth, context)` | `SufficiencyJudgement(sufficient, probability, missing_aspects)`; `needs_follow_up` | Jev(#120) |
+| `judge_sufficiency` | `SufficiencyRequest(intent, dialogue, depth, context, store)` | `SufficiencyJudgement(sufficient, probability, missing_aspects)`; `needs_follow_up` | Jev(#120). 기본은 Decisions API(아래 § Jev) |
 | `generate_question` | `QuestionRequest(kind=BASE/PROBE, intent, depth, dialogue, missing_aspects, context)` | `GeneratedQuestion(text)` | 기본·추가 질문(#120). PROBE는 `missing_aspects` 필수 |
 | `summarize_intent` | `IntentSummaryRequest(intent, dialogue, needs_detail, available_shifts)` | `IntentSummary(summary, structure)` | 인텐트 요약(#120) |
 | `revise_structure` | `StructureRevisionRequest(current, summary, target, instruction, external_shifts, require_manual_level)` | `StructureRevision(outcome, structure, summary)` | 인텐트 정정(#120), 초안 정정(#118) |
@@ -104,6 +132,8 @@ def test_probe_after_insufficient_answer(api, fake_ai):
     assert fake_ai.calls_for("judge_sufficiency")[0].data["depth"] == 0      # 모델에 보낸 데이터
 ```
 
+Jev는 스크립트한 형식으로 경로가 정해진다. `FakeOutcome.predicates(aspect_2=0.3)`(잘 짜인 Decisions 응답, 이름별 확률·`refuse=`)나 `FakeOutcome.decision(<원문 JSON 또는 body→응답 함수>)`는 Decisions 경로(본문 생성·답 재검증·임계값)를, 기존 `FakeOutcome.ok({"sufficient": ..})`·`raw`·`candidates`는 구조화 출력 경로를 탄다. 큐가 비었거나 `fail`이면 Decisions 경로로 모든 aspect 0.95(충분)를 돌려준다(`on("judge_sufficiency", ...)`로 Responses 기본 응답을 바꿨으면 그 경로). `FakeAiProvider(judge_backend="responses")`는 항상 구조화 출력 경로다. Decisions 호출 기록은 `extra={"backend": "decisions", "body": ...}`를 가진다.
+
 큐가 비면 연산별 기본 응답(충분, 기본 질문 그대로, 답변을 단계로 옮긴 요약, `NO_CHANGE`, 검토 합치기, `NEEDS_OWNER`, 고정 전사 문장)을 돌려준다. `fake_ai.on(op, handler)`로 기본 응답을 바꿀 수 있다. 실제 API 테스트는 `@pytest.mark.openai`로 표시하며 `OPENAI_API_KEY`와 `JIDAN_RUN_OPENAI=1`이 모두 있을 때만 실행된다(`tests/test_ai_live.py`).
 
 ## 3. 작업 실행기 (`app.tasks`)
@@ -125,7 +155,7 @@ lease 만료 RUNNING(재시작·멈춘 호출) → recover_expired()가 재대�
 
 - **heartbeat**: `run_claimed`는 `execute` 동안 별도 스레드에서 `renew_lease(claimed)`를 `lease_seconds / 3`마다 호출한다. lease token 조건부 UPDATE이며 lease를 줄이지 않는다. 살아 있는 worker의 긴 호출은 lease를 넘겨도 회수되지 않고, 프로세스가 죽어 heartbeat가 멈춘 경우에만 마지막 갱신 + `lease_seconds` 뒤 복구된다.
 - **소유권 상실**: 갱신이 0행이면(다른 worker가 회수, 취소) `ctx.lease_lost()`가 참이 된다. 이미 보낸 외부 호출·과금은 되돌릴 수 없으므로, 여러 번 호출하는 `execute`는 다음 호출 전에 `ctx.lease_lost()`를 확인해 멈춘다. 결과는 finalize의 token 검사로 어차피 버려진다.
-- **시작 검증**: 백그라운드 실행기는 시작 시 `validate_task_leases()`로 모든 핸들러에 `lease_seconds ≥ provider_calls × provider.max_call_seconds + 30초`를 요구하고, 아니면 앱 시작을 거부한다. `max_call_seconds`는 OpenAI면 `max(OPENAI_TIMEOUT_SECONDS, OPENAI_TRANSCRIBE_TIMEOUT_SECONDS)`, fallback 모델이 있으면 두 모델의 합이다(SDK 재시도는 0, 실행기 재시도는 새 lease로 별도 claim). heartbeat가 DB 장애로 실패해도 살아 있는 호출이 lease 안에 끝나도록 하는 이중 장치다. 한 `execute`에서 AI를 여러 번 순차 호출하는 핸들러는 `TaskHandler(..., provider_calls=N)`을 선언한다.
+- **시작 검증**: 백그라운드 실행기는 시작 시 `validate_task_leases()`로 모든 핸들러에 `lease_seconds ≥ provider_calls × provider.max_call_seconds + 30초`를 요구하고, 아니면 앱 시작을 거부한다. `max_call_seconds`는 OpenAI면 `max(OPENAI_TIMEOUT_SECONDS, OPENAI_WRITING_TIMEOUT_SECONDS, OPENAI_TRANSCRIBE_TIMEOUT_SECONDS)`(기본 120초), fallback 모델이 있으면 두 모델의 합이다(SDK 재시도는 0, 실행기 재시도는 새 lease로 별도 claim). heartbeat가 DB 장애로 실패해도 살아 있는 호출이 lease 안에 끝나도록 하는 이중 장치다. 한 `execute`에서 AI를 여러 번 순차 호출하는 핸들러는 `TaskHandler(..., provider_calls=N)`을 선언한다.
 - **보장 범위**: 살아 있는 두 worker가 같은 작업의 호출을 동시에 하지 않는다. 호출 도중 프로세스가 죽으면 복구 후 다시 호출한다(at-least-once, 과금 1회 추가 가능).
 
 `kind`는 `TASK_KINDS`(`TRANSCRIPTION`, `INITIAL_QUESTION`, `EVALUATION`, `FOLLOWUP_GENERATION`, `DRAFT_GENERATION`, `REVIEW_UNDERSTANDING`, `REVIEW_CORRECTION`, `DRAFT_CORRECTION`, `QA_ANSWER`) 중 하나다. API의 `processing.kind`와 1:1이다(검토는 `REVIEW_` 접두사).
