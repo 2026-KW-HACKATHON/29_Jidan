@@ -12,7 +12,7 @@ for(const [path,methods] of Object.entries(spec.paths))for(const [method,op] of 
 function type(s){
  if(!s)return 'undefined';if(s.$ref)return refName(s);if('const'in s)return JSON.stringify(s.const);if(s.enum)return s.enum.map(x=>JSON.stringify(x)).join(' | ')
  if(Array.isArray(s.type))return s.type.map(t=>type({...s,type:t})).join(' | ')
- let base=s.type==='object'||s.properties?'{ '+Object.entries(s.properties??{}).map(([n,v])=>`${JSON.stringify(n)}${s.required?.includes(n)?'':'?'}: ${type(v)}`).join('; ')+' }':s.type==='array'?`Array<${type(s.items)}>`:({string:'string',number:'number',integer:'number',boolean:'boolean',null:'null'}[s.type]??'unknown')
+ let base=s.type==='object'||(!s.type&&s.properties)?'{ '+Object.entries(s.properties??{}).map(([n,v])=>`${JSON.stringify(n)}${s.required?.includes(n)?'':'?'}: ${type(v)}`).join('; ')+' }':s.type==='array'?`Array<${type(s.items)}>`:({string:'string',number:'number',integer:'number',boolean:'boolean',null:'null'}[s.type]??'unknown')
  for(const [key,join]of [['allOf',' & '],['oneOf',' | '],['anyOf',' | ']])if(s[key])base=(base==='unknown'?'':base+' & ')+`(${s[key].map(type).join(join)})`
  return base
 }
