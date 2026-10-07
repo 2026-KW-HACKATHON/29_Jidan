@@ -9,7 +9,7 @@ export const OwnerNotificationPage = () => {
   if (path.includes('unread')) uiState = 'UNREAD';
   if (path.includes('read-all')) uiState = 'READ_ALL';
 
-  // 알림 데이터 목록 (피그마 디자인 내용)
+  // 알림 데이터 목록 
   const allNotifications = [
     { id: 1, title: '새 지원자가 있어요', desc: '주말 오픈 대타 공고에 지원자가 신청했어요.', time: '방금 전', isUnread: true },
     { id: 2, title: '근무자가 초대를 수락했어요', desc: '김지수 님이 명랑핫도그 광운대점에 합류했어요.', time: '30분 전', isUnread: true },
@@ -42,7 +42,6 @@ export const OwnerNotificationPage = () => {
           {uiState === 'ALL' && (
             <>
               <h3 className="filter-title">전체 알림</h3>
-              {/* ✨ 클릭 시 안 읽은 알림 화면으로 이동하도록 연결! */}
               <button className="filter-btn" onClick={() => window.location.href = '/unread'}>
                 안 읽은 알림만 보기
               </button>
@@ -51,7 +50,6 @@ export const OwnerNotificationPage = () => {
           {uiState === 'UNREAD' && (
             <>
               <h3 className="filter-title">안 읽은 알림 3개</h3>
-              {/* ✨ 클릭 시 다시 전체 알림 화면으로 이동하도록 연결! */}
               <button className="filter-btn" onClick={() => window.location.href = '/'}>
                 전체 알림 보기
               </button>

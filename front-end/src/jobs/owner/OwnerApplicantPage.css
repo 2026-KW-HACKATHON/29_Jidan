@@ -1,5 +1,3 @@
-/* 래퍼: 내 화면만 안전하게 띄우기 */
-/* 래퍼: 내 화면만 안전하게 띄우기 */
 .my-isolated-wrapper {
   --Gray-0: #FFFFFF;
   --Gray-60: #5A6169;
@@ -24,7 +22,7 @@
   display: flex;
   justify-content: center;
   
-  /* 👇 화면이 작아도 위에서부터 정렬되게 만들고 스크롤을 켭니다 */
+  /* 스크롤 가능 */
   align-items: flex-start; 
   height: 100vh;
   width: 100vw;
@@ -47,10 +45,10 @@
   min-height: 844px;
   padding: 0;
   flex-direction: column;
-  align-items: stretch; /* 내부 박스들이 가로로 꽉 차도록 설정 */
+  align-items: stretch; 
   gap: 0;
   
-  background-color: #EBF1FE; /* 연하늘색 바탕 */
+  background-color: #EBF1FE; 
   position: relative;
   overflow-y: auto;
   box-sizing: border-box;

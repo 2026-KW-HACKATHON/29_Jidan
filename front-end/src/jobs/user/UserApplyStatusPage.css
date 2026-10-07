@@ -90,7 +90,7 @@
   color: #5A6169;
 }
 
-/* ✨ 첫 번째 페이지 신청 중 박스 레이아웃 및 스타일 적용 */
+
 .application-list {
   display: flex;
   padding: 0;
@@ -104,7 +104,7 @@
   border-radius: 0;
 }
 
-/* ✨ 주말 오픈 대타 박스 및 가운데 페이지 박스 공통 레이아웃/스타일 (Elevation/Default/level-1 적용) */
+/*  주말 오픈 대타 박스 및 가운데 페이지 */
 .application-card {
   display: flex;
   padding: 16px;
