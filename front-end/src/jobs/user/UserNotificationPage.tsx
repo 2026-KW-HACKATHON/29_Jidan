@@ -1,12 +1,12 @@
 import './UserNotificationPage.css';
 
-export const UserNotificationPage = () => {
-  const path = window.location.pathname;
-  let uiState: 'ALL' | 'UNREAD' | 'READ_ALL' = 'ALL';
-  
-  if (path.includes('unread')) uiState = 'UNREAD';
-  if (path.includes('read-all')) uiState = 'READ_ALL';
+export type UserNotificationState = 'ALL' | 'UNREAD' | 'READ_ALL';
 
+export const UserNotificationPage = ({ state: uiState, onFilter, onBack }: {
+  state: UserNotificationState;
+  onFilter: (state: 'ALL' | 'UNREAD') => void;
+  onBack: () => void;
+}) => {
   const allNotifications = [
     { 
       id: 1, 
@@ -51,7 +51,7 @@ export const UserNotificationPage = () => {
       <div className="mobile-container">
         
         <div className="header-area">
-          <span style={{ cursor: 'pointer' }}>&lt;</span>
+          <button type="button" aria-label="뒤로 가기" onClick={onBack} style={{ border: 0, padding: 0, background: 'none', cursor: 'pointer' }}>&lt;</button>
           <span>알림</span>
         </div>
 
@@ -59,7 +59,7 @@ export const UserNotificationPage = () => {
           {uiState === 'ALL' && (
             <>
               <h3 className="filter-title">전체 알림</h3>
-              <button className="filter-btn" onClick={() => window.location.href = '/user/noti/unread'}>
+              <button className="filter-btn" onClick={() => onFilter('UNREAD')}>
                 안 읽은 알림만 보기
               </button>
             </>
@@ -67,7 +67,7 @@ export const UserNotificationPage = () => {
           {uiState === 'UNREAD' && (
             <>
               <h3 className="filter-title">안 읽은 알림 3개</h3>
-              <button className="filter-btn" onClick={() => window.location.href = '/user/noti'}>
+              <button className="filter-btn" onClick={() => onFilter('ALL')}>
                 전체 알림 보기
               </button>
             </>

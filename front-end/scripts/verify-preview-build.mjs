@@ -6,6 +6,7 @@ const build = enabled => {
  const files=readdirSync('dist/assets')
  const js=files.filter(file=>file.endsWith('.js')).map(file=>readFileSync(`dist/assets/${file}`,'utf8')).join('\n')
  assert.equal(files.some(file=>file.startsWith('PreviewApp-')),enabled,'Preview chunk boundary')
+ assert.equal(files.some(file=>file.startsWith('UserNotificationPreview-')),enabled,'User notification preview boundary')
  assert.equal(files.some(file=>file.startsWith('OwnerNotificationPreview-')),enabled,'Owner notification preview boundary')
  for(const marker of ['owner-preview','preview-worker-receipt','MOCK_FAILURE','/__store/employment','/__jobs','preview-application-','MOCK_SUBMIT_FAILURE','preview-invitation-minji','MOCK_INVITATION_FAILURE','/__store/manage','/__owner/jobs','MOCK_OWNER_JOB_FAILURE'])assert.equal(js.includes(marker),enabled,`Fixture boundary: ${marker}`)
 }
