@@ -1,0 +1,163 @@
+"""Atomic check items (aspects) Jev asks the Decisions API about, per interview intent.
+
+The question set's `coverage_criteria` (app/interview/question_set.py, version 1) bundles several
+facts in one sentence ("작업 순서와 방법, 끝났다고 판단하는 기준"). Decisions predicates answer one
+yes/no question each, so every intent is split here into a few aspects:
+
+* `label`: the short Korean "<대상>의 <측면>" name that becomes a missing aspect and is what a
+  PROBE question asks about (one aspect of one subject; never two joined by "와/과", Q-INT-1).
+* `instructions`: the predicate the model answers with a probability.
+* `core`: core content (which tasks, in what order) is never filled by "따로 정한 게 없어요";
+  a detail (completion criterion, caution, contact rule) is (the B04 policy in prompts.py).
+
+Aspects are listed core first, so the first missing one is what the next probe asks.
+
+Every intent also has one `not_applicable` predicate: "the owner clearly said this does not exist
+in the store" (no common tasks, no rules, ...). It covers the whole intent at once.
+
+The table is matched on the intent key *and* its coverage criteria: a later question set that
+reuses a key with a different criterion must not be judged against version 1's aspects. Anything
+else falls back to the whole `coverage_criteria` as a single aspect.
+
+Bump ASPECTS_VERSION whenever a label or instruction text here (or in app.ai.decisions) changes;
+it is part of the stored config version of a Decisions judgement.
+"""
+
+from dataclasses import dataclass
+
+from app.ai.contracts import IntentBrief, clean_text
+from app.interview.question_set import INTENTS_V1
+
+ASPECTS_VERSION = "2026-10-08.1"
+MAX_LABEL_LENGTH = 200
+
+
+@dataclass(frozen=True)
+class Aspect:
+    label: str
+    instructions: str
+    core: bool = True
+
+
+@dataclass(frozen=True)
+class IntentAspects:
+    aspects: tuple[Aspect, ...]
+    not_applicable: str  # predicate: the owner clearly said the intent does not apply
+
+
+def _a(label: str, instructions: str, *, core: bool = True) -> Aspect:
+    return Aspect(label, instructions, core)
+
+
+_TABLE: dict[str, IntentAspects] = {
+    "WORK_STRUCTURE": IntentAspects(
+        aspects=(
+            _a("근무조의 구성",
+               "점주가 이 매장의 근무조가 무엇무엇인지(이름과 개수)를 말했거나, 근무조를 나누지 않고 한 가지 "
+               "근무만 있다고 분명히 말했다."),
+            _a("근무조의 시작 시각",
+               "점주가 말한 근무조마다(근무조를 나누지 않으면 그 한 가지 근무의) 시작 시각을 알 수 있다. "
+               "\"아침에\", \"점심쯤\"처럼 시각을 정할 수 없는 표현만 있으면 알 수 없는 것이다."),
+            _a("근무조의 종료 시각",
+               "점주가 말한 근무조마다(근무조를 나누지 않으면 그 한 가지 근무의) 종료 시각을 알 수 있다. "
+               "\"손님 빠지면\"처럼 시각을 정할 수 없는 표현만 있으면 알 수 없는 것이다."),
+            _a("근무조의 익일 종료 여부",
+               "근무조마다 자정을 넘겨 다음 날 끝나는지 알 수 있다. 시작·종료 시각이 모두 같은 날 안이라 "
+               "자정을 넘지 않는 것이 명백하거나, 점주가 다음 날 끝난다고(또는 넘지 않는다고) 말했다면 참이다.",
+               core=False),
+        ),
+        not_applicable="점주가 이 매장에는 직원이 일하는 근무 자체가 없다고(예: 직원 없이 운영하는 무인 매장) "
+                       "분명히 말했다.",
+    ),
+    "COMMON_TASKS": IntentAspects(
+        aspects=(
+            _a("공통 업무의 종류",
+               "점주가 근무조와 관계없이 모든 직원이 공통으로 하는 업무가 무엇무엇인지 말했다."),
+            _a("공통 업무의 작업 순서",
+               "점주가 말한 공통 업무 각각에 대해, 근무자가 따라 할 수 있을 만큼 무엇을 어떤 순서와 방법으로 "
+               "하는지 설명했다. 업무 이름이나 결과만 말했다면 거짓이다. 한 동작으로 끝나는 업무는 그 동작을 "
+               "설명했으면 참이다."),
+            _a("공통 업무의 완료 기준",
+               "점주가 말한 공통 업무 각각에 대해 어떤 상태가 되면 끝난 것으로 보는지 말했다.",
+               core=False),
+        ),
+        not_applicable="점주가 이 매장에는 모든 직원이 공통으로 하는 업무가 없다고 분명히 말했다.",
+    ),
+    "SHIFT_TASKS": IntentAspects(
+        aspects=(
+            _a("근무조별 업무의 종류",
+               "점주가 특정 근무조만 따로 맡아서 하는 업무가 무엇무엇인지 말했다."),
+            _a("근무조별 업무의 담당 근무조",
+               "점주가 말한 근무조별 업무 각각을 어느 근무조가 맡는지 알 수 있다."),
+            _a("근무조별 업무의 작업 순서",
+               "점주가 말한 근무조별 업무 각각에 대해, 근무자가 따라 할 수 있을 만큼 무엇을 어떤 순서와 방법으로 "
+               "하는지 설명했다. 업무 이름이나 결과만 말했다면 거짓이다. 한 동작으로 끝나는 업무는 그 동작을 "
+               "설명했으면 참이다."),
+            _a("근무조별 업무의 완료 기준",
+               "점주가 말한 근무조별 업무 각각에 대해 어떤 상태가 되면 끝난 것으로 보는지 말했다.",
+               core=False),
+        ),
+        not_applicable="점주가 이 매장에는 특정 근무조만 따로 맡아서 하는 업무가 없다고(또는 근무조를 나누지 "
+                       "않아 근무조별 업무가 없다고) 분명히 말했다.",
+    ),
+    "RULES": IntentAspects(
+        aspects=(
+            _a("매장 규칙의 내용",
+               "점주가 직원이 지켜야 하는 매장 규칙을 말했고, 규칙마다 직원이 구체적으로 무엇을 지켜야 하는지 "
+               "알 수 있다."),
+            _a("매장 규칙의 적용 조건",
+               "점주가 말한 규칙마다 언제·어떤 상황에 적용되는지 알 수 있다. 항상 적용되는 규칙이라는 것이 "
+               "분명하면 참이다.",
+               core=False),
+        ),
+        not_applicable="점주가 직원이 따로 지켜야 하는 매장 규칙은 정한 것이 없다고 분명히 말했다.",
+    ),
+    "EQUIPMENT": IntentAspects(
+        aspects=(
+            _a("설비의 종류", "점주가 직원이 다루는 기계나 설비가 무엇무엇인지 말했다."),
+            _a("설비의 사용 순서",
+               "점주가 말한 설비마다 근무자가 따라 할 수 있을 만큼 어떤 순서로 사용하는지 설명했다."),
+            _a("설비의 관리 방법",
+               "점주가 말한 설비마다 청소하거나 관리하는 방법을 설명했다.", core=False),
+            _a("설비의 주의 사항",
+               "점주가 말한 설비마다 사용할 때 주의할 점을 말했다.", core=False),
+        ),
+        not_applicable="점주가 직원이 다루는 기계나 설비가 없다고 분명히 말했다.",
+    ),
+    "EXCEPTIONS": IntentAspects(
+        aspects=(
+            _a("돌발 상황의 종류",
+               "점주가 평소와 다른 상황(예: 재고 부족, 기계 고장, 손님 불만)이 어떤 것들인지 말했다."),
+            _a("돌발 상황의 대응 방법",
+               "점주가 말한 예외 상황마다 직원이 구체적으로 어떻게 대응하면 되는지 설명했다."),
+            _a("점주 연락의 기준",
+               "점주가 어떤 경우에 직원이 점주에게 연락해야 하는지(또는 연락하지 않고 처리해도 되는지) 말했다.",
+               core=False),
+        ),
+        not_applicable="점주가 평소와 다른 상황에 대해 따로 정한 대응이 없다고 분명히 말했다.",
+    ),
+}
+
+# The criterion each table entry was written for (question set version 1).
+_CRITERIA = {definition.key: definition.coverage_criteria for definition in INTENTS_V1}
+if set(_TABLE) != set(_CRITERIA):  # pragma: no cover - import-time consistency check
+    raise RuntimeError("every question set v1 intent needs its aspects")
+
+
+def aspects_for(intent: IntentBrief) -> IntentAspects:
+    """The intent's aspects, or the whole coverage criterion as one aspect when the intent is not
+    a known version-1 intent (unknown key, or a known key with a different criterion)."""
+    known = _TABLE.get(intent.key)
+    if known is not None and _CRITERIA[intent.key] == intent.coverage_criteria:
+        return known
+    criteria = clean_text(intent.coverage_criteria)
+    label = criteria if len(criteria) <= MAX_LABEL_LENGTH else criteria[:MAX_LABEL_LENGTH - 1] + "…"
+    return IntentAspects(
+        aspects=(Aspect(
+            label=label,
+            instructions="점주의 답변으로 아래 확인 기준의 정보를 근무자가 따라 할 수 있을 만큼 모두 확보했다.\n"
+                         f"확인 기준: {criteria}",
+        ),),
+        not_applicable="점주가 이 질문이 묻는 일이나 정보가 이 매장에는 해당하지 않는다고(그런 일이 없다고) "
+                       "분명히 말했다.",
+    )

@@ -4,8 +4,12 @@
 structured output, parses it with the strict schema's pydantic model, re-validates it against
 the request (`app.ai.validation`) and returns a typed result from `app.ai.contracts`. Backends
 (`OpenAiProvider`, `FakeAiProvider` in `app.ai.fake`) only implement `_complete` (raw JSON text
-candidates) and `_transcribe` (raw text), so the fake exercises exactly the production parsing
-and validation path.
+candidates), `_decide` (a raw Decisions API response) and `_transcribe` (raw text), so the fake
+exercises exactly the production parsing and validation path.
+
+`judge_sufficiency` (Jev) asks the Decisions API one predicate per atomic aspect
+(`app.ai.decisions`, `judge_backend = "decisions"`, the default) or, with
+`judge_backend = "responses"`, the structured-output judgement of the Jev prompt.
 
 All methods are blocking and must be called outside a DB transaction (from the task runner).
 Failures are `AiError`s; nothing else escapes (provider exceptions are classified and chained
@@ -42,6 +46,7 @@ from app.ai.contracts import (
     TranscriptionRequest,
     clean_text,
 )
+from app.ai.decisions import Thresholds, build_request, config_tag, decide
 from app.ai.errors import AiError, AiErrorCode
 from app.ai.prompts import INSTRUCTIONS, PROMPT_VERSION, data_message
 from app.ai.schemas import (
@@ -64,6 +69,8 @@ from app.ai.validation import (
 )
 
 logger = logging.getLogger("jidan.ai")
+
+JUDGE_BACKENDS = ("decisions", "responses")
 
 
 @dataclass(frozen=True)
@@ -89,6 +96,8 @@ class AiProvider(ABC):
     provider_name: str = "abstract"
     model: str = ""
     transcribe_model: str = ""
+    judge_backend: str = "decisions"
+    judge_thresholds: Thresholds = Thresholds()
 
     @property
     def config_version(self) -> str:
@@ -100,12 +109,26 @@ class AiProvider(ABC):
         The task runner checks leases against it (`app.tasks.validate_task_leases`)."""
         return 0.0
 
-    def meta(self, *, transcription: bool = False) -> CallMeta:
+    def effort_for(self, operation: str) -> str | None:
+        """Reasoning effort a structured-output call of `operation` uses (None: not sent)."""
+        return None
+
+    def meta(self, operation: str | None = None, *, transcription: bool = False,
+             backend: str = "responses") -> CallMeta:
+        """`config_version` = provider:model:PROMPT_VERSION, then what shaped this call: for Jev
+        the backend (`decisions:aspects-<version>:t=<aspect>/<not_applicable>` or `responses`),
+        and the reasoning effort when one was sent (`effort=<value>`)."""
         model = self.transcribe_model if transcription else self.model
-        return CallMeta(
-            provider=self.provider_name, model=model,
-            config_version=f"{self.provider_name}:{model}:{PROMPT_VERSION}",
-        )
+        parts = [self.provider_name, model, PROMPT_VERSION]
+        if backend == "decisions":
+            parts.append(config_tag(self.judge_thresholds))
+        elif operation is not None:
+            if operation == "judge_sufficiency":
+                parts.append("responses")
+            effort = self.effort_for(operation)
+            if effort:
+                parts.append(f"effort={effort}")
+        return CallMeta(provider=self.provider_name, model=model, config_version=":".join(parts))
 
     # --- backend hooks ----------------------------------------------------------------------
 
@@ -115,6 +138,17 @@ class AiProvider(ABC):
     ) -> list[str]:
         """Raw JSON text candidates for `operation` (several when a backend returns several
         message items); raise AiError on failure."""
+
+    def _decide(self, body: dict[str, Any]) -> Any:
+        """The raw (JSON-decoded) Decisions API response for `body` (`app.ai.decisions`); raise
+        AiError on failure. The caller re-validates every answer.
+
+        Not abstract: a backend that only implements `_complete` (the offline eval replay,
+        delegating wrappers) has no Decisions call and judges on the Responses path instead."""
+        raise NotImplementedError
+
+    def _supports_decisions(self) -> bool:
+        return type(self)._decide is not AiProvider._decide
 
     @abstractmethod
     def _transcribe(self, request: TranscriptionRequest) -> "str | RawTranscript":
@@ -145,11 +179,39 @@ class AiProvider(ABC):
                 int((time.monotonic() - started) * 1000),
             )
 
+    def _judge_backend(self, request: SufficiencyRequest) -> str:
+        return self.judge_backend if self._supports_decisions() else "responses"
+
     # --- operations -------------------------------------------------------------------------
 
     def judge_sufficiency(self, request: SufficiencyRequest) -> SufficiencyJudgement:
         # The probe count stays with the server (it ends an intent at depth 5): the model judges
         # the dialogue alone, so "asked often enough" can never read as "known".
+        if self._judge_backend(request) == "decisions":
+            return self._judge_by_decisions(request)
+        return self._judge_by_responses(request)
+
+    def _judge_by_decisions(self, request: SufficiencyRequest) -> SufficiencyJudgement:
+        body, labels = build_request(request, model=self.model)
+        started = time.monotonic()
+        outcome = "ok"
+        try:
+            result = decide(body, labels, self._decide(body), self.judge_thresholds)
+        except AiError as error:
+            outcome = error.code.value
+            raise
+        finally:
+            logger.info(
+                "ai call op=judge_sufficiency backend=decisions model=%s outcome=%s ms=%d", self.model,
+                outcome, int((time.monotonic() - started) * 1000),
+            )
+        return SufficiencyJudgement(
+            sufficient=result.sufficient, probability=result.probability,
+            missing_aspects=result.missing_aspects,
+            meta=self.meta("judge_sufficiency", backend="decisions"),
+        )
+
+    def _judge_by_responses(self, request: SufficiencyRequest) -> SufficiencyJudgement:
         payload = request.model_dump(mode="json", exclude={"depth"})
         raw: RawJudgement = self._structured("judge_sufficiency", payload)
         aspects = tuple(dict.fromkeys(a for a in (clean_text(x) for x in raw.missing_aspects) if a))
@@ -161,7 +223,7 @@ class AiProvider(ABC):
             raise invalid("insufficient_without_aspects")
         return SufficiencyJudgement(
             sufficient=raw.sufficient, probability=raw.probability,
-            missing_aspects=() if raw.sufficient else aspects, meta=self.meta(),
+            missing_aspects=() if raw.sufficient else aspects, meta=self.meta("judge_sufficiency"),
         )
 
     def generate_question(self, request: QuestionRequest) -> GeneratedQuestion:
@@ -171,7 +233,7 @@ class AiProvider(ABC):
         text = clean_text(raw.question)
         if not text:
             raise invalid("blank_question")
-        return GeneratedQuestion(text=text, meta=self.meta())
+        return GeneratedQuestion(text=text, meta=self.meta("generate_question"))
 
     def summarize_intent(self, request: IntentSummaryRequest) -> IntentSummary:
         raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json"))
@@ -183,7 +245,7 @@ class AiProvider(ABC):
         summary = clean_text(raw.summary)
         if not summary:
             raise invalid("blank_summary")
-        return IntentSummary(summary=summary, structure=structure, meta=self.meta())
+        return IntentSummary(summary=summary, structure=structure, meta=self.meta("summarize_intent"))
 
     def revise_structure(self, request: StructureRevisionRequest) -> StructureRevision:
         target = request.target
@@ -196,7 +258,7 @@ class AiProvider(ABC):
         if target.kind == "SECTION" and target.target_id not in ids["section"]:
             raise ValueError("target section is not part of the current content")
         raw: RawRevision = self._structured("revise_structure", request.model_dump(mode="json"))
-        meta = self.meta()
+        meta = self.meta("revise_structure")
         if raw.outcome in ("CLARIFICATION_REQUIRED", "REFERENCE_CONFLICT", "NO_CHANGE"):
             return StructureRevision(outcome=raw.outcome, meta=meta)
         external_ids = {shift.id for shift in request.external_shifts}
@@ -248,7 +310,7 @@ class AiProvider(ABC):
             s.id for s in structure.sections
         }:
             raise invalid("draft_dropped_reviewed_item")
-        return DraftComposition(structure=structure, meta=self.meta())
+        return DraftComposition(structure=structure, meta=self.meta("compose_draft"))
 
     def answer_question(self, request: QaRequest) -> QaAnswer:
         payload = request.model_dump(mode="json", exclude={"images"})
@@ -262,7 +324,7 @@ class AiProvider(ABC):
             raise invalid("answered_without_citation")
         if raw.outcome == "NEEDS_OWNER":
             citations = ()
-        return QaAnswer(outcome=raw.outcome, text=text, citations=citations, meta=self.meta())
+        return QaAnswer(outcome=raw.outcome, text=text, citations=citations, meta=self.meta("answer_question"))
 
     def transcribe(self, request: TranscriptionRequest) -> Transcript:
         started = time.monotonic()
@@ -303,6 +365,8 @@ class FallbackAiProvider(AiProvider):
         self.provider_name = primary.provider_name
         self.model = primary.model
         self.transcribe_model = primary.transcribe_model
+        self.judge_backend = primary.judge_backend
+        self.judge_thresholds = primary.judge_thresholds
 
     @property
     def max_call_seconds(self) -> float:
@@ -310,6 +374,9 @@ class FallbackAiProvider(AiProvider):
         return self.primary.max_call_seconds + self.fallback.max_call_seconds
 
     def _complete(self, *args, **kwargs):  # pragma: no cover - operations are delegated
+        raise NotImplementedError
+
+    def _decide(self, body):  # pragma: no cover - operations are delegated
         raise NotImplementedError
 
     def _transcribe(self, request):  # pragma: no cover - operations are delegated
@@ -352,6 +419,9 @@ class UnconfiguredAiProvider(AiProvider):
     provider_name = "unconfigured"
 
     def _complete(self, *_args, **_kwargs):
+        raise AiError(AiErrorCode.NOT_CONFIGURED)
+
+    def _decide(self, _body):
         raise AiError(AiErrorCode.NOT_CONFIGURED)
 
     def _transcribe(self, _request):

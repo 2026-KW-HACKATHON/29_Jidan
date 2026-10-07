@@ -14,6 +14,18 @@ schema validation and server-side re-validation as real OpenAI output.
 Scripted outcomes are consumed in order per operation; when the queue is empty the operation's
 default responder answers (`on(...)` replaces it). `calls` records every call with the parsed
 data document so tests can assert what the model was shown.
+
+Jev has two backends (`app.ai.provider`), and the fake picks one per call from what is scripted:
+
+    fake.script("judge_sufficiency", FakeOutcome.predicates(aspect_2=0.3))   # Decisions response
+    fake.script("judge_sufficiency", FakeOutcome.decision({"answers": []}))  # raw Decisions JSON
+    fake.script("judge_sufficiency", FakeOutcome.ok({"sufficient": ...}))    # Responses judgement
+
+`decision`/`predicates` outcomes go through the Decisions path (request body, answer
+re-validation, thresholds); `ok`/`raw`/`candidates` through the structured-output path, as before.
+With nothing scripted (or a `fail`), the Decisions path answers with every aspect covered, unless
+`on("judge_sufficiency", ...)` replaced the Responses default. `FakeAiProvider(judge_backend=
+"responses")` always uses the structured-output path.
 """
 
 import json
@@ -26,9 +38,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.ai.contracts import ImageInput, StructureSnapshot, TranscriptionRequest
+from app.ai.contracts import ImageInput, StructureSnapshot, SufficiencyRequest, TranscriptionRequest
+from app.ai.decisions import NOT_APPLICABLE
 from app.ai.errors import AiError, AiErrorCode
-from app.ai.provider import AiProvider
+from app.ai.provider import JUDGE_BACKENDS, AiProvider
 
 OPERATIONS = (
     "judge_sufficiency", "generate_question", "summarize_intent", "revise_structure",
@@ -38,7 +51,7 @@ OPERATIONS = (
 
 @dataclass(frozen=True)
 class FakeOutcome:
-    kind: str  # ok | raw | fail | delay | candidates
+    kind: str  # ok | raw | fail | delay | candidates | decision
     value: Any = None
     seconds: float = 0.0
     then: "FakeOutcome | None" = None
@@ -57,6 +70,29 @@ class FakeOutcome:
     def candidates(*texts: str) -> "FakeOutcome":
         """Several message items, like gpt-6-luna occasionally returns."""
         return FakeOutcome("candidates", texts)
+
+    @staticmethod
+    def decision(response: Any) -> "FakeOutcome":
+        """A raw Decisions API response (any JSON value, to test re-validation), or a function
+        body -> response built from the request (question names depend on the intent)."""
+        return FakeOutcome("decision", response)
+
+    @staticmethod
+    def predicates(default: float = 0.95, *, not_applicable: float = 0.05,
+                   refuse: Sequence[str] = (), **by_name: float) -> "FakeOutcome":
+        """A well-formed Decisions response: `by_name` (aspect_1, aspect_2, ...) overrides the
+        default aspect probability, `refuse` names questions answered with a refusal."""
+        def respond(body):
+            answers = []
+            for question in body["questions"]:
+                name = question["name"]
+                if name in refuse:
+                    answers.append({"type": "refusal", "name": name})
+                    continue
+                fallback = not_applicable if name == NOT_APPLICABLE else default
+                answers.append({"type": "predicate", "name": name, "probability": by_name.get(name, fallback)})
+            return {"model": body["model"], "answers": answers, "usage": {}}
+        return FakeOutcome("decision", respond)
 
     @staticmethod
     def fail(code: AiErrorCode | str) -> "FakeOutcome":
@@ -100,6 +136,10 @@ def structure_to_raw(snapshot: StructureSnapshot) -> dict[str, Any]:
 
 def _default_judge(_data):
     return {"sufficient": True, "probability": 0.9, "missing_aspects": []}
+
+
+def _default_decision(body):
+    return FakeOutcome.predicates().value(body)
 
 
 def _default_question(data):
@@ -182,8 +222,12 @@ class FakeAiProvider(AiProvider):
     model = "fake-llm"
     transcribe_model = "fake-stt"
 
-    def __init__(self, *, timeout_seconds: float = 1.0, sleep: Callable[[float], None] = time.sleep):
+    def __init__(self, *, timeout_seconds: float = 1.0, sleep: Callable[[float], None] = time.sleep,
+                 judge_backend: str = "decisions"):
+        if judge_backend not in JUDGE_BACKENDS:
+            raise ValueError("judge_backend must be decisions or responses")
         self.timeout_seconds = timeout_seconds
+        self.judge_backend = judge_backend
         self._sleep = sleep
         self._lock = threading.Lock()
         self._queues: dict[str, deque[FakeOutcome]] = {op: deque() for op in OPERATIONS}
@@ -220,9 +264,10 @@ class FakeAiProvider(AiProvider):
             queue = self._queues[operation]
             return queue.popleft() if queue else None
 
-    def _resolve(self, operation: str, outcome: FakeOutcome | None, argument: Any) -> Any:
+    def _resolve(self, operation: str, outcome: FakeOutcome | None, argument: Any,
+                 default: Callable[[Any], Any] | None = None) -> Any:
         if outcome is None:
-            return self._handlers[operation](argument)
+            return (default or self._handlers[operation])(argument)
         if outcome.kind == "fail":
             raise AiError(outcome.value)
         if outcome.kind == "delay":
@@ -230,8 +275,36 @@ class FakeAiProvider(AiProvider):
                 self._sleep(self.timeout_seconds)
                 raise AiError(AiErrorCode.TIMEOUT)
             self._sleep(outcome.seconds)
-            return self._resolve(operation, outcome.then, argument)
+            return self._resolve(operation, outcome.then, argument, default)
         return outcome
+
+    def _judge_backend(self, request: SufficiencyRequest) -> str:
+        if self.judge_backend == "responses":
+            return "responses"
+        with self._lock:
+            queue = self._queues["judge_sufficiency"]
+            head = queue[0] if queue else None
+        while head is not None and head.kind == "delay":
+            head = head.then
+        if head is not None and head.kind in ("ok", "raw", "candidates"):
+            return "responses"
+        if head is None and self._handlers["judge_sufficiency"] is not _default_judge:
+            return "responses"
+        return "decisions"
+
+    def _decide(self, body: dict[str, Any]) -> Any:
+        data = _parse_data(body["input"][0]["content"][0]["text"])
+        with self._lock:
+            self.calls.append(FakeCall(
+                "judge_sufficiency", data, "\n\n".join(q["instructions"] for q in body["questions"]),
+                extra={"backend": "decisions", "body": body},
+            ))
+        result = self._resolve("judge_sufficiency", self._next("judge_sufficiency"), body, _default_decision)
+        if isinstance(result, FakeOutcome):
+            if result.kind != "decision":
+                raise ValueError("a Decisions call needs FakeOutcome.decision/predicates")
+            result = result.value(body) if callable(result.value) else result.value
+        return json.loads(json.dumps(result))  # what a JSON response body decodes to
 
     def _complete(self, operation: str, instructions: str, message: str,
                   images: Sequence[ImageInput]) -> list[str]:

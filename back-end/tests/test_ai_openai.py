@@ -51,8 +51,11 @@ class StubClient:
 
 
 def provider(client) -> OpenAiProvider:
+    """Jev on the Responses path (the structured-output wiring these tests pin); the Decisions
+    path has its own tests in test_ai_decisions.py."""
     return OpenAiProvider(api_key="", model="gpt-6-luna", transcribe_model="gpt-transcribe",
-                          reasoning_effort="low", timeout_seconds=30, client=client)
+                          reasoning_effort="low", timeout_seconds=30, judge_backend="responses",
+                          client=client)
 
 
 def test_request_uses_strict_schema_no_storage_and_the_timeout():
