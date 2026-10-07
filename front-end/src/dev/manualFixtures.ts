@@ -27,7 +27,9 @@ export const interviewFixture:ManualInterviewSession={
       "kind": "BASE",
       "depth": 0,
       "batchId": null,
-      "text": "근무조와 시간을 알려주세요.",
+      "text": "근무는 어떻게\n나누어져 있나요?",
+      "guidance": "오전조·오후조처럼 매장에서 부르는 이름으로 알려주세요.",
+      "guidanceCards": [{"id":"71000000-0000-4000-8000-000000000001","type":"LIST","title":"근무 시간 예시","items":[{"id":"71000000-0000-4000-8000-000000000002","label":"오전조"},{"id":"71000000-0000-4000-8000-000000000003","label":"오후조"},{"id":"71000000-0000-4000-8000-000000000004","label":"야간조"}]}],
       "answered": false
     }
   ],

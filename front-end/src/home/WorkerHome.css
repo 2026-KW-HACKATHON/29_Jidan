@@ -23,3 +23,5 @@
 .worker-home-shift em { display: grid; flex: none; place-items: center; width: 73px; height: 28px; border-radius: 12px; color: var(--ds-primary-strong); font-style: normal; }
 .worker-home-regular { background: var(--ds-primary-surface); }
 .worker-home-substitute { background: #faeac6; }
+
+.worker-home-job-link { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }

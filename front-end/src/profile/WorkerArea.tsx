@@ -30,6 +30,6 @@ export function WorkerArea({ displayName, data, initialDate, onJobs, service = p
   if (profile) return <WorkerProfile initialProfile={profile} service={service} onBack={() => setProfile(null)} />
   return <><WorkerHome displayName={displayName} data={data} initialDate={initialDate} onProfile={() => void open()} onJobs={onJobs} />
     {busy && <p role="status">프로필을 확인하고 있어요.</p>}
-    <Modal open={error} state="information" title="프로필을 불러오지 못했어요" description="프로필 연결을 준비하고 있어요. 잠시 후 다시 시도해 주세요." cancelLabel="닫기" onClose={() => setError(false)} />
+    <Modal open={error} state="information" title="프로필을 불러오지 못했어요" description="서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요." cancelLabel="닫기" onClose={() => setError(false)} />
   </>
 }
