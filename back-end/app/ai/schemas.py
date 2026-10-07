@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.ai.contracts import (
     MAX_ASPECTS,
     MAX_CITATIONS,
+    MAX_EVIDENCE_IDS,
     MAX_MISSING,
     MAX_SECTIONS,
     MAX_SHIFTS,
@@ -58,6 +59,8 @@ def _object(properties: dict[str, dict[str, Any]], description: str | None = Non
 
 
 _REF = "기존 항목이면 입력에 있던 id를 그대로, 새 항목이면 new-1, new-2 같은 임시 참조"
+_EVIDENCE = ("근거가 된 evidence 조각의 id 목록(입력 evidence에 있는 값만, 최대 20개). "
+             "evidence가 비어 있거나 입력의 기존 항목을 내용 그대로 유지했으면 빈 배열")
 
 STRUCTURE_SCHEMA = _object({
     "shifts": _array(_object({
@@ -66,6 +69,7 @@ STRUCTURE_SCHEMA = _object({
         "start_time": _string("HH:MM 24시간제. 답변에 근거가 없으면 null", nullable=True),
         "end_time": _string("HH:MM 24시간제. 답변에 근거가 없으면 null", nullable=True),
         "ends_next_day": {"type": ["boolean", "null"], "description": "종료가 다음 날이면 true. 모르면 null"},
+        "evidence_ids": _array(_string("evidence id"), "시간 값(start_time/end_time/ends_next_day)의 " + _EVIDENCE),
     }), "근무조 목록 (최대 20개)"),
     "sections": _array(_object({
         "ref": _string(_REF),
@@ -76,6 +80,7 @@ STRUCTURE_SCHEMA = _object({
             "ref": _string(_REF),
             "instruction": _string("근무자가 따라 할 지시문 한 단계"),
             "checklist_item": {"type": "boolean", "description": "체크리스트로 확인할 만한 단계인지"},
+            "evidence_ids": _array(_string("evidence id"), "이 단계 내용의 " + _EVIDENCE),
         }), "순서대로의 단계. 근거가 없으면 빈 배열과 missing_information 항목"),
     }), "업무 섹션 목록 (최대 200개)"),
     "missing_information": _array(_object({
@@ -134,12 +139,18 @@ class RawShift(_Raw):
     start_time: str | None
     end_time: str | None
     ends_next_day: bool | None
+    # Required by the strict schema; defaults only so outputs captured before grounding (eval
+    # fixtures, scripted test outputs) still parse. Missing = no citation.
+    evidence_ids: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(
+        default_factory=list, max_length=MAX_EVIDENCE_IDS)
 
 
 class RawStep(_Raw):
     ref: str = Field(min_length=1, max_length=64)
     instruction: str = Field(min_length=1, max_length=3000)
     checklist_item: bool
+    evidence_ids: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(
+        default_factory=list, max_length=MAX_EVIDENCE_IDS)
 
 
 class RawSection(_Raw):
