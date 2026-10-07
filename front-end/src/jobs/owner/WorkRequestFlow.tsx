@@ -20,6 +20,6 @@ export function WorkRequestFlow({job,applicant,service=unavailableWorkRequests,o
  return <Modal key={complete?'complete':'confirm'} open showIcon={false} showCancel={!complete} closeOnConfirm={complete}
   className="owner-work-request-dialog" title={complete?'요청을 완료했어요!':'근무 요청을 보낼까요?'}
   summary={complete?undefined:<div className="owner-work-request-summary"><h3>{applicant.name}</h3><p>{applicant.experience||'등록한 경력 없음'}</p><OwnerJobSummary job={job}/></div>}
-  description={complete?'1시간 이내로 응답이 없으면 알려드릴게요':''}
+  description={complete?'근무 시작 전까지, 최대 1시간 동안 응답을 기다려요':''}
   confirmLabel={complete?'공고 목록 보기':'요청하기'} busy={busy} onClose={close} onConfirm={complete?undefined:confirm}/>
 }

@@ -1,0 +1,36 @@
+{
+  "getJobPosting": {
+    "title": "주말 오픈 대타",
+    "description": "음료 제조와 고객 응대",
+    "workPart": "WEEKEND_OPEN",
+    "workDate": "2026-10-10",
+    "startTime": "09:00",
+    "endTime": "14:00",
+    "endsNextDay": false,
+    "minimumExperience": "ANY",
+    "experienceNotes": "",
+    "hourlyPay": 12000,
+    "paymentTiming": "WORK_DAY",
+    "paymentNotes": "",
+    "id": "8215b01a-ed7b-4c4a-950f-c6e1480bd563",
+    "store": {
+      "id": "51c1c743-d377-4e7a-8449-94377eecfce0",
+      "name": "컴포즈커피 광운대점",
+      "industry": "CAFE",
+      "address": "서울특별시 노원구 광운로 20",
+      "neighborhood": "월계1동"
+    },
+    "status": "RECRUITING",
+    "recruitmentCount": 1,
+    "applicantCount": 0,
+    "startAt": "2026-10-10T00:00:00Z",
+    "endAt": "2026-10-10T05:00:00Z",
+    "estimatedPay": 60000,
+    "createdAt": "2026-10-05T01:00:00Z",
+    "closedAt": null,
+    "revision": 1,
+    "myApplicationId": null,
+    "canApply": true,
+    "cannotApplyReason": null
+  }
+}
