@@ -70,9 +70,9 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 | --- | --- | --- | --- |
 | `judge_sufficiency` | `SufficiencyRequest(intent, dialogue, depth, context, store)` | `SufficiencyJudgement(sufficient, probability, missing_aspects)`; `needs_follow_up` | Jev(#120). 기본은 Decisions API(아래 § Jev) |
 | `generate_question` | `QuestionRequest(kind=BASE/PROBE, intent, depth, dialogue, missing_aspects, context)` | `GeneratedQuestion(text)` | 기본·추가 질문(#120). PROBE는 `missing_aspects` 필수 |
-| `summarize_intent` | `IntentSummaryRequest(intent, dialogue, needs_detail, available_shifts)` | `IntentSummary(summary, structure)` | 인텐트 요약(#120) |
-| `revise_structure` | `StructureRevisionRequest(current, summary, target, instruction, external_shifts, require_manual_level)` | `StructureRevision(outcome, structure, summary)` | 인텐트 정정(#120), 초안 정정(#118) |
-| `compose_draft` | `DraftRequest(reviews)` | `DraftComposition(structure)` | 초안 생성(#120 completion) |
+| `summarize_intent` | `IntentSummaryRequest(intent, dialogue, needs_detail, available_shifts, evidence)` | `IntentSummary(summary, structure)` | 인텐트 요약(#120) |
+| `revise_structure` | `StructureRevisionRequest(current, summary, target, instruction, external_shifts, require_manual_level, evidence)` | `StructureRevision(outcome, structure, summary)` | 인텐트 정정(#120), 초안 정정(#118) |
+| `compose_draft` | `DraftRequest(reviews, evidence)` | `DraftComposition(structure)` | 초안 생성(#120 completion) |
 | `answer_question` | `QaRequest(question, manual, images)` | `QaAnswer(outcome, text, citations)` | 근무자 Q&A(#121) |
 | `transcribe` | `TranscriptionRequest(audio, mime_type, language="ko")` | `Transcript(text)` | 전사(이미 구현) |
 
@@ -88,6 +88,7 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 - 미확정 정보 ID는 같은 (대상, 대상 ID, 필드)이면 입력의 ID를 유지한다 → 부족 항목 확인 이력이 같은 issue를 계속 가리킨다.
 - `revise_structure`: SHIFT/SECTION 대상이면 대상 외 기존 항목이 하나라도 바뀌면 거절, 근무조 삭제로 다른 업무 참조가 깨지면 **서버가** `REFERENCE_CONFLICT`, 내용이 같으면 `NO_CHANGE`(revision을 올리지 않는다). `CLARIFICATION_REQUIRED`/`REFERENCE_CONFLICT`/`NO_CHANGE`이면 `structure`는 `None`이다. 검토 요약을 정정할 때는 `summary`를 넘기면 새 요약을 받는다.
 - `compose_draft`: 입력 검토의 모든 근무조·섹션 ID가 결과에 남아야 한다(사진 보존).
+- 근거 인용(작성 3연산, `evidence`가 있을 때, `validation.ground_structure`): 단계와 시간 값이 있는 근무조는 `evidence_ids`로 근거 조각을 인용한다. 입력 evidence에 없는 ID 인용은 `INVALID_OUTPUT`(`unknown_evidence_id`). 인용 없는 단계는 **제거**하고 단계가 모두 빠진 섹션에 SECTION/steps 미확정을, 인용 없는 시간 값은 null로 바꾸고 SHIFT 미확정을 붙인다(제거·미확정은 개수만 로그). 입력의 기존 항목을 그대로 돌려준 경우(정정의 미변경 단계·시간, 초안이 다듬은 검토 단계)는 인용이 없어도 된다. 인용 ID는 검증 뒤 버려지며 `StructureSnapshot`·API·DB 구조는 그대로다. `evidence`가 비어 있으면 검사하지 않는다(초안 정정 #118 등 기존 호출).
 - `answer_question`: `ANSWERED`는 인용 1개 이상, `NEEDS_OWNER`는 0개. 인용 섹션·단계는 입력 게시본에 있어야 하고, **발췌(excerpt)는 서버가 해당 단계 원문을 이어 만든다**(최대 1000자). 모델이 쓴 문장을 근거로 저장하지 않는다.
 
 ### 오류 분류 → 공개 오류
@@ -109,6 +110,10 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 3. **업무 상태**: 발화 없음은 재시도하지 않는 `EMPTY_TRANSCRIPT` → 즉시 ERROR `TRANSCRIPTION_FAILED`(빈 답변·지어낸 답변 저장 없음). 발화가 있으면 인식 텍스트 그대로 READY. 텍스트를 일괄로 버리거나 문구 목록으로 지우지 않는다.
 
 실측(2026-10-06, `gpt-transcribe`, `languages=["ko"]`): 무음 WAV·저역 소음(-30 dBFS) WAV → `text:""`, `languages:[]`; 합성 발화 "야간조는 밤 열 시부터…" → 정확한 문장, `languages:[ko]`; 짧은 "네." → `"네."`, `languages:[ko]`. 즉 현재 모델은 무음·소음에서 문장을 만들지 않았고, 2번 규칙은 모델이 바뀌거나 환각할 때의 방어선이다. 속삭임·강한 사투리·다국어 혼용에서 `languages:[]`가 실제 발화에 붙는지는 미검증이다.
+
+### 근거 검색 (RAG, `app.ai.retrieval`·`app.interview.evidence`)
+
+벡터 DB·임베딩 없이 MySQL에 저장된 **같은 인터뷰 세션**의 점주 턴(답변·정정)만 근거 풀로 쓴다(다른 매장 데이터 불가). 턴을 문장 단위 조각으로 나누고 ID는 `<turnId>#<문장번호>`(안정적). 작성 대상(인텐트 질문·기준, 정정 지시·섹션 제목, 초안의 검토 요약·제목·미확정)으로 문자 bigram BM25 순위를 매겨(조사 변형에 강함, 순수 파이썬, 동점은 원래 순서) 상위 k개를 고르고, 대상 인텐트 자체 조각은 항상 먼저 넣는다. 전체는 문자 수 예산(요약·정정 12000자, 초안 16000자)으로 상한한다. 요약은 evidence가 있으면 `dialogue` 대신 evidence(첫 조각에 질문 맥락)를 모델에 보낸다. 재시도 시 같은 입력: 요약은 작업 payload, 초안은 `generation_input_snapshot["evidence"]`에 고정하고, 인텐트 정정은 정정 턴 번호까지의 불변 턴으로 execute에서 같은 결과를 다시 만든다.
 
 ### 프롬프트 정책과 인젝션 방어
 

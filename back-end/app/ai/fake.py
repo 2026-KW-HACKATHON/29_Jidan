@@ -148,8 +148,26 @@ def _default_question(data):
     return {"question": f"{data['missing_aspects'][0]}에 대해 조금 더 자세히 알려 주세요."}
 
 
+def _own_evidence(data) -> list[tuple[str, list[str]]]:
+    """The intent's own evidence as (answer text, chunk IDs) per owner turn, in order."""
+    turns: dict[str, tuple[list[str], list[str]]] = {}
+    for chunk in data.get("evidence") or ():
+        if chunk["intent_key"] == data["intent"]["key"]:
+            texts, ids = turns.setdefault(chunk["id"].rsplit("#", 1)[0], ([], []))
+            texts.append(chunk["text"])
+            ids.append(chunk["id"])
+    return [(" ".join(texts), ids) for texts, ids in turns.values()]
+
+
 def _default_summary(data):
-    answers = [turn["answer"] for turn in data["dialogue"]]
+    """One step per owner answer; with evidence, each step cites its answer's chunks."""
+    cited = _own_evidence(data)
+    if cited:
+        answers = [text for text, _ids in cited]
+        citations = [ids for _text, ids in cited]
+    else:
+        answers = [turn["answer"] for turn in data["dialogue"]]
+        citations = [[] for _ in answers]
     title = data["intent"]["key"][:100]
     return {
         "summary": ("정리한 내용이에요: " + " ".join(answers))[:10000],
@@ -158,8 +176,9 @@ def _default_summary(data):
             "sections": [{
                 "ref": "new-1", "category": "COMMON_TASK", "shift_ref": None, "title": title,
                 "steps": [
-                    {"ref": f"new-{index + 2}", "instruction": answer[:3000], "checklist_item": False}
-                    for index, answer in enumerate(answers)
+                    {"ref": f"new-{index + 2}", "instruction": answer[:3000], "checklist_item": False,
+                     "evidence_ids": ids}
+                    for index, (answer, ids) in enumerate(zip(answers, citations, strict=True))
                 ],
             }],
             "missing_information": [],
@@ -210,6 +229,28 @@ DEFAULTS: dict[str, Callable[[Any], Any]] = {
 }
 
 
+GROUNDED_OPERATIONS = ("summarize_intent", "revise_structure", "compose_draft")
+
+
+def _auto_cite(data: dict[str, Any] | None, result: Any) -> Any:
+    """Scripted structures written before grounding omit `evidence_ids`; cite the request's
+    first evidence chunk for them so they keep their meaning. An explicit `evidence_ids`
+    (even an empty list) is left alone, so grounding tests script exactly what they mean."""
+    evidence = (data or {}).get("evidence") or []
+    structure = result.get("structure") if isinstance(result, dict) else None
+    if not evidence or not isinstance(structure, dict):
+        return result
+    first = [evidence[0]["id"]]
+    for shift in structure.get("shifts") or []:
+        if isinstance(shift, dict):
+            shift.setdefault("evidence_ids", first)
+    for section in structure.get("sections") or []:
+        for step in (section.get("steps") or []) if isinstance(section, dict) else []:
+            if isinstance(step, dict):
+                step.setdefault("evidence_ids", first)
+    return result
+
+
 def _parse_data(message: str) -> dict[str, Any] | None:
     start, end = message.find("<data>\n"), message.rfind("\n</data>")
     if start < 0 or end < 0:
@@ -223,11 +264,12 @@ class FakeAiProvider(AiProvider):
     transcribe_model = "fake-stt"
 
     def __init__(self, *, timeout_seconds: float = 1.0, sleep: Callable[[float], None] = time.sleep,
-                 judge_backend: str = "decisions"):
+                 judge_backend: str = "decisions", auto_cite: bool = True):
         if judge_backend not in JUDGE_BACKENDS:
             raise ValueError("judge_backend must be decisions or responses")
         self.timeout_seconds = timeout_seconds
         self.judge_backend = judge_backend
+        self.auto_cite = auto_cite  # see _auto_cite
         self._sleep = sleep
         self._lock = threading.Lock()
         self._queues: dict[str, deque[FakeOutcome]] = {op: deque() for op in OPERATIONS}
@@ -320,6 +362,8 @@ class FakeAiProvider(AiProvider):
             result = result.value
         if isinstance(result, BaseModel):
             result = result.model_dump(mode="json")
+        if operation in GROUNDED_OPERATIONS and self.auto_cite:
+            result = _auto_cite(data, json.loads(json.dumps(result)) if isinstance(result, dict) else result)
         return [result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)]
 
     def _transcribe(self, request: TranscriptionRequest) -> str:

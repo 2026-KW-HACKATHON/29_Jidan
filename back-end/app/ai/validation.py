@@ -3,13 +3,15 @@
 Structured Outputs guarantees a shape, not the truth. Everything here checks what the schema
 cannot: that referenced IDs were really present in the input, that new items use placeholders,
 that references resolve, the ManualContent rules for unknown values, and that a targeted
-correction did not touch unrelated content. A violation raises `AiError(INVALID_OUTPUT)`
+correction did not touch unrelated content, and (`ground_structure`) that written steps cite
+the owner's words given as evidence. A violation raises `AiError(INVALID_OUTPUT)`
 (retryable) with a fixed `detail` naming the rule, never the offending text.
 """
 
 import re
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 
 from app.ai.contracts import (
     Citation,
@@ -21,7 +23,7 @@ from app.ai.contracts import (
     clean_text,
 )
 from app.ai.errors import AiError, AiErrorCode
-from app.ai.schemas import RawCitation, RawMissing, RawStructure
+from app.ai.schemas import RawCitation, RawMissing, RawShift, RawStructure
 
 NEW_REF = re.compile(r"^new-[1-9][0-9]{0,3}$")
 TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -201,6 +203,106 @@ def _materialize_missing(
         )
         for key, description in entries.items()
     )
+
+
+UNGROUNDED_STEPS = "점주 답변에서 근거를 찾지 못한 단계라 비워 두었어요. 점주 확인이 필요해요."
+UNGROUNDED_TIME = "점주 답변에서 근거를 찾지 못한 시간이라 비워 두었어요. 점주 확인이 필요해요."
+ShiftTimes = tuple[str | None, str | None, bool | None]
+
+
+@dataclass(frozen=True)
+class Grounding:
+    """What `ground_structure` removed (counts only, safe to log)."""
+
+    dropped_steps: int = 0
+    cleared_shifts: int = 0
+
+
+def _times(shift: RawShift | ShiftItem) -> ShiftTimes:
+    return (shift.start_time, shift.end_time, shift.ends_next_day)
+
+
+def ground_structure(
+    raw: RawStructure,
+    evidence_ids: Iterable[str],
+    *,
+    grounded_steps: Mapping[str, str | None] | None = None,
+    grounded_shifts: Mapping[str, ShiftTimes | None] | None = None,
+) -> tuple[RawStructure, Grounding]:
+    """Enforce citations against the request's evidence before `materialize_structure`.
+
+    With no evidence (requests built before grounding, draft corrections) nothing is checked
+    and citations are ignored, so those callers behave exactly as before.
+
+    With evidence:
+    * Every cited ID must be one of the evidence chunk IDs, else INVALID_OUTPUT
+      (`unknown_evidence_id`, retryable): a made-up citation means the output cannot be trusted.
+    * A step without any citation is *removed*, not rejected. Rejecting would turn a single
+      unsupported sentence into a failed review after retries; keeping it would put a fact
+      the owner never said into the manual. Removing it keeps the policy "only the owner's own
+      words are facts" and the existing unknown-value rule: a section whose steps all went
+      becomes "steps unknown" and gets a SECTION/steps missing-information entry (an entry is
+      only valid for an unknown value, so a section that keeps other steps gets none).
+    * Shift times (start/end/endsNextDay) without a citation are cleared to null, each with a
+      SHIFT missing-information entry, for the same reason. Shift names and section titles are
+      labels, not facts, and need no citation.
+    * Content that already passed validation is exempt: `grounded_steps` maps existing step IDs
+      to their instruction (None = may be reworded, e.g. a draft polishing reviewed steps) and
+      `grounded_shifts` maps existing shift IDs to their times (None = any). An existing item
+      returned unchanged needs no new citation; a changed one does.
+    Model-written missing entries come first, so their wording wins over the fixed text here.
+    """
+    allowed = set(evidence_ids)
+    if not allowed:
+        return raw, Grounding()
+    grounded_steps = grounded_steps or {}
+    grounded_shifts = grounded_shifts or {}
+
+    def cited(ids: list[str]) -> bool:
+        if any(value not in allowed for value in ids):
+            raise invalid("unknown_evidence_id")
+        return bool(ids)
+
+    missing = list(raw.missing_information)
+    shifts: list[RawShift] = []
+    cleared = 0
+    for shift in raw.shifts:
+        times = _times(shift)
+        has_citation = cited(shift.evidence_ids)
+        exempt = shift.ref in grounded_shifts and grounded_shifts[shift.ref] in (None, times)
+        if times == (None, None, None) or has_citation or exempt:
+            shifts.append(shift)
+            continue
+        cleared += 1
+        shifts.append(shift.model_copy(update={"start_time": None, "end_time": None, "ends_next_day": None}))
+        missing.extend(
+            RawMissing(target="SHIFT", target_ref=shift.ref, field=field, description=UNGROUNDED_TIME)
+            for field in SHIFT_FIELDS
+        )
+
+    sections = []
+    dropped = 0
+    for section in raw.sections:
+        kept = []
+        for step in section.steps:
+            has_citation = cited(step.evidence_ids)
+            exempt = step.ref in grounded_steps and (
+                grounded_steps[step.ref] is None
+                or clean_text(grounded_steps[step.ref]) == clean_text(step.instruction))
+            if has_citation or exempt:
+                kept.append(step)
+            else:
+                dropped += 1
+        if section.steps and not kept:
+            missing.append(RawMissing(target="SECTION", target_ref=section.ref, field="steps",
+                                      description=UNGROUNDED_STEPS))
+        sections.append(section.model_copy(update={"steps": kept}) if len(kept) != len(section.steps)
+                        else section)
+
+    if not cleared and not dropped:
+        return raw, Grounding()
+    grounded = raw.model_copy(update={"shifts": shifts, "sections": sections, "missing_information": missing})
+    return grounded, Grounding(dropped_steps=dropped, cleared_shifts=cleared)
 
 
 def known_ids(snapshot: StructureSnapshot) -> dict[str, set[str]]:

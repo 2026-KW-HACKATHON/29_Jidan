@@ -62,6 +62,7 @@ from app.ai.validation import (
     build_citations,
     check_revision_scope,
     dangling_shift_references,
+    ground_structure,
     invalid,
     known_ids,
     materialize_structure,
@@ -88,6 +89,15 @@ class RawTranscript:
 
 def _structure_payload(snapshot: StructureSnapshot) -> dict[str, Any]:
     return snapshot.model_dump(mode="json")
+
+
+def _ground(operation: str, raw_structure, evidence, **exempt):
+    """`ground_structure` against the request's evidence; logs counts only (never text)."""
+    structure, grounding = ground_structure(raw_structure, (chunk.id for chunk in evidence), **exempt)
+    if grounding.dropped_steps or grounding.cleared_shifts:
+        logger.info("ai grounding op=%s dropped_steps=%d cleared_shifts=%d", operation,
+                    grounding.dropped_steps, grounding.cleared_shifts)
+    return structure
 
 
 class AiProvider(ABC):
@@ -236,9 +246,12 @@ class AiProvider(ABC):
         return GeneratedQuestion(text=text, meta=self.meta("generate_question"))
 
     def summarize_intent(self, request: IntentSummaryRequest) -> IntentSummary:
-        raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json"))
+        # With evidence the model sees the retrieved owner sentences (with their questions)
+        # instead of the whole dialogue; without it, the request is sent as before.
+        exclude = {"dialogue"} if request.evidence else None
+        raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json", exclude=exclude))
         structure = materialize_structure(
-            raw.structure,
+            _ground("summarize_intent", raw.structure, request.evidence),
             known_shift_ids=[shift.id for shift in request.available_shifts],
             external_shifts=request.available_shifts,
         )
@@ -263,8 +276,14 @@ class AiProvider(ABC):
             return StructureRevision(outcome=raw.outcome, meta=meta)
         external_ids = {shift.id for shift in request.external_shifts}
         try:
+            grounded = _ground(
+                "revise_structure", raw.structure, request.evidence,
+                grounded_steps={step.id: step.instruction for section in current.sections for step in section.steps},
+                grounded_shifts={shift.id: (shift.start_time, shift.end_time, shift.ends_next_day)
+                                 for shift in current.shifts},
+            )
             structure = materialize_structure(
-                raw.structure,
+                grounded,
                 known_shift_ids=ids["shift"] | external_ids,
                 known_section_ids=ids["section"], known_step_ids=ids["step"],
                 external_shifts=request.external_shifts,
@@ -295,14 +314,20 @@ class AiProvider(ABC):
         section_ids: set[str] = set()
         step_ids: set[str] = set()
         previous = []
+        reviewed_shifts: dict[str, tuple] = {}
         for review in request.reviews:
+            reviewed_shifts.update({s.id: (s.start_time, s.end_time, s.ends_next_day) for s in review.structure.shifts})
             ids = known_ids(review.structure)
             shift_ids |= ids["shift"]
             section_ids |= ids["section"]
             step_ids |= ids["step"]
             previous.extend(review.structure.missing_information)
+        # Reviewed steps were grounded when their review was written and may be reworded here;
+        # anything new must cite the evidence.
+        grounded = _ground("compose_draft", raw.structure, request.evidence,
+                           grounded_steps=dict.fromkeys(step_ids), grounded_shifts=reviewed_shifts)
         structure = materialize_structure(
-            raw.structure, known_shift_ids=shift_ids, known_section_ids=section_ids,
+            grounded, known_shift_ids=shift_ids, known_section_ids=section_ids,
             known_step_ids=step_ids, previous_missing=previous, require_manual_level=True,
         )
         # Photos hang on section IDs, so every reviewed shift and section must survive.

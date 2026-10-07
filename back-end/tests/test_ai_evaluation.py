@@ -66,6 +66,8 @@ def test_mutants_separate_structure_failures_and_critical_gold_failures():
         ("qa-valid-citation-wrong-time", "exact-spoken-time-and-count"),
         ("revision-ambiguous", "correction-outcome"),
         ("summary-cafe", "spoken-step"),
+        ("summary-cafe", "cites-evidence"),  # the invented step had no citation
+        ("summary-restaurant", "cites-evidence"),
         ("draft-restaurant", "spoken-step"),
     ]:
         assert indexed[case_id]["structure"] == "pass"
@@ -89,6 +91,20 @@ def test_gold_contract_rejects_unknown_or_incomplete_checks(mutation):
     mutation(case)
     with pytest.raises(ValidationError):
         Case.model_validate(case)
+
+
+def test_evidence_check_needs_a_grounded_case_with_evidence():
+    grounded = next(case for case in rows("gold.jsonl") if case["id"] == "summary-cafe")
+    Case.model_validate(grounded)
+    without = json.loads(json.dumps(grounded))
+    without["request"].pop("evidence")
+    jev = rows("gold.jsonl")[0]
+    jev["expected"]["checks"].append({"id": "cites", "kind": "evidence_cited"})
+    bad_value = json.loads(json.dumps(grounded))
+    bad_value["expected"]["checks"][-1]["value"] = "t1#1"
+    for case in (without, jev, bad_value):
+        with pytest.raises(ValidationError):
+            Case.model_validate(case)
 
 
 def test_duplicate_case_and_response_ids_are_rejected(tmp_path):

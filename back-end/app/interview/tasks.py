@@ -30,6 +30,7 @@ from app.ai.contracts import (
 from app.db import session_scope, utcnow
 from app.db.models import (
     InterviewEvaluation,
+    InterviewIntent,
     InterviewIntentReview,
     InterviewSession,
     InterviewTurn,
@@ -37,6 +38,7 @@ from app.db.models import (
 from app.interview import drafting
 from app.interview.common import lock_review, lock_session_row
 from app.interview.content import content_from_structure, photo_ids, snapshot_from_content
+from app.interview.evidence import correction_evidence
 from app.interview.flow import (
     apply_judgement,
     available_shifts,
@@ -181,15 +183,18 @@ def _understanding_apply(db: Session, ctx: TaskContext, summary: IntentSummary) 
 
 def correction_request(db: Session, session_id: str, intent_id: str, turn_id: str) -> StructureRevisionRequest:
     """The review's last READY content (unchanged while the correction is PROCESSING), the
-    correction turn's text, the other reviews' shifts and the store wording context."""
+    correction turn's text, the other reviews' shifts, the store wording context and the
+    owner's words up to this correction as evidence (app.interview.evidence)."""
     review = db.get(InterviewIntentReview, (session_id, intent_id))
     content = review.ready_content
     session = db.get(InterviewSession, session_id)
+    turn = db.get(InterviewTurn, turn_id)
+    current = snapshot_from_content(content)
     return StructureRevisionRequest(
-        current=snapshot_from_content(content), summary=content["summary"],
-        instruction=db.get(InterviewTurn, turn_id).content,
+        current=current, summary=content["summary"], instruction=turn.content,
         external_shifts=tuple(available_shifts(db, session_id, intent_id)),
         store=store_context(store_of(db, session)),
+        evidence=correction_evidence(db, session_id, db.get(InterviewIntent, intent_id).intent_key, turn, current),
     )
 
 
