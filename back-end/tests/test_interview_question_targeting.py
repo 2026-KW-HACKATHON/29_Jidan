@@ -22,7 +22,13 @@ import pytest
 
 from app.ai import build_provider_from_env
 from app.ai.aspects import ASPECTS_VERSION, aspects_for
-from app.ai.contracts import ContextNote, DialogueTurn, IntentBrief, QuestionRequest, SufficiencyRequest
+from app.ai.contracts import (
+    ContextNote,
+    DialogueTurn,
+    IntentBrief,
+    QuestionRequest,
+    SufficiencyRequest,
+)
 from app.ai.decisions import build_request
 from app.ai.fake import FakeAiProvider, FakeOutcome
 from app.ai.openai_provider import OpenAiProvider
