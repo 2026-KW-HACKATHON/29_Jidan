@@ -19,6 +19,11 @@ export type JobPosting = { "title": string; "description": string; "workPart": "
 export type JobPostingCreate = { "title": string; "description": string; "workPart": "WEEKDAY_OPEN" | "WEEKDAY_CLOSE" | "WEEKEND_OPEN" | "WEEKEND_CLOSE" | "OTHER"; "workDate": string; "startTime": string; "endTime": string; "endsNextDay": boolean; "minimumExperience": "ANY" | "MONTHS_3" | "MONTHS_6" | "YEAR_1"; "experienceNotes": string; "hourlyPay": number; "paymentTiming": "WORK_DAY" | "NEXT_DAY" | "NEGOTIABLE"; "paymentNotes": string }
 export type JobPostingPage = { "items": Array<JobPosting>; "page": number; "size": number; "totalItems": number; "asOf": string }
 export type JobStoreCard = { "id": string; "name": string; "industry": Industry; "address": string; "neighborhood": string }
+export type ManualMissingInformation = { "id": string; "target": "MANUAL" | "SHIFT" | "SECTION"; "targetId": string | null; "field": "shifts" | "sections" | "startTime" | "endTime" | "endsNextDay" | "steps"; "description": string } & ({ "target": "MANUAL"; "targetId": null; "field": "shifts" | "sections" } | { "target": "SHIFT"; "targetId": string; "field": "startTime" | "endTime" | "endsNextDay" } | { "target": "SECTION"; "targetId": string; "field": "steps" })
+export type ManualPhotoAttachment = { "mediaId": string; "caption": string | null; "title": string }
+export type ManualSection = { "id": string; "category": "COMMON_TASK" | "SHIFT_TASK" | "RULE" | "EQUIPMENT"; "shiftId": string | null; "title": string; "steps": Array<ManualStep>; "photos": Array<ManualPhotoAttachment> } & ({ "category": "SHIFT_TASK"; "shiftId": string } | { "category": "COMMON_TASK" | "RULE" | "EQUIPMENT"; "shiftId": null })
+export type ManualShift = { "id": string; "name": string; "startTime": string | null; "endTime": string | null; "endsNextDay": boolean | null }
+export type ManualStep = { "id": string; "instruction": string; "checklistItem": boolean }
 export type Name = string
 export type Notification = { "id": string; "type": "NEW_APPLICATION" | "INVITATION_ACCEPTED" | "STORE_APPROVED" | "INVITATION_EXPIRED" | "WORK_REQUEST_RECEIVED" | "WORK_REQUEST_NO_RESPONSE" | "WORK_CONFIRMED" | "STORE_INVITED" | "WORK_REMINDER" | "MANUAL_PUBLISHED" | "WORK_REQUEST_WITHDRAWN" | "WORK_CONFIRMATION_WITHDRAWN"; "title": string; "body": string; "target": NotificationTarget; "createdAt": string; "readAt": string | null }
 export type NotificationPage = { "items": Array<Notification>; "page": number; "size": number; "totalItems": number; "asOf": string; "unreadCount": number }
@@ -31,6 +36,9 @@ export type OwnerStore = { "name": string; "industry": Industry; "postalCode": s
 export type OwnerStoreManagementSummary = { "storeId": string; "pendingInvitationCount": number; "activeWorkerCount": number; "expiringWorkerCount": number; "asOf": string }
 export type OwnerStorePage = { "items": Array<OwnerStore>; "page": number; "size": number; "totalItems": number; "totalPages": number; "asOf": string }
 export type PhoneNumber = string
+export type PublishedManualList = { "versionId": string; "storeId": string; "versionNumber": number; "ownerConfirmed": true; "publishedAt": string; "shifts": Array<ManualShift>; "sections": Array<PublishedManualSectionSummary>; "structurePhotos"?: Array<ManualPhotoAttachment>; "missingInformation"?: Array<ManualMissingInformation> } & (unknown)
+export type PublishedManualSectionDetail = { "versionId": string; "storeId": string; "ownerConfirmed": true; "publishedAt": string; "section": ManualSection; "missingInformation"?: Array<ManualMissingInformation> } & (unknown)
+export type PublishedManualSectionSummary = { "id": string; "category": "COMMON_TASK" | "SHIFT_TASK" | "RULE" | "EQUIPMENT"; "shiftId": string | null; "title": string; "stepCount": number; "photoCount": number } & ({ "category": "SHIFT_TASK"; "shiftId": string } | { "category": "COMMON_TASK" | "RULE" | "EQUIPMENT"; "shiftId": null })
 export type ReceivedInvitation = { "id": string; "store": JobStoreCard; "status": "PENDING" | "ACCEPTED" | "DECLINED" | "EXPIRED" | "CANCELLED"; "expiresAt": string; "accessExpiresAt": string | null; "createdAt": string }
 export type ReceivedInvitationPage = { "items": Array<ReceivedInvitation>; "page": number; "size": number; "totalItems": number; "asOf": string }
 export type ReceivedInvitationResponse = { "decision": "ACCEPT" | "DECLINE" }
@@ -81,6 +89,8 @@ export type Operations = {
  getStoreWorker: {input: undefined; output: StoreWorkerAccess}
  revokeStoreWorkerAccess: {input: undefined; output: void}
  getStoreManagementSummary: {input: undefined; output: OwnerStoreManagementSummary}
+ getPublishedManual: {input: undefined; output: PublishedManualList}
+ getPublishedManualSection: {input: undefined; output: PublishedManualSectionDetail}
  getOwnerJobPosting: {input: undefined; output: JobPosting}
  closeJobPosting: {input: JobClosure; output: JobPosting}
  createJobPosting: {input: JobPostingCreate; output: JobPosting}

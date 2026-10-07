@@ -4,7 +4,7 @@ const spec=JSON.parse(readFileSync(process.argv[2],'utf8')), used=new Set(), ope
 const refName=s=>s?.$ref?.split('/').at(-1)
 function refs(value){if(Array.isArray(value))value.forEach(refs);else if(value&&typeof value==='object'){const name=refName(value);if(name&&!used.has(name)){used.add(name);refs(spec.components.schemas[name])}Object.values(value).forEach(refs)}}
 for(const [path,methods] of Object.entries(spec.paths))for(const [method,op] of Object.entries(methods)){
- if(!op.operationId||/\/auth\/|\/admin\/|\/manual(?:\/|$)/.test(path))continue
+ if(!op.operationId||/\/auth\/|\/admin\//.test(path)||(/\/manual(?:\/|$)/.test(path)&&!['getPublishedManual','getPublishedManualSection'].includes(op.operationId)))continue
  const input=Object.values(op.requestBody?.content??{})[0]?.schema
  const response=Object.entries(op.responses).find(([status,value])=>status.startsWith('2')&&value.content?.['application/json'])?.[1].content['application/json'].schema
  operations[op.operationId]={method:method.toUpperCase(),path:path.slice(4),input:input??{},output:response??null,parameters:(op.parameters??[]).map(p=>p.$ref?spec.components.parameters[refName(p)]:p).filter(p=>['path','query'].includes(p.in))};refs(input);refs(response)
