@@ -4,7 +4,8 @@ the first draft (DRAFT_GENERATION). Later draft edits and corrections belong to 
 Completion (request; store_manuals, session and version locked in that order): READY_TO_GENERATE, session revision and every
 review's (intentId, revision) as listed by GET reviews, every review READY, cross-review shift
 references intact. Then, atomically: `generation_input_snapshot`, snapshot photo references,
-draft RUNNING, session GENERATING and the task. Review changes after that are refused because
+draft RUNNING, session GENERATING and the task. The snapshot also freezes the evidence (the
+owner's own words, app.interview.evidence) the composition may cite. Review changes after that are refused because
 the session is GENERATING (first accepted wins).
 
 Apply (task): the composed structure, with the reviews' photos re-attached by section ID
@@ -21,7 +22,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai import get_ai_provider
-from app.ai.contracts import DraftComposition, DraftRequest, ReviewForDraft, StoreContext
+from app.ai.contracts import (
+    DraftComposition,
+    DraftRequest,
+    EvidenceChunk,
+    ReviewForDraft,
+    StoreContext,
+)
 from app.db import new_uuid, session_scope, utcnow
 from app.db.models import (
     InterviewIntent,
@@ -51,6 +58,7 @@ from app.interview.content import (
     shift_ids,
     snapshot_from_content,
 )
+from app.interview.evidence import draft_evidence
 from app.interview.flow import intent_label, store_context
 from app.manual_editing import ContentIn, prepare_content, write_initial_content
 from app.media.references import add_snapshot_refs
@@ -100,6 +108,9 @@ def start_generation(db: Session, store: Store, manual: StoreManual, session: In
                      "content": review.ready_content} for p, intent, review in ordered],
     }
     snapshot["store"] = store_context(store).model_dump(mode="json")
+    # The owner's words for anything the draft adds beyond the reviews, frozen with the snapshot.
+    snapshot["evidence"] = [chunk.model_dump(mode="json") for chunk in draft_evidence(
+        db, session.id, (review.ready_content for _p, _i, review in ordered))]
     draft_request(snapshot)  # the frozen input must make a valid request (same check as execute)
     version.generation_input_snapshot = snapshot
     version.generation_status = "RUNNING"
@@ -140,6 +151,7 @@ def draft_request(snapshot: dict[str, Any]) -> DraftRequest:
             for review in snapshot["reviews"]
         ),
         store=StoreContext.model_validate(snapshot["store"]) if snapshot.get("store") else None,
+        evidence=tuple(EvidenceChunk.model_validate(chunk) for chunk in snapshot.get("evidence", ())),
     )
 
 

@@ -47,6 +47,7 @@ from app.db.models import (
     StoreManual,
 )
 from app.interview.common import reviews_in_order, session_intents
+from app.interview.evidence import summary_evidence
 from app.tasks import enqueue
 
 MAX_DEPTH = 5
@@ -274,6 +275,7 @@ def enqueue_understanding(db: Session, session: InterviewSession, intent: Interv
         intent=intent_brief(intent), dialogue=tuple(dialogue_of(db, session.id, intent.id)),
         needs_detail=needs_detail, available_shifts=tuple(available_shifts(db, session.id, intent.id)),
         store=store_context(store),
+        evidence=summary_evidence(db, session.id, intent),  # frozen in the payload (retries)
     )
     review = InterviewIntentReview(session_id=session.id, intent_id=intent.id, revision=1, status="PROCESSING")
     payload = {"intentId": intent.id, "needsDetail": needs_detail, "request": request.model_dump(mode="json")}
