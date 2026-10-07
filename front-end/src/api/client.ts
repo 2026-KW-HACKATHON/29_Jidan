@@ -36,11 +36,13 @@ export class ApiError extends Error {
   }
 }
 // Relative URLs keep dev and production cookies/API requests on their own origin.
-export function apiUrl(path: string) {
+export function apiUrl(path: string, query?: Record<string, string | number | boolean | undefined>) {
   if (!/^\/[a-zA-Z0-9][a-zA-Z0-9/_-]*$/.test(path)) throw new Error('INVALID_API_PATH')
-  return `/api${path}`
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query || {})) if (value !== undefined) params.set(key, String(value))
+  return `/api${path}${params.size ? `?${params}` : ''}`
 }
-export type RequestOptions = { signal: AbortSignal; method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'; body?: unknown; idempotencyKey?: string; allowExpiredCsrf?: boolean }
+export type RequestOptions = { signal: AbortSignal; method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'; body?: unknown; query?: Record<string, string | number | boolean | undefined>; idempotencyKey?: string; allowExpiredCsrf?: boolean }
 export async function apiRequest<T>(path: string, options: RequestOptions): Promise<T> {
   const controller = new AbortController()
   const cancel = () => controller.abort(options.signal.reason)
@@ -62,7 +64,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions): Prom
       signal.throwIfAborted()
       if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey)
       if (options.body !== undefined) headers.set('Content-Type', 'application/json')
-      return send<T>(path, { method, headers, signal, body: options.body === undefined ? undefined : JSON.stringify(options.body) })
+      return send<T>(path, { method, headers, signal, body: options.body === undefined ? undefined : JSON.stringify(options.body) }, options.query)
     }, controller)
   } catch (error) {
     if (options.signal.aborted) throw options.signal.reason
@@ -71,8 +73,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions): Prom
     throw new ApiError(0, 'NETWORK_ERROR')
   } finally { options.signal.removeEventListener('abort', cancel) }
 }
-async function send<T>(path: string, init: RequestInit): Promise<T> {
-  const response = await fetch(apiUrl(path), { ...init, credentials: 'include', cache: 'no-store', redirect: 'error' })
+async function send<T>(path: string, init: RequestInit, query?: RequestOptions['query']): Promise<T> {
+  const response = await fetch(apiUrl(path, query), { ...init, credentials: 'include', cache: 'no-store', redirect: 'error' })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
     const fields = Array.isArray(body?.fieldErrors) ? body.fieldErrors.filter((field: FieldError) => field && typeof field.field === 'string' && typeof field.message === 'string') : []

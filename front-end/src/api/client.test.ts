@@ -44,3 +44,12 @@ it('취소와 이미 취소된 요청은 늦은 결과를 전달하지 않는다
   const request = apiRequest('/auth/session', { signal: controller.signal }); const assertion = expect(request).rejects.toHaveProperty('name', 'AbortError'); controller.abort(); await assertion
   await expect(apiRequest('/auth/session', { signal: controller.signal })).rejects.toHaveProperty('name', 'AbortError'); expect(fetch).toHaveBeenCalledTimes(1)
 })
+
+it('조회 매개변수는 별도로 인코딩하고 0과 false를 보존한다', async () => {
+  const fetch = vi.fn().mockResolvedValue(json({items:[]})); vi.stubGlobal('fetch', fetch)
+  await apiRequest('/job-postings', {signal:signal(), query:{page:0, keyword:'카페 & 야간#1', active:false, omitted:undefined}})
+  const [url] = fetch.mock.calls[0]
+  expect(url).toBe('/api/job-postings?page=0&keyword=%EC%B9%B4%ED%8E%98+%26+%EC%95%BC%EA%B0%84%231&active=false')
+  expect(apiUrl('/job-postings',{})).toBe('/api/job-postings')
+  expect(()=>apiUrl('//outside',{next:'https://outside'})).toThrow()
+})
