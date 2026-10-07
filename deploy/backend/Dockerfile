@@ -18,10 +18,10 @@ COPY requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 COPY . .
 COPY --from=swagger /swagger-static ./swagger-static
-RUN python -m ruff check . && python -m pytest
+RUN python -m ruff check .
 
-# The test stage needs tests/ (and the build context must keep them), but the runtime image does
-# not ship test code or the demo E2E harness.
+# The shared pipeline uses the test target for static checks only. Functional tests and HTTP
+# E2E run separately after deployment; the runtime image excludes their code and fixtures.
 FROM python:3.12-slim AS runtime-source
 COPY . /src
 RUN rm -rf /src/tests /src/e2e /src/testing

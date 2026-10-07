@@ -2,7 +2,7 @@
 
 ## 실행 구조
 
-- **RPi4**: `jidan-rpi4-build` self-hosted runner에서 테스트와 ARM64 이미지 빌드, GHCR 업로드.
+- **RPi4**: `jidan-rpi4-build` self-hosted runner에서 정적 검사와 ARM64 이미지 빌드, GHCR 업로드.
 - **RPi5**: `jidan-rpi5-deploy` self-hosted runner에서 이미지를 내려받아 Docker Compose 배포.
 - 배포 서버는 소스를 빌드하지 않는다. 이미지는 커밋 SHA로 게시하고 실제 배포는 digest로 고정한다.
 - FE와 BE는 독립적인 Compose 프로젝트로 배포한다. 한쪽 배포가 다른 쪽 이미지를 바꾸지 않는다.
@@ -13,7 +13,7 @@
 | `back-end/dev` | `dev` | `dev-jidan.leehyowon14.dev` | BE |
 | `main` | `production` | `jidan.leehyowon14.dev` | 변경된 FE/BE |
 
-PR은 테스트·빌드만 수행한다. 같은 저장소의 PR만 self-hosted runner에서 실행하며, fork PR은 자동 실행하지 않는다. `feat/fix/hotfix → dev → main` 병합 규칙은 [BRANCHING.md](../BRANCHING.md)를 따른다.
+backend PR은 배포 설정·명세·정적 검사와 이미지 빌드만 수행한다. 전체 Python 및 HTTP·MySQL E2E는 자동 CI에서 실행하지 않는다. frontend 검사 흐름은 기존대로 유지한다. 같은 저장소의 PR만 self-hosted runner에서 실행하며, fork PR은 자동 실행하지 않는다. `feat/fix/hotfix → dev → main` 병합 규칙은 [BRANCHING.md](../BRANCHING.md)를 따른다.
 
 두 앱은 별도로 배포되므로 `main`의 FE·BE 배포는 원자적이지 않다. API 변경은 기존 클라이언트와 호환되도록 준비한다.
 
@@ -43,7 +43,7 @@ PR은 테스트·빌드만 수행한다. 같은 저장소의 PR만 self-hosted r
 - `requirements-dev.txt`: Ruff, pytest 및 테스트 의존성을 명시한다.
 - 재현성을 위해 의존성 버전을 고정한다. 빌드 환경은 Python 3.12다.
 - 진입점은 `app/main.py`의 `app`이다. `python -m uvicorn app.main:app`으로 실행한다.
-- `python -m ruff check .`, `python -m pytest`가 통과해야 한다. 테스트가 없는 상태도 실패한다.
+- CI에서는 `python -m ruff check .`와 명세 검사·이미지 빌드를 수행한다. 전체 `pytest`와 HTTP·MySQL E2E는 배포 후 에이전트가 별도 검증하고 결과를 PR에 기록한다.
 - 인증 없이 `GET /api/health`가 200을 반환해야 한다. 앱 초기화 때 해당 endpoint와 테스트를 추가한다.
 - DB 설정은 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` 환경 변수에서 읽는다.
 - DB 대기 시간: 연결 3초, 행 잠금 대기 `DB_LOCK_WAIT_TIMEOUT_SECONDS`(기본 5초, 세션 `innodb_lock_wait_timeout`), 쿼리 읽기·쓰기 `DB_READ_TIMEOUT_SECONDS`(기본 15초). 둘 다 선택 값이며 `1 ≤ 잠금 대기 < 읽기 ≤ 55`(nginx `proxy_read_timeout 60s` 아래)를 어기거나 숫자가 아니면 앱이 시작하지 않는다(배포 헬스체크 실패 → 이전 릴리즈로 복구). 읽기 제한이 잠금 대기보다 짧으면 잠금 대기가 2013 연결 끊김으로 끝나 재시도·409 처리를 건너뛰고 500이 된다. `/api/health`는 별도 1개 연결 엔진에서 연결·읽기 3초로 `SELECT 1`만 하므로 컨테이너 헬스체크(2초 요청, 3초 제한)와 배포 `curl --max-time 10` 안에서 끝난다. 마이그레이션 세션의 `lock_wait_timeout = 15`(metadata lock)는 별개 설정이다.
@@ -197,7 +197,7 @@ python3 -m unittest discover -s deploy/tests -v
 
 릴리즈는 `/home/ubuntu/apps/jidan/<환경>/<frontend|backend>/releases/`에 보관한다. 백엔드 릴리즈에는 환경 파일 사본이 있으므로 해당 디렉터리도 비공개로 관리한다. 성공한 배포 뒤 해당 환경·컴포넌트의 검증된 최근 릴리즈 5개와 현재 릴리즈를 보관하고 나머지를 정리한다. 복구 중인 `pending` 기록이 있으면 릴리즈를 삭제하지 않는다.
 
-RPi4는 `jidan-ci` 전용 Buildx builder를 사용한다. 테스트 단계는 Docker 이미지로 내보내지 않고 전용 캐시에만 저장한다. 빌드 종료 시 해당 캐시를 최대 4GB·여유 공간 8GB 목표로 정리한다(정리 가능한 캐시에 한하므로 용량을 보장하는 quota는 아니다). FE/BE별 최근 이미지 참조 5개를 보관하며, 실행·정지된 컨테이너가 사용하는 이미지는 제외한다. RPi5에서는 보관 중인 모든 환경의 릴리즈 이미지도 보호한다. 다른 프로젝트의 이미지·builder와 Docker volume은 정리하지 않으며 `--force` 이미지 삭제를 사용하지 않는다. GHCR 원격 이미지에는 이 로컬 보관 정책을 적용하지 않는다.
+RPi4는 `jidan-ci` 전용 Buildx builder를 사용한다. 검사 단계(`test` target)는 Docker 이미지로 내보내지 않고 전용 캐시에만 저장한다. 빌드 종료 시 해당 캐시를 최대 4GB·여유 공간 8GB 목표로 정리한다(정리 가능한 캐시에 한하므로 용량을 보장하는 quota는 아니다). FE/BE별 최근 이미지 참조 5개를 보관하며, 실행·정지된 컨테이너가 사용하는 이미지는 제외한다. RPi5에서는 보관 중인 모든 환경의 릴리즈 이미지도 보호한다. 다른 프로젝트의 이미지·builder와 Docker volume은 정리하지 않으며 `--force` 이미지 삭제를 사용하지 않는다. GHCR 원격 이미지에는 이 로컬 보관 정책을 적용하지 않는다.
 
 정리 단계가 실패하면 CI에 실패가 표시된다. 앱 배포 후의 정리 실패는 경고를 남기며, 이미 검증·확정된 앱 배포를 롤백하지 않는다.
 
@@ -207,7 +207,7 @@ RPi4는 `jidan-ci` 전용 Buildx builder를 사용한다. 테스트 단계는 Do
 
 Swagger는 별도 수동 배포 대상이 아니라 개발 백엔드 이미지에 포함된 문서입니다.
 
-1. PR: backend CI에서 Node 명세 lint/계약 테스트/정적 빌드, Python 검사/테스트, ARM64 이미지 빌드를 수행합니다. PR에서는 CD가 실행되지 않습니다.
+1. PR: backend CI에서 Node 명세 lint/계약 테스트/정적 빌드, Python 정적 검사, ARM64 이미지 빌드를 수행합니다. 전체 Python 및 HTTP·MySQL E2E는 CI 선행 조건이 아닙니다. PR에서는 CD가 실행되지 않습니다.
 2. `back-end/dev` 반영: 같은 CI를 통과한 이미지를 GHCR에 게시하고 기존 RPi5 CD가 개발 backend Compose를 교체합니다.
 3. 개발 앱은 `APP_ENV=dev`에서만 `/api/swagger/`를 제공합니다. 동일 이미지가 production에서 실행되어도 설계 Swagger 경로는 등록하지 않습니다.
 4. CD는 기존 health 및 이미지 digest 확인에 더해 로컬/공개 Swagger UI와 JSON을 검증합니다. 실패하면 기존 복구 절차로 이전 backend 이미지에 돌아갑니다.
@@ -250,3 +250,7 @@ backend CI는 `python3 deploy/scripts/verify_nginx.py`로 dev/production 원본 
 multipart 구분자를 위해 21m이다. 용도별 정확한 상한(사진 10 MiB, 음성 20 MiB·120초)은 앱이
 413으로 판정한다. 같은 스크립트가 두 경로의 20 MiB 업로드 통과와 그 밖의 경로·상한 초과의
 413을 확인한다.
+
+## 배포 후 백엔드 검증
+
+배포 스크립트의 컨테이너·공개 health 검사와 롤백은 유지한다. 개발 배포가 완료되면 에이전트가 배포된 커밋·문서 revision·health 및 실제 사용자 흐름을 확인하고, 저장 결과·API 재조회·권한 거부 결과와 미검증 범위를 PR에 기록한다. E2E의 스키마 초기화·실패 주입은 격리된 테스트 DB에서만 수행하며 개발·운영 DB에 테스트 하네스를 연결하지 않는다. 전체 회귀 검증은 해당 배포 소스로 로컬의 `back-end/testing/run-e2e.sh` 또는 수동 `Backend HTTP E2E` 워크플로우를 실행한다. 격리 회귀 결과와 배포 서버 검증 결과를 구분해 기록한다.

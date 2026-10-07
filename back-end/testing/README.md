@@ -86,7 +86,7 @@ back-end/testing/run-e2e.sh
 docker compose -p <남은-jidan-e2e-프로젝트> -f back-end/testing/compose.yml --profile e2e down --volumes
 ```
 
-GitHub Actions `backend CI/CD`는 GitHub-hosted `Backend HTTP E2E` 성공 후 기존 이미지 빌드·배포 단계를 진행한다. XML과 로그는 artifact로 7일 보관한다. `Backend HTTP E2E`를 수동 실행해 독립 검증할 수도 있다. 기존 배포 서버와 배포 방식은 이 변경에서 수정하지 않았다.
+GitHub Actions `backend CI/CD`는 전체 Python 및 HTTP·MySQL E2E를 실행하지 않고 정적 검사와 이미지 빌드·배포를 진행한다. 배포 후 에이전트가 실제 서버를 검증하고, 격리 회귀가 필요하면 `back-end/testing/run-e2e.sh` 또는 수동 `Backend HTTP E2E`를 실행한다. 수동 워크플로우의 XML과 로그는 artifact로 7일 보관한다. 이 하네스의 DB 초기화·실패 주입은 테스트 DB에만 적용하며 배포 서버 DB에 실행하지 않는다.
 
 ## 검증 범위
 
@@ -123,8 +123,8 @@ DB 실패는 폐기되는 E2E DB에만 조건부 trigger로 주입하며 `finall
 
 - 원본 HTTP 파일 10개 중 9개는 byte 동일하다. 프로필 시험 1개의 2개 저장 assertion만 로컬의 자식 row 재사용에 맞췄으며 내용/순서/옛 데이터 제거 검사와 기존 응답 보존 검사는 유지한다.
 - 테스트 Dockerfile은 원본의 명시 COPY 방식에 docs/evals/README를 추가한다. 테스트 build context에는 testing/e2e가 필요하므로 runtime-source가 이 디렉터리를 제거하는 기존 운영 이미지 격리를 유지한다.
-- 전체 Python report의 `--allow-skipped`는 같은 classname·case의 성공한 MySQL 대응이 있는 SQLite skip만 허용한다. xfail·미검증 MySQL·예상 밖 skip은 실패다. 도구/HTTP는 원본대로 모든 skip을 거부한다. 유료 OpenAI는 명시적으로 제외하고 대용량 MySQL은 CI에서 실행한다.
-- 고유 실행의 이미지도 cleanup하며 CI timeout은 60분이다. 스키마 초기화 검사 뒤 실제 API를 띄우는 원본 순서를 유지한다.
+- 전체 Python report의 `--allow-skipped`는 같은 classname·case의 성공한 MySQL 대응이 있는 SQLite skip만 허용한다. xfail·미검증 MySQL·예상 밖 skip은 실패다. 도구/HTTP는 원본대로 모든 skip을 거부한다. 유료 OpenAI는 명시적으로 제외하고 대용량 MySQL은 격리 회귀 실행에서 확인한다.
+- 고유 실행의 이미지도 cleanup하며 수동 Actions 실행의 timeout은 60분이다. 스키마 초기화 검사 뒤 실제 API를 띄우는 원본 순서를 유지한다.
 - 실제 동시 첫 점주 fixture 로그인에서 MySQL deadlock을 재현해, sandbox에서만 1062/1205/1213에 전체 rollback 후 최대 3회 재시도한다. 원래 계정 생성·재사용·commit 뒤 쿠키 흐름은 그대로이며 다른 오류를 숨기지 않는다.
 
 ### sandbox 실제 HTTP/MySQL 재검증
