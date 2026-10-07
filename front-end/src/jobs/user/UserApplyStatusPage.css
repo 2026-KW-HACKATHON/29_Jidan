@@ -19,3 +19,8 @@
 .preview-applications .application-badge.is-gray { background: var(--ds-surface); color: var(--ds-secondary); }
 .preview-applications .application-description { color: var(--ds-secondary); font-size: var(--ds-body); line-height: 23px; }
 .preview-applications .application-time { color: var(--ds-secondary); font-size: var(--ds-small); line-height: 20px; }
+.preview-applications .application-card { position: relative; }
+.preview-applications .application-open { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.preview-applications .application-open::after { content: ''; position: absolute; inset: 0; border-radius: var(--ds-radius-dialog); }
+.preview-applications .application-open:focus-visible { outline: none; }
+.preview-applications .application-open:focus-visible::after { outline: 2px solid var(--ds-primary-strong); outline-offset: 2px; }
