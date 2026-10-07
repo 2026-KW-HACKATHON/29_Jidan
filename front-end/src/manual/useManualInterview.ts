@@ -6,8 +6,11 @@ import {pause,waitVisible} from './poll'
 import {useManualTask} from './useManualTask'
 
 export function useManualInterview({service,initial,onDraft}:{service:ManualService;initial:ManualInterviewSession;onDraft?:(versionId:string)=>void}) {
- const [session,setSession]=useState(initial),[reviews,setReviews]=useState<ManualIntentReviewList|null>(null),[readError,setReadError]=useState(''),[refresh,setRefresh]=useState(0)
- const task=useManualTask(),latestQuestion=useRef<ManualInterviewQuestion|null>(initial.questions[0]??initial.lastAnsweredQuestion??null)
+ const [snapshot,setSnapshot]=useState<{session:ManualInterviewSession;latestQuestion:ManualInterviewQuestion|null}>({session:initial,latestQuestion:initial.questions[0]??initial.lastAnsweredQuestion??null})
+ const {session,latestQuestion}=snapshot
+ function applySession(updated:ManualInterviewSession){setSnapshot(old=>updated.revision>=old.session.revision?{session:updated,latestQuestion:updated.questions[0]??old.latestQuestion}:old)}
+ const [reviews,setReviews]=useState<ManualIntentReviewList|null>(null),[readError,setReadError]=useState(''),[refresh,setRefresh]=useState(0)
+ const task=useManualTask()
  const voice=useRef<{recording:Recording;submission:ReturnType<typeof createVoiceSubmission>;revision:number;questionId:string}|null>(null)
  useEffect(()=>{if(['GENERATING','COMPLETED'].includes(session.phase))onDraft?.(session.draftVersionId)},[session,onDraft])
  useEffect(()=>{
@@ -17,7 +20,7 @@ export function useManualInterview({service,initial,onDraft}:{service:ManualServ
    const [s,r]=await Promise.all([service.call('getManualInterview',{sessionId:initial.id},undefined,{signal}),service.call('listManualIntentReviews',{sessionId:initial.id},undefined,{signal})])
    signal.throwIfAborted()
    if(s.data.id!==initial.id||r.data.sessionId!==initial.id)throw new ManualError('INVALID_RESPONSE')
-   setSession(old=>s.data.revision>=old.revision?s.data:old)
+   applySession(s.data)
    setReviews(old=>old&&old.sessionRevision>r.data.sessionRevision?old:{...r.data,items:r.data.items.map(item=>{const previous=old?.items.find(i=>i.intentId===item.intentId);return previous&&previous.revision>item.revision?previous:item})})
    setReadError('');await pause(Math.max(s.retryAfterMs,r.retryAfterMs),signal)
   }})().catch(e=>{if(!signal.aborted)setReadError(errorMessage(e))})
@@ -29,15 +32,14 @@ export function useManualInterview({service,initial,onDraft}:{service:ManualServ
   const captured=voice.current,input=await captured.submission.input(signal);signal.throwIfAborted()
   const result=await service.call('answerManualInterviewQuestion',{sessionId:session.id},{expectedRevision:captured.revision,questionId:captured.questionId,input},{signal,key:captured.submission.key})
   signal.throwIfAborted();if(result.data.id!==session.id)throw new ManualError('INVALID_RESPONSE')
-  setSession(old=>result.data.revision>=old.revision?result.data:old);voice.current=null
+  applySession(result.data);voice.current=null
  }
- function retryProcessing(){const captured=session;void task.run(async(signal,key)=>{const result=await service.call('retryManualInterviewProcessing',{sessionId:captured.id},{expectedRevision:captured.revision},{signal,key});signal.throwIfAborted();setSession(old=>result.data.revision>=old.revision?result.data:old)})}
+ function retryProcessing(){const captured=session;void task.run(async(signal,key)=>{const result=await service.call('retryManualInterviewProcessing',{sessionId:captured.id},{expectedRevision:captured.revision},{signal,key});signal.throwIfAborted();applySession(result.data)})}
  // Display completed intents in server order before exposing the next question.
  const pendingIntent=session.intents.find(intent=>intent.finishedAt&&!reviews?.items.find(r=>r.intentId===intent.id&&r.confirmedAt&&r.status==='READY'))
  const review=reviews?.items.find(r=>r.intentId===pendingIntent?.id)
  const waitingForReview=!!pendingIntent&&!review
- const question=session.questions[0]??session.lastAnsweredQuestion??((session.phase==='PROCESSING'||session.phase==='ERROR')&&session.processing?.kind==='EVALUATION'?latestQuestion.current:null)
- useEffect(()=>{if(session.questions[0])latestQuestion.current=session.questions[0]},[session])
+ const question=session.questions[0]??session.lastAnsweredQuestion??((session.phase==='PROCESSING'||session.phase==='ERROR')&&session.processing?.kind==='EVALUATION'?latestQuestion:null)
  const activeIntent=pendingIntent??session.intents.find(i=>i.id===session.currentIntentId)
  const stage=['WORK_STRUCTURE','COMMON_TASKS','SHIFT_TASKS','COMPLEMENTS'].indexOf(activeIntent?.stage??'')
  const ready=session.phase==='READY_TO_GENERATE'&&!pendingIntent&&reviews?.items.length===session.intents.length&&reviews.items.every(r=>r.status==='READY'&&r.confirmedAt)
