@@ -18701,12 +18701,14 @@ components:
         - target
         - sectionId
       oneOf:
-        - properties:
+        - required: [target, sectionId]
+          properties:
             target:
               const: WORK_STRUCTURE
             sectionId:
               type: "null"
-        - properties:
+        - required: [target, sectionId]
+          properties:
             target:
               const: SECTION
             sectionId: *a1
@@ -18978,6 +18980,8 @@ components:
             required:
               - lastAnsweredQuestion
           then:
+            type: object
+            additionalProperties: true
             properties:
               phase:
                 enum:
@@ -18988,6 +18992,7 @@ components:
                 format: uuid
               processing:
                 type: object
+                additionalProperties: true
                 properties:
                   kind:
                     const: EVALUATION

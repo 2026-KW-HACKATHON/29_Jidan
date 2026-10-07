@@ -28,3 +28,9 @@ test('미답변 질문·잘못된 카드·평가 주제 없는 스냅샷 거절'
   assert.equal(validate({...s,lastAnsweredQuestion:{...snapshot,guidanceCards:[{type:'BAD'}]}}),false);
   assert.equal(validate({...s,currentIntentId:null}),false);
 });
+test('조건부 스냅샷 제약 보완 후에도 세션·처리 객체의 알 수 없는 필드 거절',()=>{
+  const s=states.processingWithGuidance.value;
+  assert.equal(validate({...s,provider:'internal'}),false);
+  assert.equal(validate({...s,processing:{...s.processing,provider:'internal'}}),false);
+  assert.equal(validate({...s,lastAnsweredQuestion:{...snapshot,provider:'internal'}}),false);
+});
