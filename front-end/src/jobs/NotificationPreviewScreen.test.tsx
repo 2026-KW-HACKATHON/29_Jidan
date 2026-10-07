@@ -8,6 +8,19 @@ const items: readonly NotificationPreviewItem[] = [
 ]
 afterEach(cleanup)
 
+it('UUID 카드의 키보드 클릭과 처리 중 차단, 빈 목록 및 실패 안내를 제공한다', () => {
+  const open = vi.fn(), id = 'aa1827b4-720f-4251-a451-2b2a2811c2f3'
+  const props = { items: [{ ...items[0], id }], state: 'ALL' as const, onFilter: vi.fn(), onBack: vi.fn(), onOpen: open }
+  const { rerender } = render(<NotificationPreviewScreen {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: '새 알림' }))
+  expect(open).toHaveBeenCalledWith(id)
+  rerender(<NotificationPreviewScreen {...props} busy error="다시 눌러 주세요." />)
+  expect(screen.getByRole('button', { name: '새 알림' })).toBeDisabled()
+  expect(screen.getByRole('alert')).toHaveTextContent('다시 눌러 주세요.')
+  rerender(<NotificationPreviewScreen {...props} items={[]} />)
+  expect(screen.getByRole('status')).toHaveTextContent('도착한 알림이 없어요.')
+})
+
 it('읽음 필터와 홈 복귀를 제공하고 원본 데이터를 유지한다', () => {
   const filter = vi.fn(), back = vi.fn()
   const { rerender, container } = render(<NotificationPreviewScreen items={items} state="ALL" onFilter={filter} onBack={back} />)

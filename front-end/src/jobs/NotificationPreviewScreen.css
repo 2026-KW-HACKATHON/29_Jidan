@@ -13,3 +13,9 @@
 .preview-notifications .unread-badge { flex: none; padding: 4px 8px; border-radius: 4px; background: var(--ds-primary-surface); color: var(--ds-primary-strong); font-size: var(--ds-small); line-height: 20px; font-weight: 700; }
 .preview-notifications .notification-description { color: var(--ds-secondary); font-size: var(--ds-body); line-height: 23px; white-space: pre-line; }
 .preview-notifications .notification-time { color: var(--ds-secondary); font-size: var(--ds-small); line-height: 20px; }
+.preview-notifications .notification-card { position: relative; }
+.preview-notifications .notification-open { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.preview-notifications .notification-open::after { content: ''; position: absolute; inset: 0; border-radius: var(--ds-radius-dialog); }
+.preview-notifications .notification-open:focus-visible { outline: none; }
+.preview-notifications .notification-open:focus-visible::after { outline: 2px solid var(--ds-primary-strong); outline-offset: 2px; }
+.preview-notifications .notification-open:disabled { cursor: wait; }

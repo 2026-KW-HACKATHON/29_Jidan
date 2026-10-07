@@ -5,19 +5,22 @@ import './NotificationPreviewScreen.css'
 
 export type NotificationPreviewState = 'ALL' | 'UNREAD' | 'READ_ALL'
 export type NotificationPreviewItem = {
-  id: number
+  id: string | number
   title: string
   desc: ReactNode
   time: string
   isUnread: boolean
 }
 
-/** Figma List/Notification, shared by the owner and worker sample screens. */
-export function NotificationPreviewScreen({ items, state, onFilter, onBack }: {
+/** Figma List/Notification, shared by live and preview routes. */
+export function NotificationPreviewScreen({ items, state, onFilter, onBack, onOpen, busy = false, error }: {
   items: readonly NotificationPreviewItem[]
   state: NotificationPreviewState
   onFilter: (state: 'ALL' | 'UNREAD') => void
   onBack: () => void
+  onOpen?: (id: string | number) => void
+  busy?: boolean
+  error?: string
 }) {
   const unread = items.filter(item => item.isUnread)
   const displayed = state === 'UNREAD' ? unread : items
@@ -30,9 +33,11 @@ export function NotificationPreviewScreen({ items, state, onFilter, onBack }: {
         </button>}
       </div>
       <div className="notification-list">
+        {!displayed.length && <p role="status">{state === 'UNREAD' ? '안 읽은 알림이 없어요.' : '도착한 알림이 없어요.'}</p>}
+        {error && <p role="alert">{error}</p>}
         {displayed.map(item => <article key={item.id} className="notification-card">
           <div className="notification-card-header">
-            <h3>{item.title}</h3>
+            <h3>{onOpen ? <button type="button" className="notification-open" disabled={busy} onClick={() => onOpen(item.id)}>{item.title}</button> : item.title}</h3>
             {state !== 'READ_ALL' && item.isUnread && <span className="unread-badge">안 읽음</span>}
           </div>
           <p className="notification-description">{item.desc}</p>
