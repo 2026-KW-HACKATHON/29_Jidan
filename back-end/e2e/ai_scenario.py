@@ -194,10 +194,13 @@ class _GroundingCounts(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         entry = getattr(_current, "entry", None)
         args = record.args if isinstance(record.args, tuple) else ()
-        if entry is None or not str(record.msg).startswith("ai grounding") or len(args) != 3:
+        if entry is None or not str(record.msg).startswith("ai grounding") or len(args) not in (3, 4):
             return
-        _op, dropped, cleared = args
+        # (op, dropped, cleared) or (op, dropped, dropped_in_kept_sections, cleared)
+        _op, dropped, *partial, cleared = args
         entry["dropped_steps"] = entry.get("dropped_steps", 0) + int(dropped)
+        if partial:
+            entry["dropped_in_kept_sections"] = entry.get("dropped_in_kept_sections", 0) + int(partial[0])
         entry["cleared_shifts"] = entry.get("cleared_shifts", 0) + int(cleared)
 
 
