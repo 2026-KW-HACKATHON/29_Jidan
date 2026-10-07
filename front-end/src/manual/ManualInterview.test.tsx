@@ -8,7 +8,7 @@ import {schemas} from './contract.generated'
 import {matches} from './validation'
 vi.mock('./ManualVoiceComposer',()=>({ManualVoiceComposer:({onRecording}:{onRecording:(recording:unknown,signal:AbortSignal)=>Promise<void>})=><button onClick={()=>void onRecording({blob:new Blob(['sound'],{type:'audio/webm'}),duration:3},new AbortController().signal)}>테스트 음성 제출</button>}))
 afterEach(()=>{cleanup();vi.useRealTimers()})
-async function setup(scenario='review'){const service=createManualPreviewService(true,scenario);const signal=new AbortController().signal;const initial=(await service.call('getManualInterview',{sessionId:interviewFixture.id},undefined,{signal})).data;const call=vi.spyOn(service,'call');render(<ManualInterview initial={initial} service={service} onBack={vi.fn()}/>);return {service,call,initial}}
+async function setup(scenario='review'){const service=createManualPreviewService(true,scenario);const signal=new AbortController().signal;const initial=(await service.call('getManualInterview',{sessionId:interviewFixture.id},undefined,{signal})).data;const call=vi.spyOn(service,'call');await act(async()=>{render(<ManualInterview initial={initial} service={service} onBack={vi.fn()}/>)});return {service,call,initial}}
 it('요약 확인은 다음 질문보다 먼저 나타나며 오류는 오버레이에서 복구한다',async()=>{
  const {call}=await setup('review-error');await screen.findByRole('button',{name:'요약 다시 시도'});expect(screen.queryByRole('button',{name:'테스트 음성 제출'})).toBeNull()
  expect(screen.queryByRole('button',{name:'나중에 확인하기'})).toBeNull();expect(screen.queryByRole('button',{name:'질문·답변 이력'})).toBeNull()

@@ -11,7 +11,7 @@ beforeEach(()=>{vi.stubGlobal('URL',Object.assign(URL,{createObjectURL:vi.fn(()=
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();vi.useRealTimers()})
 function setup(scenario='draft') {const service=createManualPreviewService(true,scenario),call=vi.spyOn(service,'call'),onReload=vi.fn();render(<ManualDraftReview service={service} versionId={draftFixture.versionId} onBack={vi.fn()} onReload={onReload}/>);return {service,call,onReload}}
 it('요약 확인 후 최종 검토 진입에서 생성하고 서버 초안을 다시 읽는다',async()=>{
- const service=createManualPreviewService(true,'ready'),call=vi.spyOn(service,'call');render(<ManualAuthoring service={service} onBack={vi.fn()}/> )
+ const service=createManualPreviewService(true,'ready'),call=vi.spyOn(service,'call');await act(async()=>{render(<ManualAuthoring service={service} onBack={vi.fn()}/>)})
  for(let i=0;i<4;i++){await waitFor(()=>expect(screen.getByRole('button',{name:'네, 맞아요'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'네, 맞아요'}));await act(async()=>{await Promise.resolve()})}
  const button=await screen.findByRole('button',{name:'최종 검토로'});await waitFor(()=>expect(button).toBeEnabled());fireEvent.click(button)
  await screen.findByRole('button',{name:'확인하고 게시'});expect(await screen.findAllByRole('button',{name:/공통 업무 · 1개/})).toHaveLength(1)
