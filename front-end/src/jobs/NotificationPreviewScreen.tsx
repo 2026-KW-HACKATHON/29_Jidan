@@ -26,7 +26,7 @@ export function NotificationPreviewScreen({ items, state, onFilter, onBack }: {
       <div className="notification-filter">
         <h2>{state === 'READ_ALL' ? '모두 읽었어요' : state === 'UNREAD' ? `안 읽은 알림 ${unread.length}개` : '전체 알림'}</h2>
         {state !== 'READ_ALL' && <button type="button" onClick={() => onFilter(state === 'UNREAD' ? 'ALL' : 'UNREAD')}>
-          {state === 'UNREAD' ? '전체 알림 보기' : '안 읽은 알림만 보기'}
+          {state === 'UNREAD' ? '전체 알림 보기' : '안읽은 알림만 보기'}
         </button>}
       </div>
       <div className="notification-list">

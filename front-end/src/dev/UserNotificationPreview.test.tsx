@@ -27,7 +27,7 @@ it('일반회원 홈 진입·필터·브라우저 뒤로·앞으로·홈 복귀�
   await screen.findByText('전체 알림')
   expect(location.pathname).toBe('/__user/noti')
   const sidebar = screen.getByRole('navigation', { name: '미리보기 화면 목록' })
-  fireEvent.click(screen.getByRole('button', { name: '안 읽은 알림만 보기' }))
+  fireEvent.click(screen.getByRole('button', { name: '안읽은 알림만 보기' }))
   await screen.findByText('안 읽은 알림 3개')
   expect(location.pathname).toBe('/__user/noti/unread')
   expect(screen.getByRole('navigation', { name: '미리보기 화면 목록' })).toBe(sidebar)

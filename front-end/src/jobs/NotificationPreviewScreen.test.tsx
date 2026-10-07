@@ -12,7 +12,7 @@ it('읽음 필터와 홈 복귀를 제공하고 원본 데이터를 유지한다
   const filter = vi.fn(), back = vi.fn()
   const { rerender, container } = render(<NotificationPreviewScreen items={items} state="ALL" onFilter={filter} onBack={back} />)
   expect(screen.getByText('매장 안내 근무 시간').textContent).toBe('매장 안내\n근무 시간')
-  fireEvent.click(screen.getByRole('button', { name: '안 읽은 알림만 보기' }))
+  fireEvent.click(screen.getByRole('button', { name: '안읽은 알림만 보기' }))
   expect(filter).toHaveBeenCalledWith('UNREAD')
   rerender(<NotificationPreviewScreen items={items} state="UNREAD" onFilter={filter} onBack={back} />)
   expect(screen.getByText('안 읽은 알림 1개')).toBeInTheDocument()
