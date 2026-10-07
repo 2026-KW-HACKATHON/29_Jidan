@@ -1,7 +1,8 @@
 import {act,cleanup,fireEvent,render,screen} from '@testing-library/react'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {OwnerJobs} from './Jobs'
-import {OwnerRequestStatus,currentRequest} from './OwnerRequestStatus'
+import {OwnerRequestStatus} from './OwnerRequestStatus'
+import {currentRequest} from './currentRequest'
 import data from './ownerJob.fixture.test.json'
 import type {JobPosting,WorkRequest} from '../api/types.generated'
 const json=(v:unknown)=>new Response(JSON.stringify(v))

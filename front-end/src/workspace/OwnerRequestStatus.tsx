@@ -8,10 +8,6 @@ import {Resource} from './Resource'
 import {OwnerRequestWithdrawal} from './OwnerRequestWithdrawal'
 import {JobCloseFlow} from '../jobs/owner/JobCloseFlow'
 import type {Route} from './Jobs'
-export function currentRequest(requests:WorkRequest[],job:JobPosting){
- const newest=[...requests].sort((a,b)=>Date.parse(b.requestedAt)-Date.parse(a.requestedAt))
- return newest.find(r=>r.status==='PENDING'||r.status==='ACCEPTED')??(job.status==='RECRUITING'&&newest[0]?.status==='EXPIRED'?newest[0]:undefined)
-}
 export function OwnerRequestStatus({job,request,storeId,route,onReload}:{job:JobPosting;request:WorkRequest;storeId:string;route:Route;onReload:()=>void}){
  const load=useMemo(()=>(signal:AbortSignal)=>call('getJobApplicant',{signal,params:{storeId,jobId:job.id,applicationId:request.applicationId}}),[storeId,job.id,request.applicationId])
  return <Resource load={load} onBack={()=>route('jobs')}>{applicant=><Status key={request.id} job={job} request={request} applicant={applicant} storeId={storeId} route={route} onReload={onReload}/>}</Resource>

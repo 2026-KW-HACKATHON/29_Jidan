@@ -13,7 +13,8 @@ import {ApplicationDialog} from '../application/ApplicationDialog'
 import {ApplicationComplete} from '../application/ApplicationComplete'
 import {createApplicationService,applicationFromApi} from '../application/api'
 import {Resource} from './Resource'
-import {OwnerRequestStatus,currentRequest} from './OwnerRequestStatus'
+import {OwnerRequestStatus} from './OwnerRequestStatus'
+import {currentRequest} from './currentRequest'
 import {OwnerOnboarding} from './OwnerOnboarding'
 export type Route=(view:string,id?:string)=>void
 export function WorkerJobs({view,id,route}:{view:string;id:string;route:Route}){
