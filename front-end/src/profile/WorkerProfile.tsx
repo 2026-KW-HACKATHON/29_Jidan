@@ -51,9 +51,9 @@ export function WorkerProfile({ initialProfile, onBack, onSaved, service = profi
     locked.current = true; setBusy(true); setFailure('')
     const controller = new AbortController(); request.current = controller
     try {
-      await withDeadline(signal => service.save(structuredClone(next), signal), controller)
+      const saved = await withDeadline(signal => service.save(structuredClone(next), signal, section), controller)
       if (controller.signal.aborted) return
-      setProfile(next); cancel(); setComplete(true); onSaved?.(structuredClone(next))
+      setProfile(saved || next); cancel(); setComplete(true); onSaved?.(structuredClone(saved || next))
     } catch (failure) { if (!controller.signal.aborted || failure instanceof DeadlineExceeded) setFailure('변경 사항을 저장하지 못했어요. 다시 시도해 주세요.') }
     finally { if (request.current === controller && (!controller.signal.aborted || controller.signal.reason instanceof DeadlineExceeded)) { locked.current = false; setBusy(false) } }
   }
