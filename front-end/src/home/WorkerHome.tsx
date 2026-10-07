@@ -15,13 +15,14 @@ export type WorkerHomeData = {
   notificationCount?: number
 }
 
-export function WorkerHome({ displayName, data = {}, initialDate, onMonthChange, onManual, onNotifications, onProfile, onJobs, onSelectJob }: {
+export function WorkerHome({ displayName, data = {}, initialDate, onMonthChange, onManual, onNotifications, onProfile, onJobs, onSelectJob, onApplications }: {
   displayName: string
   data?: WorkerHomeData
   initialDate?: Date
   onMonthChange?: (year:number,month:number)=>void
   onManual?:()=>void
   onNotifications?:()=>void
+  onApplications?:()=>void
   onSelectJob?:(id:string)=>void
   onProfile?: () => void
   onJobs?: () => void
@@ -37,7 +38,7 @@ export function WorkerHome({ displayName, data = {}, initialDate, onMonthChange,
     <HomeShell onManual={onManual} onNotifications={onNotifications} role="worker" notificationCount={data.notificationCount} onProfile={onProfile} onJobs={onJobs}>
       <div className="home-greeting"><h2>안녕하세요, {displayName}님</h2><p>원하는 공고를 찾아보세요.</p></div>
       <section className="worker-home-activity home-card" aria-label="나의 활동"><h3>나의 활동</h3><div>
-        <div><span>신청 중 공고</span><strong>{activity.applications}건</strong></div>
+        <div><span>{onApplications ? <button type="button" onClick={onApplications} style={{ border: 0, padding: 0, background: 'none', color: 'inherit', font: 'inherit', cursor: 'pointer' }}>신청 중 공고</button> : '신청 중 공고'}</span><strong>{activity.applications}건</strong></div>
         <div><span>관심 매장</span><strong>{activity.favoriteStores}건</strong></div>
         <div><span>정기 근무</span><strong>{activity.regularStores}곳</strong></div>
       </div></section>

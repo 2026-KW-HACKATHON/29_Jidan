@@ -22,5 +22,5 @@ const sample: WorkerHomeData = {
 
 export default function WorkerHomePreview() {
   const [service]=useState(()=>createProfilePreviewService())
-  return <WorkerArea onJobs={()=>navigatePreview('/__jobs')} service={service} displayName="김지수" data={new URLSearchParams(location.search).has('empty') ? {} : sample} initialDate={new Date(2025, 6, 19)} />
+  return <WorkerArea onApplications={()=>navigatePreview('/__user/status')} onNotifications={()=>navigatePreview('/__user/noti')} onJobs={()=>navigatePreview('/__jobs')} service={service} displayName="김지수" data={new URLSearchParams(location.search).has('empty') ? {} : sample} initialDate={new Date(2025, 6, 19)} />
 }

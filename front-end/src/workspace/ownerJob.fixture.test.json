@@ -1,0 +1,336 @@
+{
+  "job": {
+    "title": "주말 오픈 대타",
+    "description": "오픈 준비와 고객 응대",
+    "workPart": "WEEKEND_OPEN",
+    "workDate": "2026-10-10",
+    "startTime": "09:00",
+    "endTime": "14:00",
+    "endsNextDay": false,
+    "minimumExperience": "ANY",
+    "experienceNotes": "",
+    "hourlyPay": 12000,
+    "paymentTiming": "WORK_DAY",
+    "paymentNotes": "",
+    "id": "62c6bdc9-6756-52f1-8983-4ac3aac8aadd",
+    "store": {
+      "id": "414a18bc-46e5-5f9e-9bd9-2e2e3fc803e9",
+      "name": "지단 카페 월계점",
+      "industry": "CAFE",
+      "address": "서울특별시 노원구 광운로 20",
+      "neighborhood": "월계1동"
+    },
+    "status": "RECRUITING",
+    "recruitmentCount": 1,
+    "applicantCount": 2,
+    "startAt": "2026-10-10T00:00:00+00:00",
+    "endAt": "2026-10-10T05:00:00+00:00",
+    "estimatedPay": 60000,
+    "createdAt": "2026-10-07T13:23:44.387243+00:00",
+    "closedAt": null,
+    "revision": 4
+  },
+  "applicants": {
+    "items": [
+      {
+        "id": "5572302c-cdf5-4d7e-b7ff-2722d872510f",
+        "jobId": "62c6bdc9-6756-52f1-8983-4ac3aac8aadd",
+        "status": "APPLIED",
+        "introduction": "오전 근무 좋아합니다.",
+        "applicant": {
+          "workerId": "61c92cc4-5b38-5fb0-8b8a-e9ea4afa9361",
+          "name": "이민준",
+          "ageAtSubmission": 27,
+          "experienceLevel": "NEW",
+          "careers": []
+        },
+        "submittedAt": "2026-10-07T14:23:44.387243+00:00",
+        "revision": 1
+      },
+      {
+        "id": "cad544c6-6184-42e8-9dd6-2ecc06cfcc20",
+        "jobId": "62c6bdc9-6756-52f1-8983-4ac3aac8aadd",
+        "status": "REQUESTED",
+        "introduction": "편의점 계산 경험이 있습니다.",
+        "applicant": {
+          "workerId": "099d08c3-b93d-5147-b30e-f8f2e804b528",
+          "name": "박서연",
+          "ageAtSubmission": 22,
+          "experienceLevel": "EXPERIENCED",
+          "careers": [
+            {
+              "industry": "CONVENIENCE_STORE",
+              "duties": "계산, 진열",
+              "startMonth": "2024-05",
+              "endMonth": "2025-08",
+              "isCurrent": false,
+              "storeName": "광운 편의점"
+            }
+          ]
+        },
+        "submittedAt": "2026-10-07T15:23:44.387243+00:00",
+        "revision": 2
+      }
+    ],
+    "page": 0,
+    "size": 20,
+    "totalItems": 2,
+    "asOf": "2026-10-07T19:27:08.943730+00:00"
+  },
+  "requests": {
+    "items": [
+      {
+        "id": "0b85e864-5bef-447e-bd6d-acefe3afaa36",
+        "jobId": "62c6bdc9-6756-52f1-8983-4ac3aac8aadd",
+        "applicationId": "cad544c6-6184-42e8-9dd6-2ecc06cfcc20",
+        "workerId": "099d08c3-b93d-5147-b30e-f8f2e804b528",
+        "workerName": "박서연",
+        "status": "PENDING",
+        "requestedAt": "2026-10-07T19:23:44.387243+00:00",
+        "expiresAt": "2026-10-07T20:23:44.387243+00:00",
+        "respondedAt": null,
+        "endedAt": null,
+        "revision": 1,
+        "accessGrant": null
+      }
+    ],
+    "page": 0,
+    "size": 20,
+    "totalItems": 1,
+    "asOf": "2026-10-07T19:27:08.951364+00:00"
+  },
+  "confirmedJob": {
+    "title": "저녁 홀 대타",
+    "description": "홀 서빙과 음료 제조",
+    "workPart": "WEEKDAY_CLOSE",
+    "workDate": "2026-10-09",
+    "startTime": "18:00",
+    "endTime": "22:00",
+    "endsNextDay": false,
+    "minimumExperience": "ANY",
+    "experienceNotes": "",
+    "hourlyPay": 11000,
+    "paymentTiming": "WORK_DAY",
+    "paymentNotes": "",
+    "id": "44b226fa-6192-5928-8cd8-7ea6d4a723ab",
+    "store": {
+      "id": "414a18bc-46e5-5f9e-9bd9-2e2e3fc803e9",
+      "name": "지단 카페 월계점",
+      "industry": "CAFE",
+      "address": "서울특별시 노원구 광운로 20",
+      "neighborhood": "월계1동"
+    },
+    "status": "CLOSED",
+    "recruitmentCount": 1,
+    "applicantCount": 1,
+    "startAt": "2026-10-09T09:00:00+00:00",
+    "endAt": "2026-10-09T13:00:00+00:00",
+    "estimatedPay": 44000,
+    "createdAt": "2026-10-05T19:23:44.387243+00:00",
+    "closedAt": "2026-10-06T19:33:44.387243+00:00",
+    "revision": 5
+  },
+  "confirmedApplicants": {
+    "items": [
+      {
+        "id": "4f076c4d-dff8-424a-9787-3d33b6fddbab",
+        "jobId": "44b226fa-6192-5928-8cd8-7ea6d4a723ab",
+        "status": "CONFIRMED",
+        "introduction": "평일 저녁 근무 가능합니다.",
+        "applicant": {
+          "workerId": "96f0fd66-f4ef-5f6b-8f60-d20e790e5a4b",
+          "name": "김지수",
+          "ageAtSubmission": 25,
+          "experienceLevel": "EXPERIENCED",
+          "careers": [
+            {
+              "industry": "CAFE",
+              "duties": "음료 제조, 마감 정리",
+              "startMonth": "2023-03",
+              "endMonth": "2024-12",
+              "isCurrent": false,
+              "storeName": "월계 커피"
+            },
+            {
+              "industry": "RESTAURANT",
+              "duties": "홀 서빙",
+              "startMonth": "2025-01",
+              "endMonth": null,
+              "isCurrent": true
+            }
+          ]
+        },
+        "submittedAt": "2026-10-05T20:23:44.387243+00:00",
+        "revision": 3
+      },
+      {
+        "id": "1a5e78f5-4cc1-4e34-a4bf-83e14be3c417",
+        "jobId": "44b226fa-6192-5928-8cd8-7ea6d4a723ab",
+        "status": "NOT_SELECTED",
+        "introduction": "처음이지만 성실합니다.",
+        "applicant": {
+          "workerId": "61c92cc4-5b38-5fb0-8b8a-e9ea4afa9361",
+          "name": "이민준",
+          "ageAtSubmission": 27,
+          "experienceLevel": "NEW",
+          "careers": []
+        },
+        "submittedAt": "2026-10-05T21:23:44.387243+00:00",
+        "revision": 2
+      }
+    ],
+    "page": 0,
+    "size": 20,
+    "totalItems": 2,
+    "asOf": "2026-10-07T19:27:08.963082+00:00"
+  },
+  "confirmedRequests": {
+    "items": [
+      {
+        "id": "ec026a99-0dd8-4777-9545-db23a20d0d44",
+        "jobId": "44b226fa-6192-5928-8cd8-7ea6d4a723ab",
+        "applicationId": "4f076c4d-dff8-424a-9787-3d33b6fddbab",
+        "workerId": "96f0fd66-f4ef-5f6b-8f60-d20e790e5a4b",
+        "workerName": "김지수",
+        "status": "ACCEPTED",
+        "requestedAt": "2026-10-06T19:23:44.387243+00:00",
+        "expiresAt": "2026-10-06T20:23:44.387243+00:00",
+        "respondedAt": "2026-10-06T19:33:44.387243+00:00",
+        "endedAt": "2026-10-06T19:33:44.387243+00:00",
+        "revision": 2,
+        "accessGrant": {
+          "id": "2030fe90-89a0-4e50-9b11-383c786cf4f2",
+          "type": "TEMPORARY",
+          "dutyLabel": "저녁 홀 대타",
+          "startedAt": "2026-10-06T19:33:44.387243+00:00",
+          "validUntil": "2026-10-09T13:00:00+00:00",
+          "revokedAt": null,
+          "status": "ACTIVE",
+          "permissions": [
+            "READ_MANUALS",
+            "READ_CHECKLISTS",
+            "USE_AI_QA"
+          ]
+        }
+      }
+    ],
+    "page": 0,
+    "size": 20,
+    "totalItems": 1,
+    "asOf": "2026-10-07T19:27:08.967725+00:00"
+  },
+  "onboarding": {
+    "jobId": "44b226fa-6192-5928-8cd8-7ea6d4a723ab",
+    "workerId": "96f0fd66-f4ef-5f6b-8f60-d20e790e5a4b",
+    "workerName": "김지수",
+    "accessStatus": "ACTIVE",
+    "manualStatus": "PUBLISHED",
+    "manualVersionId": "0a073482-be8c-5ead-9506-066be925d373"
+  },
+  "manual": {
+    "versionId": "0a073482-be8c-5ead-9506-066be925d373",
+    "storeId": "414a18bc-46e5-5f9e-9bd9-2e2e3fc803e9",
+    "ownerConfirmed": true,
+    "publishedAt": "2026-10-04T19:23:44.387243+00:00",
+    "versionNumber": 1,
+    "shifts": [
+      {
+        "id": "436647d6-4e9e-54a6-ae84-43ed94324cd1",
+        "name": "오픈조",
+        "startTime": "09:00",
+        "endTime": "15:00",
+        "endsNextDay": false
+      },
+      {
+        "id": "2c0e1e45-f325-5481-a4ba-84237e13b153",
+        "name": "마감조",
+        "startTime": "15:00",
+        "endTime": "23:00",
+        "endsNextDay": false
+      }
+    ],
+    "sections": [
+      {
+        "id": "6a3d198a-9468-5845-802b-7341ee3da17f",
+        "category": "COMMON_TASK",
+        "shiftId": null,
+        "title": "포스 마감",
+        "stepCount": 3,
+        "photoCount": 0
+      },
+      {
+        "id": "25a6c2a9-aa45-5b3d-942e-c7b0d110b25d",
+        "category": "COMMON_TASK",
+        "shiftId": null,
+        "title": "매장 청소",
+        "stepCount": 3,
+        "photoCount": 0
+      },
+      {
+        "id": "2ab859d6-c666-57a0-ab7e-b7680ebc0da6",
+        "category": "COMMON_TASK",
+        "shiftId": null,
+        "title": "음료 레시피",
+        "stepCount": 0,
+        "photoCount": 0
+      },
+      {
+        "id": "700c46c6-4bdf-58a8-84a9-1d42945f9556",
+        "category": "SHIFT_TASK",
+        "shiftId": "436647d6-4e9e-54a6-ae84-43ed94324cd1",
+        "title": "오픈 준비",
+        "stepCount": 2,
+        "photoCount": 0
+      },
+      {
+        "id": "11badccd-6a8f-5078-b6c7-cbc507e93528",
+        "category": "RULE",
+        "shiftId": null,
+        "title": "복장 규정",
+        "stepCount": 2,
+        "photoCount": 0
+      }
+    ],
+    "structurePhotos": [],
+    "missingInformation": [
+      {
+        "id": "739480ba-6f3d-586f-a453-db2f8544ff09",
+        "target": "SECTION",
+        "targetId": "2ab859d6-c666-57a0-ab7e-b7680ebc0da6",
+        "field": "steps",
+        "description": "음료 레시피는 점주님이 정리하고 있어요. 만드는 방법은 점주님께 확인해 주세요."
+      }
+    ]
+  },
+  "section": {
+    "versionId": "0a073482-be8c-5ead-9506-066be925d373",
+    "storeId": "414a18bc-46e5-5f9e-9bd9-2e2e3fc803e9",
+    "ownerConfirmed": true,
+    "publishedAt": "2026-10-04T19:23:44.387243+00:00",
+    "section": {
+      "id": "6a3d198a-9468-5845-802b-7341ee3da17f",
+      "category": "COMMON_TASK",
+      "shiftId": null,
+      "title": "포스 마감",
+      "steps": [
+        {
+          "id": "e2805770-081c-5898-adcb-862cb816935b",
+          "instruction": "포스 화면에서 마감 정산 버튼을 눌러요.",
+          "checklistItem": false
+        },
+        {
+          "id": "5add7f28-03f8-5e8c-abc5-2bf5796378de",
+          "instruction": "출력한 영수증을 금고에 넣어요.",
+          "checklistItem": false
+        },
+        {
+          "id": "06b83fd3-c6f9-5459-b023-035fa40d14fb",
+          "instruction": "현금과 영수증 금액이 맞는지 확인해요.",
+          "checklistItem": true
+        }
+      ],
+      "photos": []
+    },
+    "missingInformation": []
+  }
+}

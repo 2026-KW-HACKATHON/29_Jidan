@@ -1,6 +1,6 @@
 import {useMemo,useState} from 'react'
 import {call,mutation,pages} from '../api/operations'
-import type {JobPosting,JobApplication,WorkerJobPosting,OwnerJobApplication} from '../api/types.generated'
+import type {JobPosting,JobApplication,WorkerJobPosting,OwnerJobApplication,WorkRequest} from '../api/types.generated'
 import {jobFromApi,workerJobs,ownerJobs,jobCreation,jobClosure,applicantFromApi} from '../jobs/api'
 import {JobBrowse} from '../jobs/JobBrowse'
 import {JobDetail} from '../jobs/JobDetail'
@@ -13,6 +13,9 @@ import {ApplicationDialog} from '../application/ApplicationDialog'
 import {ApplicationComplete} from '../application/ApplicationComplete'
 import {createApplicationService,applicationFromApi} from '../application/api'
 import {Resource} from './Resource'
+import {OwnerRequestStatus} from './OwnerRequestStatus'
+import {currentRequest} from './currentRequest'
+import {OwnerOnboarding} from './OwnerOnboarding'
 export type Route=(view:string,id?:string)=>void
 export function WorkerJobs({view,id,route}:{view:string;id:string;route:Route}){
  const load=useMemo(()=>async(signal:AbortSignal)=>view==='application'?{application:await call('getMyJobApplication',{signal,params:{applicationId:id}})}:id?{job:await call('getJobPosting',{signal,params:{jobId:id}})}:{jobs:await workerJobs(signal)},[view,id])
@@ -25,14 +28,18 @@ function WorkerJobPage({data,view,route}:{data:WorkerJobPosting;view:string;rout
 }
 export function OwnerJobs({view,id,storeId,storeName,route}:{view:string;id:string;storeId:string;storeName:string;route:Route}){
  const service=useMemo(()=>jobCreation(storeId),[storeId])
- const load=useMemo(()=>async(signal:AbortSignal)=>id?{job:await call('getOwnerJobPosting',{signal,params:{storeId,jobId:id}}),applicants:await pages(page=>call('listJobApplicants',{signal,params:{storeId,jobId:id},query:{page,size:100}}),signal)}:{jobs:await ownerJobs(storeId,signal)},[id,storeId])
+ const [attempt,setAttempt]=useState(0)
+ const reload=()=>setAttempt(v=>v+1)
+ const load=useMemo(()=>async(signal:AbortSignal)=>id?{job:await call('getOwnerJobPosting',{signal,params:{storeId,jobId:id}}),applicants:await pages(page=>call('listJobApplicants',{signal,params:{storeId,jobId:id},query:{page,size:100}}),signal),requests:await pages(page=>call('listOwnerWorkRequests',{signal,params:{storeId,jobId:id},query:{page,size:100}}),signal)}:{jobs:await ownerJobs(storeId,signal)},[id,storeId])
+ if(view==='onboarding')return <OwnerOnboarding key={`${storeId}:${id}`} storeId={storeId} jobId={id} onBack={()=>route('job',id)}/>
  if(view==='create-job')return <JobRegistration service={service} onBack={()=>route('home')} onCreated={(job)=>route('job',job.id)}/>
- return <Resource load={load} onBack={()=>route('home')}>{data=>data.job?<OwnerJobPage data={data.job} applicants={data.applicants!} storeId={storeId} route={route}/>:<OwnerJobList jobs={data.jobs!.map(jobFromApi)} storeName={storeName} onBack={()=>route('home')} onSelect={j=>route('job',j.id)}/>}</Resource>
+ return <Resource key={attempt} load={load} onBack={()=>route('home')}>{data=>data.job?<OwnerJobPage data={data.job} applicants={data.applicants!} requests={data.requests!} view={view} storeId={storeId} route={route} onReload={reload}/>:<OwnerJobList jobs={data.jobs!.map(jobFromApi)} storeName={storeName} onBack={()=>route('home')} onSelect={j=>route('job',j.id)}/>}</Resource>
 }
-function OwnerJobPage({data,applicants,storeId,route}:{data:JobPosting;applicants:OwnerJobApplication[];storeId:string;route:Route}){
+function OwnerJobPage({data,applicants,requests,view,storeId,route,onReload}:{data:JobPosting;applicants:OwnerJobApplication[];requests:WorkRequest[];view:string;storeId:string;route:Route;onReload:()=>void}){
  const [closing,setClosing]=useState(false),[requesting,setRequesting]=useState<JobApplicant|null>(null)
  const closeService=useMemo(()=>jobClosure(storeId,data),[storeId,data])
  const requestService=useMemo(()=>{const write=mutation();return {request:async(jobId:string,applicationId:string,signal:AbortSignal)=>{await write('requestApplicantWork',{signal,params:{storeId,jobId,applicationId},input:{expectedJobRevision:data.revision}})}}},[storeId,data.revision])
- const job=jobFromApi(data)
- return <><OwnerApplicants job={job} applicants={applicants.map(applicantFromApi)} onBack={()=>route('jobs')} onCloseJob={()=>setClosing(true)} onRequest={setRequesting}/>{closing&&<JobCloseFlow job={job} service={closeService} onClose={()=>setClosing(false)} onUpdated={()=>{}} onCompleted={()=>route('jobs')}/>} {requesting&&<WorkRequestFlow job={job} applicant={requesting} service={requestService} onClose={()=>setRequesting(null)} onCompleted={()=>route('jobs')}/>}</>
+ const job=jobFromApi(data),request=currentRequest(requests,data)
+ if(request&&view!=='applicants')return <OwnerRequestStatus job={data} request={request} storeId={storeId} route={route} onReload={onReload}/>
+ return <><OwnerApplicants job={job} applicants={applicants.map(applicantFromApi)} onBack={()=>route('jobs')} onCloseJob={()=>setClosing(true)} onRequest={setRequesting}/>{closing&&<JobCloseFlow job={job} service={closeService} onClose={()=>setClosing(false)} onUpdated={()=>{}} onCompleted={()=>route('jobs')}/>} {requesting&&<WorkRequestFlow completeLabel="지원자 확인" job={job} applicant={requesting} service={requestService} onClose={()=>setRequesting(null)} onCompleted={()=>{onReload();route('job',data.id)}}/>}</>
 }

@@ -19,6 +19,7 @@ type ModalProps = {
   summary?: ReactNode
   className?: string
   restoreFocus?: boolean
+  dismissOnBackdrop?: boolean
   onClosed?: () => void
   onClose: () => void
   /** Resolve to close; reject to keep the dialog open and allow retry. */
@@ -29,7 +30,7 @@ export function Modal({ open, ...props }: ModalProps) {
   return open ? <OpenModal {...props} /> : null
 }
 
-function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, showCancel = false, closeOnConfirm = true, showIcon = true, summary, className = '', restoreFocus = true, onClosed, onClose, onConfirm }: Omit<ModalProps, 'open'>) {
+function OpenModal({ title, description, state = 'information', confirmLabel = '확인', cancelLabel = '취소', busy = false, showCancel = false, closeOnConfirm = true, showIcon = true, summary, className = '', restoreFocus = true, dismissOnBackdrop = false, onClosed, onClose, onConfirm }: Omit<ModalProps, 'open'>) {
   const dialog = useRef<HTMLDialogElement>(null)
   const initialFocus = useRef<HTMLButtonElement>(null)
   const generation = useRef(0)
@@ -77,6 +78,11 @@ function OpenModal({ title, description, state = 'information', confirmLabel = '
     aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`}
     aria-busy={busy || pending || undefined} tabIndex={-1}
     onCancel={event => { event.preventDefault(); onClose() }}
+    onClick={event => {
+      if (!dismissOnBackdrop || event.target !== event.currentTarget) return
+      const bounds = event.currentTarget.getBoundingClientRect()
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose()
+    }}
     onKeyDown={event => {
       if (event.key !== 'Tab') return
       const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]

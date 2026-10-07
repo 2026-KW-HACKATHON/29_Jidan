@@ -17,6 +17,7 @@ import {pendingInvitation,clearInvitation} from '../invitation/link'
 import {TokenInvitation} from './TokenInvitation'
 import {AddStore} from './AddStore'
 import {Notifications} from './Notifications'
+import {WorkerApplications} from './WorkerApplications'
 import {ReceivedInvitation,WorkerRequest} from './WorkerInbox'
 
 export function Workspace({session,search,navigate}:{session:Session;search:string;navigate:(url:string,replace?:boolean)=>void}){
@@ -38,14 +39,15 @@ export function Workspace({session,search,navigate}:{session:Session;search:stri
   if(view==='invitation')return <ReceivedInvitation id={id} route={route}/>
   if(view==='work-request')return <WorkerRequest id={id} route={route}/>
   if(['jobs','job','apply','application'].includes(view))return <WorkerJobs view={view} id={id} route={route}/>
+  if(view==='applications')return <WorkerApplications route={route}/>
   if(view==='profile')return <Resource load={loadProfile} onBack={()=>route('home')}>{data=><WorkerProfile initialProfile={data} service={profileService} onBack={()=>route('home')}/>}</Resource>
-  return <Resource key={month} load={loadWorker} onBack={()=>route('home')}>{({home,calendar})=><WorkerHome displayName={home.name} data={workerHomeData(home,calendar)} initialDate={new Date(`${seoulDate(new Date().toISOString()).startsWith(month)?seoulDate(new Date().toISOString()):`${month}-01`}T12:00:00`)} onMonthChange={changeMonth} onSelectJob={id=>route('job',id)} onManual={()=>route('manual')} onProfile={()=>route('profile')} onJobs={()=>route('jobs')} onNotifications={()=>route('notifications')}/>}</Resource>
+  return <Resource key={month} load={loadWorker} onBack={()=>route('home')}>{({home,calendar})=><WorkerHome displayName={home.name} data={workerHomeData(home,calendar)} initialDate={new Date(`${seoulDate(new Date().toISOString()).startsWith(month)?seoulDate(new Date().toISOString()):`${month}-01`}T12:00:00`)} onMonthChange={changeMonth} onSelectJob={id=>route('job',id)} onManual={()=>route('manual')} onProfile={()=>route('profile')} onJobs={()=>route('jobs')} onApplications={()=>route('applications')} onNotifications={()=>route('notifications')}/>}</Resource>
  }
  return <Resource load={loadOwner} onBack={()=>route('home')}>{home=>{
  const selected=home.stores.find(s=>s.id===home.selectedStoreId)
  const selectedRoute:Route=(next,id)=>{const query=new URLSearchParams({view:next});if(selected)query.set('store',selected.id);if(id)query.set('id',id);navigate(`/home?${query}`)}
  if(selected){
-  if(['jobs','job','create-job'].includes(view)&&selected.permissions.includes('MANAGE_JOB_POSTINGS'))return <OwnerJobs view={view} id={id} storeId={selected.id} storeName={selected.name} route={selectedRoute}/>
+  if(['jobs','job','applicants','onboarding','create-job'].includes(view)&&selected.permissions.includes('MANAGE_JOB_POSTINGS'))return <OwnerJobs view={view} id={id} storeId={selected.id} storeName={selected.name} route={selectedRoute}/>
   if(['store','workers','worker'].includes(view)&&selected.permissions.includes('MANAGE_STORE'))return <StorePages view={view} id={id} storeId={selected.id} storeName={selected.name} route={selectedRoute}/>
   if(['invitations','invite'].includes(view)&&selected.permissions.includes('INVITE_WORKERS'))return <InvitationPages view={view} storeId={selected.id} storeName={selected.name} route={selectedRoute}/>
   if(view==='manual'&&selected.permissions.includes('MANAGE_MANUALS'))return <OwnerManual storeId={selected.id} onBack={()=>selectedRoute('home')}/>
