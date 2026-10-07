@@ -161,6 +161,12 @@ class AiProvider(ABC):
                 parts.append(f"effort={effort}")
         return CallMeta(provider=self.provider_name, model=model, config_version=":".join(parts))
 
+    def judge_meta(self) -> CallMeta:
+        """The meta of a Jev call on this provider's configured backend, for an evaluation that
+        failed before any judgement (the evaluation row still records backend and effort)."""
+        backend = self.judge_backend if self._supports_decisions() else "responses"
+        return self.meta("judge_sufficiency", backend=backend)
+
     # --- backend hooks ----------------------------------------------------------------------
 
     @abstractmethod
@@ -264,7 +270,12 @@ class AiProvider(ABC):
     def generate_question(self, request: QuestionRequest) -> GeneratedQuestion:
         if request.kind == "PROBE" and not request.missing_aspects:
             raise ValueError("a PROBE question needs the missing aspects from the judgement")
-        raw: RawQuestion = self._structured("generate_question", request.model_dump(mode="json"))
+        payload = request.model_dump(mode="json")
+        if request.kind == "PROBE":
+            # The one aspect this probe asks, named on its own: Jev lists the missing aspects in
+            # table order (core first), and the model must not pick a later one instead.
+            payload["target_aspect"] = request.missing_aspects[0]
+        raw: RawQuestion = self._structured("generate_question", payload)
         text = clean_text(raw.question)
         if not text:
             raise invalid("blank_question")
@@ -465,6 +476,11 @@ class FallbackAiProvider(AiProvider):
         self.transcribe_model = primary.transcribe_model
         self.judge_backend = primary.judge_backend
         self.judge_thresholds = primary.judge_thresholds
+
+    def judge_meta(self) -> CallMeta:
+        # The configured path (the primary's); a failure after the fallback is still recorded
+        # against the configuration the task was run with.
+        return self.primary.judge_meta()
 
     @property
     def max_call_seconds(self) -> float:

@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from app.ai.contracts import IntentBrief, clean_text
 from app.interview.question_set import INTENTS_V1
 
-ASPECTS_VERSION = "2026-10-08.1"
+ASPECTS_VERSION = "2026-10-08.2"
 MAX_LABEL_LENGTH = 200
 
 
@@ -47,6 +47,25 @@ class IntentAspects:
 
 def _a(label: str, instructions: str, *, core: bool = True) -> Aspect:
     return Aspect(label, instructions, core)
+
+
+# How an order may be told (Decisions false negatives, eval run 2026-10-08): owners describe each
+# task in a natural sentence ("메뉴를 누르고 결제까지 받아요"), not as a numbered list.
+_IN_SENTENCES = ("순서는 한 문장 안에서 동작을 차례로 이어 말한 것(예: \"메뉴를 누르고 결제까지 받아요\", "
+                 "\"만들어서 픽업대에 올리고 번호를 불러요\")으로 충분하다. \"먼저\", \"그다음\", \"마지막\" 같은 말이나 "
+                 "번호가 없어도 되고, 업무나 설비마다 따로 나눠 설명해도 된다.")
+
+
+def _procedure(subject: str) -> str:
+    """The core "작업 순서" predicate of a task intent (common or shift tasks)."""
+    return (
+        f"점주가 말한 {subject}마다 근무자가 그 일을 할 때 하는 동작을 차례로 설명했다. {_IN_SENTENCES} "
+        "업무마다 하는 동작이 차례로 드러나면 충분하고, 수량·도구 이름 같은 세부까지 요구하지 않는다. 점주가 "
+        "설명하면서 업무를 조금 다른 이름으로 불러도 같은 업무로 본다. 업무 이름이나 결과만 말했거나(예: "
+        "\"손님 응대하고 음료 만들고 청소해요\"), 업무들을 하는 차례만 말하고 업무 안에서 무엇을 하는지는 말하지 "
+        "않았다면(예: \"먼저 주문 받고 그다음 음료 만들어요\") 거짓이다. 한 동작으로 끝나는 업무는 그 동작을 "
+        "설명했으면 참이다."
+    )
 
 
 _TABLE: dict[str, IntentAspects] = {
@@ -73,10 +92,7 @@ _TABLE: dict[str, IntentAspects] = {
         aspects=(
             _a("공통 업무의 종류",
                "점주가 근무조와 관계없이 모든 직원이 공통으로 하는 업무가 무엇무엇인지 말했다."),
-            _a("공통 업무의 작업 순서",
-               "점주가 말한 공통 업무 각각에 대해, 근무자가 따라 할 수 있을 만큼 무엇을 어떤 순서와 방법으로 "
-               "하는지 설명했다. 업무 이름이나 결과만 말했다면 거짓이다. 한 동작으로 끝나는 업무는 그 동작을 "
-               "설명했으면 참이다."),
+            _a("공통 업무의 작업 순서", _procedure("공통 업무")),
             _a("공통 업무의 완료 기준",
                "점주가 말한 공통 업무 각각에 대해 어떤 상태가 되면 끝난 것으로 보는지 말했다.",
                core=False),
@@ -89,10 +105,7 @@ _TABLE: dict[str, IntentAspects] = {
                "점주가 특정 근무조만 따로 맡아서 하는 업무가 무엇무엇인지 말했다."),
             _a("근무조별 업무의 담당 근무조",
                "점주가 말한 근무조별 업무 각각을 어느 근무조가 맡는지 알 수 있다."),
-            _a("근무조별 업무의 작업 순서",
-               "점주가 말한 근무조별 업무 각각에 대해, 근무자가 따라 할 수 있을 만큼 무엇을 어떤 순서와 방법으로 "
-               "하는지 설명했다. 업무 이름이나 결과만 말했다면 거짓이다. 한 동작으로 끝나는 업무는 그 동작을 "
-               "설명했으면 참이다."),
+            _a("근무조별 업무의 작업 순서", _procedure("근무조별 업무")),
             _a("근무조별 업무의 완료 기준",
                "점주가 말한 근무조별 업무 각각에 대해 어떤 상태가 되면 끝난 것으로 보는지 말했다.",
                core=False),
@@ -116,11 +129,14 @@ _TABLE: dict[str, IntentAspects] = {
         aspects=(
             _a("설비의 종류", "점주가 직원이 다루는 기계나 설비가 무엇무엇인지 말했다."),
             _a("설비의 사용 순서",
-               "점주가 말한 설비마다 근무자가 따라 할 수 있을 만큼 어떤 순서로 사용하는지 설명했다."),
-            _a("설비의 관리 방법",
-               "점주가 말한 설비마다 청소하거나 관리하는 방법을 설명했다.", core=False),
+               "점주가 말한 설비마다 근무자가 따라 할 수 있을 만큼 어떤 순서로 사용하는지 설명했다. "
+               + _IN_SENTENCES + " 설비 이름만 말했거나 \"그냥 켜고 쓰면 돼요\"처럼 무엇을 하는지 알 수 없으면 "
+               "거짓이다."),
+            # Safety before upkeep: a new worker needs the cautions on day one, cleaning can wait.
             _a("설비의 주의 사항",
                "점주가 말한 설비마다 사용할 때 주의할 점을 말했다.", core=False),
+            _a("설비의 관리 방법",
+               "점주가 말한 설비마다 청소하거나 관리하는 방법을 설명했다.", core=False),
         ),
         not_applicable="점주가 직원이 다루는 기계나 설비가 없다고 분명히 말했다.",
     ),

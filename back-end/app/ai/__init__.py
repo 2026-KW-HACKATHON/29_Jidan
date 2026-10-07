@@ -21,7 +21,9 @@ Configuration (environment):
     OPENAI_TRANSCRIBE_TIMEOUT_SECONDS default 120
 
 Every operation uses OPENAI_MODEL (and OPENAI_FALLBACK_MODEL after a retryable failure); there is
-no per-operation model, so a fallback always replaces one model with one other.
+no per-operation model, so a fallback always replaces one model with one other. The fallback
+model judges sufficiency on the responses backend (structured-output Jev, OPENAI_REASONING_EFFORT)
+whatever OPENAI_JUDGE_BACKEND says, because the Decisions API is not served for every model.
 """
 
 import logging
@@ -90,7 +92,7 @@ def build_provider_from_env() -> AiProvider:
     writing_effort = _effort("OPENAI_WRITING_REASONING_EFFORT", "medium")
     from app.ai.openai_provider import OpenAiProvider
 
-    def make(model: str) -> AiProvider:
+    def make(model: str, judge_backend: str = judge_backend) -> AiProvider:
         return OpenAiProvider(
             api_key=api_key, model=model,
             transcribe_model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "").strip() or DEFAULT_TRANSCRIBE_MODEL,
@@ -104,7 +106,9 @@ def build_provider_from_env() -> AiProvider:
     primary = make(os.getenv("OPENAI_MODEL", "").strip() or DEFAULT_MODEL)
     fallback_model = os.getenv("OPENAI_FALLBACK_MODEL", "").strip()
     if fallback_model and fallback_model != primary.model:
-        return FallbackAiProvider(primary, make(fallback_model))
+        # The Decisions API serves only some models (gpt-6-luna); a fallback model judges on
+        # the structured-output Jev instead of failing every evaluation as NOT_CONFIGURED.
+        return FallbackAiProvider(primary, make(fallback_model, judge_backend="responses"))
     return primary
 
 

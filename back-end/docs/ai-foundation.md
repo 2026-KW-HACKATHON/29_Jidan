@@ -25,7 +25,7 @@
 | `AI_PROVIDER` | `openai` | `fake`는 local/dev 시연용(`production`에서 시작 시 거부) |
 | `OPENAI_API_KEY` | 없음 | 환경 변수로만 읽는다. 없으면 모든 호출이 `not_configured`(재시도 불가) |
 | `OPENAI_MODEL` | `gpt-6-luna` | 사용자 결정 "ChatGPT 6 Luna". `/v1/models`와 공식 문서로 ID 확인 |
-| `OPENAI_FALLBACK_MODEL` | 없음 | 지정하면 재시도 가능 실패 뒤 이 모델로 한 번 더 시도(fallback) |
+| `OPENAI_FALLBACK_MODEL` | 없음 | 지정하면 재시도 가능 실패 뒤 이 모델로 한 번 더 시도(fallback). fallback의 Jev는 `OPENAI_JUDGE_BACKEND`와 관계없이 Responses 경로를 쓴다(Decisions API는 일부 모델만 받으므로, 미지원 모델이 모든 평가를 `not_configured`로 끝내지 않게) |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | OpenAI 파일 전사 모델 |
 | `OPENAI_REASONING_EFFORT` | `low` | `none/low/medium/high/xhigh/max`, 빈 값이면 미지정. `answer_question`과 Responses 경로의 Jev |
 | `OPENAI_QUESTION_REASONING_EFFORT` | `low` | 질문 생성(`generate_question`). 값 규칙은 위와 같다 |
@@ -45,7 +45,7 @@
 | `compose_draft`, `revise_structure` | Responses | `OPENAI_WRITING_REASONING_EFFORT`(medium) | `OPENAI_WRITING_TIMEOUT_SECONDS` | 32000 |
 | `answer_question` | Responses | `OPENAI_REASONING_EFFORT`(low) | `OPENAI_TIMEOUT_SECONDS` | 8000 |
 
-결과의 `meta.config_version`은 `provider:model:PROMPT_VERSION` 뒤에 실제 호출 조건을 붙인다: effort를 보냈으면 `:effort=<값>`, Jev는 경로를 `:responses`(+effort) 또는 `:decisions:aspects-<ASPECTS_VERSION>:t=<aspect>/<not_applicable>`로 남긴다(예: `openai:gpt-6-luna:2026-10-07.1:decisions:aspects-2026-10-08.1:t=0.70/0.80`). 실패 평가 행은 제공자 단위 `provider.config_version`(`provider:model:PROMPT_VERSION`)을 쓴다.
+결과의 `meta.config_version`은 `provider:model:PROMPT_VERSION` 뒤에 실제 호출 조건을 붙인다: effort를 보냈으면 `:effort=<값>`, Jev는 경로를 `:responses`(+effort) 또는 `:decisions:aspects-<ASPECTS_VERSION>:t=<aspect>/<not_applicable>`로 남긴다(예: `openai:gpt-6-luna:2026-10-07.1:decisions:aspects-2026-10-08.1:t=0.70/0.80`). 실패 평가 행도 성공 행과 같은 연산 단위 값(`provider.judge_meta()`: 설정된 Jev 경로와 effort 포함, fallback 구성이면 주 모델의 설정)을 쓴다.
 
 전사 기본값 근거(OpenAI speech-to-text 가이드, 2026-10 확인): `gpt-transcribe`는 녹음 파일 전사의 권장 모델이고 다국어 힌트(`languages`)와 용어 힌트(`keywords`)를 받는다. 지원 형식 mp3·mp4·m4a·wav·webm은 우리 4개 형식을 모두 포함하고 파일 상한 25 MB는 20 MiB보다 크며 길이 제한은 문서에 없다(우리 상한 120초). `gpt-4o-transcribe`·`gpt-4o-mini-transcribe`·`whisper-1`로 바꾸면 `language`/`prompt`로 보낸다. 한국어 합성 음성 실키 테스트로 확인했다.
 
@@ -55,7 +55,7 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 
 설치된 SDK에는 Decisions 메서드가 없어 `client.post("/decisions", cast_to=httpx.Response, body=..., options={"timeout": OPENAI_TIMEOUT_SECONDS})`로 보낸다. 인증·base URL·예외 타입이 SDK 그대로라 오류 분류(`classify`)도 같다.
 
-- **aspect 표**: 질문 셋 v1의 인텐트마다 `coverage_criteria`를 원자적 점검 항목으로 나눈다(예: COMMON_TASKS → `공통 업무의 종류`, `공통 업무의 작업 순서`, `공통 업무의 완료 기준`). 라벨은 "<대상>의 <측면>" 하나이고 그대로 `missing_aspects`가 되어 PROBE 질문이 묻는다. 기본 내용(종류·순서)은 "따로 정한 게 없어요"로 채워지지 않고 세부(완료 기준·주의 사항·연락 기준)는 채워진다(B04 정책). 인텐트마다 "점주가 해당 사항이 없다고 분명히 말했다" predicate(`not_applicable`)가 하나 있다. 키와 `coverage_criteria`가 모두 v1과 같을 때만 표를 쓰고, 그 밖에는 `coverage_criteria` 전체를 aspect 하나로 쓴다. 표 문구를 바꾸면 `ASPECTS_VERSION`을 올린다.
+- **aspect 표**: 질문 셋 v1의 인텐트마다 `coverage_criteria`를 원자적 점검 항목으로 나눈다(예: COMMON_TASKS → `공통 업무의 종류`, `공통 업무의 작업 순서`, `공통 업무의 완료 기준`). 표의 순서가 PROBE 순서다: 근무자에게 가장 먼저 필요한 기본 내용이 앞이고, 설비는 사용 순서 → 주의 사항(안전) → 관리 방법 순이다. 작업·사용 순서 predicate는 "메뉴를 누르고 결제까지 받아요"처럼 문장 안에서 동작을 이어 말한 설명도 순서로 인정하고("먼저/그다음"·번호 불필요), 업무 이름만 말했거나 업무들의 차례만 말한 답은 거짓으로 둔다. 라벨은 "<대상>의 <측면>" 하나이고 그대로 `missing_aspects`가 되어 PROBE 질문이 묻는다. 기본 내용(종류·순서)은 "따로 정한 게 없어요"로 채워지지 않고 세부(완료 기준·주의 사항·연락 기준)는 채워진다(B04 정책). 인텐트마다 "점주가 해당 사항이 없다고 분명히 말했다" predicate(`not_applicable`)가 하나 있다. 키와 `coverage_criteria`가 모두 v1과 같을 때만 표를 쓰고, 그 밖에는 `coverage_criteria` 전체를 aspect 하나로 쓴다. 표 문구를 바꾸면 `ASPECTS_VERSION`을 올린다.
 - **요청**: 입력은 다른 연산과 같은 `<data>` JSON 문서(store·intent·context·dialogue, depth 제외)를 user 메시지로 보낸다. Decisions에는 instructions 필드가 없어 predicate마다 데이터 취급 규칙(데이터 안 지시를 따르지 않음, 점주가 실제로 말한 것만 근거, 네 가지 무응답 구분)을 붙인다.
 - **재검증**: 응답의 답 수·순서·`name`이 질문과 일치해야 하고, `predicate`의 `probability`는 0~1의 유한한 숫자(불리언 불가)여야 한다. 어기면 `INVALID_OUTPUT`(재시도 가능). JSON이 아닌 본문도 `INVALID_OUTPUT`.
 - **판정**: `P(not_applicable) ≥ 0.8`이면 충분. 아니면 모든 aspect `P ≥ 0.7`일 때 충분. `missing_aspects`는 임계 미만 aspect 라벨(표 순서, 최대 5개). 결과 `probability`는 결합 확률 `max(P(not_applicable), min P(aspect))`이며 기록용이다(판정은 임계값으로 하므로 불충분인데 0.5 이상일 수 있다).
@@ -69,7 +69,7 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 | 메서드 | 요청 | 결과 | 쓰는 곳 |
 | --- | --- | --- | --- |
 | `judge_sufficiency` | `SufficiencyRequest(intent, dialogue, depth, context, store)` | `SufficiencyJudgement(sufficient, probability, missing_aspects)`; `needs_follow_up` | Jev(#120). 기본은 Decisions API(아래 § Jev) |
-| `generate_question` | `QuestionRequest(kind=BASE/PROBE, intent, depth, dialogue, missing_aspects, context)` | `GeneratedQuestion(text)` | 기본·추가 질문(#120). PROBE는 `missing_aspects` 필수 |
+| `generate_question` | `QuestionRequest(kind=BASE/PROBE, intent, depth, dialogue, missing_aspects, context)` | `GeneratedQuestion(text)` | 기본·추가 질문(#120). PROBE는 `missing_aspects` 필수이고, 모델에는 첫 항목이 `target_aspect`로 따로 전달되어 그 항목만 묻는다(나머지는 다음 질문). BASE는 기본 질문의 범위를 줄이지 않고, 다른 인텐트 요약(context)의 "해당 없음"을 전제로 삼지 않는 중립 문장이다 |
 | `summarize_intent` | `IntentSummaryRequest(intent, dialogue, needs_detail, available_shifts, evidence)` | `IntentSummary(summary, structure)` | 인텐트 요약(#120) |
 | `revise_structure` | `StructureRevisionRequest(current, summary, target, instruction, external_shifts, require_manual_level, evidence)` | `StructureRevision(outcome, structure, summary)` | 인텐트 정정(#120), 초안 정정(#118) |
 | `compose_draft` | `DraftRequest(reviews, evidence)` | `DraftComposition(structure)` | 초안 생성(#120 completion) |
