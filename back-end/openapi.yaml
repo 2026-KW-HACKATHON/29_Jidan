@@ -5081,6 +5081,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/ManualInterviewSession'
               examples:
+                guidancePhotosPending:
+                  summary: 사진 추천 · 연결할 요약 생성 전
+                  value:
+                    id: c701b623-889c-4d28-b055-501251ac6773
+                    storeId: 51c1c743-d377-4e7a-8449-94377eecfce0
+                    draftVersionId: a0912ce8-1103-428d-aed0-57a5d78c7f0d
+                    questionSetVersion: 1
+                    revision: 2
+                    status: IN_PROGRESS
+                    phase: COLLECTING
+                    intents:
+                      - id: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        key: WORK_STRUCTURE
+                        stage: WORK_STRUCTURE
+                        coverage: PENDING
+                        depth: 0
+                        finishedAt: null
+                    currentIntentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                    questions:
+                      - id: 08d19610-3c04-4b22-8f56-765af2d236b8
+                        intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+                        kind: BASE
+                        depth: 0
+                        batchId: null
+                        text: 근무조와 시간을 알려주세요.
+                        answered: false
+                        guidance: 처음 일하는 근무자도 따라 할 수 있게 알려주세요.
+                        guidanceCards:
+                          - id: 72000000-0000-4000-8000-000000000001
+                            type: PHOTO_SUGGESTIONS
+                            title: 첨부 추천 사진
+                            items:
+                              - id: 72000000-0000-4000-8000-000000000002
+                                label: 근무표
+                                description: 근무조별 시간을 확인할 수 있는 사진
+                            attachmentTarget: null
+                            footer: 지금은 추천만 표시해요. 요약이 준비되면 사진을 첨부할 수 있어요.
+                    processing: null
+                    error: null
+                    startedAt: 2026-10-05T01:00:00Z
+                    completedAt: null
                 guidanceList:
                   summary: 일반 안내 목록
                   value:
@@ -18519,11 +18560,107 @@ components:
         - type
         - title
         - items
+    ManualGuidancePhotoTarget:
+      type: object
+      additionalProperties: false
+      description: 동일 세션의 READY 인텐트 검토에 존재하는 사진 연결 대상. 첨부 직전 검토를 다시 조회해 최신 revision으로 기존 photos API를 호출합니다. 추천 항목
+        ID는 sectionId 또는 mediaId가 아닙니다.
+      properties:
+        intentId: &a1
+          type: string
+          format: uuid
+        target:
+          enum:
+            - WORK_STRUCTURE
+            - SECTION
+        sectionId:
+          type:
+            - string
+            - "null"
+          format: uuid
+      required:
+        - intentId
+        - target
+        - sectionId
+      oneOf:
+        - properties:
+            target:
+              const: WORK_STRUCTURE
+            sectionId:
+              type: "null"
+        - properties:
+            target:
+              const: SECTION
+            sectionId: *a1
+    ManualGuidancePhotos:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: PHOTO_SUGGESTIONS
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: \S
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/ManualGuidanceItem"
+        footer:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          pattern: \S
+        attachmentTarget:
+          description: null이면 연결할 READY 검토/section이 아직 없어 추천만 표시하고 첨부 동작은 제공하지 않습니다. 대상 생성 후 새 세션 revision에서 제공할 수 있습니다.
+            다른 매장·세션·삭제된 section 참조는 금지합니다.
+          oneOf:
+            - $ref: "#/components/schemas/ManualGuidancePhotoTarget"
+            - type: "null"
+      required:
+        - id
+        - type
+        - title
+        - items
+        - attachmentTarget
+      description: 위치·배치 사진 추천. 한 카드의 추천 사진은 같은 대상에 연결하며 대상이 다르면 카드를 분리합니다. 첨부는 선택이고 인터뷰 답변/인텐트 완료를 대신하지 않습니다.
+      examples:
+        - id: 72000000-0000-4000-8000-000000000001
+          type: PHOTO_SUGGESTIONS
+          title: 첨부 추천 사진
+          items: &a1
+            - id: 72000000-0000-4000-8000-000000000002
+              label: 근무표
+              description: 근무조별 시간을 확인할 수 있는 사진
+          attachmentTarget:
+            intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+            target: WORK_STRUCTURE
+            sectionId: null
+          footer: null
+        - id: 72000000-0000-4000-8000-000000000001
+          type: PHOTO_SUGGESTIONS
+          title: 첨부 추천 사진
+          items: *a1
+          attachmentTarget:
+            intentId: 09dbccbd-75e2-4709-9a80-b9a9ddeef10a
+            target: SECTION
+            sectionId: 72000000-0000-4000-8000-000000000003
+          footer: null
     ManualGuidanceCard:
       description: 표시 종류별 안내 카드. 배열 순서와 ID를 유지하며 클라이언트가 질문 문자열로 종류·상태를 추측하지 않습니다.
       oneOf:
         - $ref: "#/components/schemas/ManualGuidanceList"
         - $ref: "#/components/schemas/ManualGuidanceChecklist"
+        - $ref: "#/components/schemas/ManualGuidancePhotos"
     ManualInterviewQuestion:
       type: object
       additionalProperties: false
