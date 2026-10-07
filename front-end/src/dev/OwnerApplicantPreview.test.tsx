@@ -15,6 +15,16 @@ afterEach(() => {
   Reflect.deleteProperty(HTMLDialogElement.prototype, 'close')
 })
 
+it('미응답 안내를 Escape로 닫아도 미응답 상태 화면으로 복귀한다', async () => {
+  history.replaceState(null, '', '/__owner/applicant/no-response/alert')
+  render(<PreviewApp />)
+  fireEvent(await screen.findByRole('dialog'), new Event('cancel', { cancelable: true }))
+  await waitFor(() => expect(location.pathname).toBe('/__owner/applicant/no-response'))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByText('1시간 동안 미응답')).toBeInTheDocument()
+  expect(fetch).not.toHaveBeenCalled()
+})
+
 it.each([
   ['/__owner/applicant', '수락 대기 · 요청한 지 20분'],
   ['/__owner/applicant/no-response', '1시간 동안 미응답'],
@@ -81,10 +91,12 @@ it.each([
 
 it('미응답 안내의 내부 클릭은 유지하고 배경을 닫으면 상태 경로도 함께 변경한다', async () => {
   history.replaceState(null, '', '/__owner/applicant/no-response/alert')
-  const { container } = render(<PreviewApp />)
-  fireEvent.click(await screen.findByRole('dialog'))
+  render(<PreviewApp />)
+  const dialog = await screen.findByRole('dialog')
+  vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue(new DOMRect(24, 300, 342, 207))
+  fireEvent.click(dialog, { clientX: 30, clientY: 310 })
   expect(location.pathname).toBe('/__owner/applicant/no-response/alert')
-  fireEvent.click(container.querySelector('.modal-overlay')!)
+  fireEvent.click(dialog, { clientX: 10, clientY: 310 })
   await waitFor(() => expect(location.pathname).toBe('/__owner/applicant/no-response'))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })

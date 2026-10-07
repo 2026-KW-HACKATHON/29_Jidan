@@ -1,214 +1,32 @@
-.my-isolated-wrapper {
-  --Gray-0: #FFFFFF;
-  --Gray-60: #5A6169;
-  --Gray-90: #1F2124;
-  --Primary-5: #EBF1FE;
-  --Primary-50: #255CF5;
-  --System-Danger-50: #C44037;
-  --Bg-color: #F5F7FA;
-
-  --Gap-3: 8px;
-  --Gap-4: 12px;
-  --Gap-5: 16px;
-  --Gap-7: 24px;
-
-  --Radius-medium-3: 8px;
-  --Radius-xlarge-1: 12px;
-  
-  --elevation-Default-level-1: 0px 1px 3px rgba(0, 0, 0, 0.1);
-  --elevation-Modal: 0px 4px 12px rgba(0, 0, 0, 0.15);
-
-  background-color: #e5e7eb;
-  display: flex;
-  justify-content: center;
-  
-  /* 스크롤 가능 */
-  align-items: flex-start; 
-  height: 100vh;
-  width: 100vw;
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 9999;
-  font-family: "Pretendard GOV", sans-serif;
-  
-  overflow-y: auto; /* 화면 높이가 844px보다 작을 때 마우스 스크롤 허용 */
-  padding: 40px 0; /* 위아래로 여백을 줘서 844px 화면이 안전하게 다 보이도록 설정 */
-  box-sizing: border-box;
+/* Figma 698:2714 / 698:2765 / 698:2821 / 698:2981. */
+.preview-applicant-status { background: var(--ds-primary-surface); }
+.preview-applicant-status .ds-app-bar h1 { line-height: 26px; }
+.preview-applicant-status .ds-mobile-body { padding: 8px var(--ds-space-6) var(--ds-space-6); }
+.preview-applicant-status .ds-mobile-footer { padding: var(--ds-space-4) var(--ds-space-6) max(var(--ds-space-6), env(safe-area-inset-bottom, 0px)); }
+.preview-applicant-status .applicant-content { display: flex; flex-direction: column; gap: var(--ds-space-5); }
+.preview-applicant-status .applicant-title { font-size: 22px; line-height: 33px; font-weight: 700; }
+.preview-applicant-status .applicant-summary .owner-job-summary strong { line-height: 23px; }
+.preview-applicant-status .applicant-summary .owner-job-summary p { line-height: 20px; }
+.preview-applicant-status .applicant-label { font-size: var(--ds-body); line-height: 23px; font-weight: 700; }
+.preview-applicant-status .applicant-list { display: flex; flex-direction: column; gap: var(--ds-space-3); }
+.preview-applicant-status .applicant-card { display: flex; flex-direction: column; gap: var(--ds-space-3); padding: var(--ds-space-4); border-radius: var(--ds-radius-dialog); background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.preview-applicant-status .owner-applicant-identity h3 { line-height: 29px; }
+.preview-applicant-status .owner-applicant-identity p { line-height: 20px; }
+.preview-applicant-status .applicant-status { color: var(--ds-secondary); font-size: var(--ds-small); line-height: 20px; font-weight: 700; }
+.preview-applicant-status .applicant-status.is-confirmed { color: var(--ds-primary-strong); }
+.preview-applicant-status .applicant-card .ds-button-secondary { box-shadow: 0 0 2px rgb(0 0 0 / 12%), 0 1px 2px rgb(0 0 0 / 12%); }
+.preview-applicant-status .applicant-helper { color: var(--ds-secondary); font-size: var(--ds-small); line-height: 20px; }
+.preview-applicant-status .applicant-no-response { display: flex; flex-direction: column; gap: var(--ds-space-3); padding: var(--ds-space-4); border-radius: var(--ds-radius-dialog); background: #d6e3fd; }
+.preview-applicant-status .applicant-no-response p { font-size: var(--ds-body); line-height: 23px; }
+.preview-applicant-status .applicant-no-response .ds-button { width: 100%; }
+.preview-applicant-alert[open],
+.preview-applicant-alert .ds-modal-message { gap: var(--ds-space-4); }
+.preview-applicant-alert .ds-modal-message h2 { font-size: 22px; line-height: 33px; }
+.preview-applicant-alert .ds-modal-message p { line-height: 23px; }
+/* Center the top-layer dialog over the canvas below the mobile preview banner. */
+.preview-workbench .preview-applicant-alert { top: 36px; }
+.preview-workbench .preview-applicant-alert::backdrop { top: 36px; height: calc(100% - 36px); }
+@media (min-width: 800px) {
+  .preview-workbench .preview-applicant-alert { top: 0; }
+  .preview-workbench .preview-applicant-alert::backdrop { top: 0; height: 100%; }
 }
-
-/* 📱 모바일 뼈대 */
-.mobile-container {
-  display: flex;
-  width: 390px;
-  height: 844px;
-  min-height: 844px;
-  padding: 0;
-  flex-direction: column;
-  align-items: stretch; 
-  gap: 0;
-  
-  background-color: #EBF1FE; 
-  position: relative;
-  overflow-y: auto;
-  box-sizing: border-box;
-}
-
-/* 상단 헤더 영역 */
-.header-area {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--Gray-90);
-}
-
-/* 메인 타이틀 */
-.main-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--Gray-90);
-  margin: 8px 16px 24px 16px;
-}
-
-/* 소제목 라벨 */
-.section-label {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--Gray-90);
-  margin: 24px 16px 8px 16px;
-}
-
-/* 파란색 공고 요약 박스 */
-.blue-summary-box {
-  background-color: #D6E3FD; /* 피그마의 더 진한 파랑 박스 */
-  border-radius: var(--Radius-xlarge-1);
-  padding: var(--Gap-5);
-  margin: 0 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.summary-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--Gray-90);
-  margin: 0;
-}
-
-.summary-text {
-  color: var(--Gray-60);
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 150%;
-  margin: 0;
-}
-
-/* 지원자 정보 흰색 카드 */
-.applicant-card {
-  display: flex;
-  padding: var(--Gap-5);
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--Gap-4);
-  border-radius: var(--Radius-xlarge-1);
-  background: var(--Gray-0);
-  box-shadow: var(--elevation-Default-level-1);
-  margin: 0 16px;
-}
-
-/* 카드 내부 텍스트 및 버튼 */
-.card-status-text {
-  font-size: 13px;
-  color: var(--Gray-60);
-  margin: 0;
-}
-
-.card-inner-btn {
-  width: 100%;
-  padding: 12px;
-  border-radius: var(--Radius-medium-3);
-  border: 1px solid #E5E7EB;
-  background: var(--Gray-0);
-  color: var(--Gray-90); /* 버튼 글씨 보이게 수정 */
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-/* 맨 하단 안내 문구 */
-.bottom-helper-text {
-  font-size: 12px;
-  color: var(--Gray-60);
-  text-align: left;
-  margin: 16px;
-}
-
-/* 맨 하단 고정 버튼 (빨간색) */
-.bottom-fixed-btn {
-  display: flex;
-  min-height: 48px;
-  padding: var(--Gap-4) var(--Gap-5);
-  justify-content: center;
-  align-items: center;
-  gap: var(--Gap-3);
-  border-radius: var(--Radius-medium-3);
-  background: var(--System-Danger-50);
-  box-shadow: var(--elevation-Default-level-1);
-  
-  color: var(--Gray-0);
-  font-size: 16px;
-  font-weight: 700;
-  border: none;
-  cursor: pointer;
-  
-  position: absolute;
-  bottom: 24px;
-  left: 16px;
-  right: 16px;
-  width: calc(100% - 32px);
-}
-
-.bottom-fixed-btn.primary {
-  background: var(--Primary-50);
-}
-
-/* 오버레이 모달 */
-.modal-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.4);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  padding: 16px;
-  box-sizing: border-box;
-}
-
-.modal-box {
-  display: flex;
-  padding: var(--Gap-7);
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--Gap-5);
-  width: 100%;
-  border-radius: var(--Radius-xlarge-1);
-  background: var(--Gray-0);
-  box-shadow: var(--elevation-Default-level-1);
-}
-
-.modal-title { font-size: 18px; font-weight: 700; margin: 0; color: var(--Gray-90); }
-.modal-desc { font-size: 14px; color: var(--Gray-60); margin: 0; line-height: 1.5; }
-.modal-btn-group { display: flex; gap: 8px; width: 100%; }
-.modal-btn { flex: 1; padding: 12px; border-radius: 8px; border: none; font-weight: 700; font-size: 14px; cursor: pointer; }
-.modal-btn.cancel { background: #fff; border: 1px solid #E5E7EB; color: var(--Gray-90); }
-.modal-btn.confirm { background: var(--Primary-50); color: #fff; }
-.test-controls { display: flex; gap: 8px; padding: 16px; background: #fff; overflow-x: auto; flex-shrink: 0; border-bottom: 1px solid #ddd; }
-.test-controls button { padding: 8px; font-size: 12px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer; flex-shrink: 0; }

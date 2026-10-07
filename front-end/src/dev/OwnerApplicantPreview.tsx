@@ -29,7 +29,7 @@ export default function OwnerApplicantPreview() {
   if (view === 'onboarding' && state === 'CONFIRMED') return <ManualWorkerPreview service={service}
     preview={{ preview: true, versionId: draftFixture.versionId, revision: draftFixture.revision, content: draftFixture.content }}
     onClose={close} />
-  return <OwnerApplicantPage state={state} showAlert={path === '/__owner/applicant/no-response/alert'}
+  return <OwnerApplicantPage job={ownerJobFixtures[0]} applicant={applicant} state={state} showAlert={path === '/__owner/applicant/no-response/alert'}
     onBack={() => navigatePreview('/__owner/jobs?view=applicants&id=open')}
     onViewApplication={() => navigatePreview(`${path}?view=application`)}
     onOtherApplicants={() => navigatePreview('/__owner/jobs?view=applicants&id=open')}
