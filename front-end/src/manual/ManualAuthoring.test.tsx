@@ -1,3 +1,4 @@
+import './dialogTestSetup'
 import {cleanup,render,screen,fireEvent} from '@testing-library/react'
 import {afterEach,expect,it,vi} from 'vitest'
 import {ManualAuthoring} from './ManualAuthoring'
