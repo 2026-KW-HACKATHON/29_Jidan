@@ -74,3 +74,7 @@ NEEDS_DETAIL의 느낌표+보완 필요 표기, 업무 0/1개 미리보기, 여�
 - `?case=draft`, `missing`, `correction-running`, `correction-error`, `correction-clarify`, `correction-noop`, `generation-error`: 초안·정정·확인
 
 `npm run lint`, `npm run test:ci`, `npm run build`로 검사합니다. UI 시험은 in-app browser 우선이며 실제 마이크 권한·모바일 사진 접근과 서버 E2E를 샘플 검증 결과에 포함하지 않습니다.
+
+## 실제 API 진입 연결 (#166)
+
+`/home?view=manual&store=...`에서 점주에게는 디자인 정합화된 작성 화면, 근무자에게는 게시 목록·상세 기본 조회를 제공한다. `liveManualService`가 실제 세션과 요청별 CSRF를 연결한다. 위의 샘플 전용 검수와 실제 인증 진입을 구분하며, 상세 범위·검증 한계는 [workspace 안내](../workspace/README.md)를 따른다. AI 질문과 근무자 화면 전체 디자인 정합화는 여전히 후속 작업이다.
