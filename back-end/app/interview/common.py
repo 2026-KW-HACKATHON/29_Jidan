@@ -16,6 +16,7 @@ Phase projection (API `phase`, docs/manual-interview-design.md):
     COLLECTING                     IN_PROGRESS, no processing, the current unanswered question
 """
 
+import os
 from datetime import datetime
 from typing import Any
 
@@ -50,6 +51,15 @@ REVIEW_NOT_READY_MESSAGE = "아직 요약이 준비되지 않았어요."
 REVIEW_PROCESSING_MESSAGE = "요약을 처리하는 중이에요. 잠시 후 다시 확인해 주세요."
 
 QUESTION_KINDS = ("INITIAL_QUESTION", "FOLLOWUP_GENERATION")
+GUIDANCE_RESPONSES_ENV = "INTERVIEW_GUIDANCE_RESPONSES"
+
+
+def guidance_responses() -> bool:
+    """Whether responses carry the 0.11.0 guidance fields (guidance, guidanceCards,
+    lastAnsweredQuestion). Off unless "true": the frontend's additionalProperties:false
+    validator rejects them until its contract is updated (docs/manual-interview-design.md).
+    Stored guidance does not depend on it."""
+    return os.getenv(GUIDANCE_RESPONSES_ENV, "").strip().lower() == "true"
 
 
 def not_found() -> ApiError:
@@ -195,6 +205,19 @@ def is_answered(db: Session, question_id: str) -> bool:
     return bool(db.scalar(select(exists().where(InterviewTurn.reply_to_question_turn_id == question_id))))
 
 
+def last_answered_question(db: Session, session: InterviewSession) -> InterviewTurn | None:
+    """The question whose answer the evaluation judges, while it runs or after it failed (ERROR
+    keeps the failed task). Questions are immutable, so this is the snapshot taken when the
+    answer was accepted, and it survives retries; a new question, the next intent or the draft
+    replaces the EVALUATION task and the snapshot is gone."""
+    if session.processing_kind != "EVALUATION" or session.current_intent_id is None:
+        return None
+    question = latest_question(db, session.id, session.current_intent_id)
+    if question is None or not is_answered(db, question.id):
+        return None
+    return question
+
+
 def current_question(db: Session, session: InterviewSession) -> InterviewTurn | None:
     """The single question shown in COLLECTING (the latest unanswered one of the intent)."""
     if phase_of(session) != "COLLECTING":
@@ -222,11 +245,15 @@ def intent_body(progress: InterviewSessionIntent, intent: InterviewIntent) -> di
     }
 
 
-def question_body(turn: InterviewTurn, *, answered: bool = False) -> dict:
-    return {
+def question_body(turn: InterviewTurn, *, answered: bool = False, guidance: bool = False) -> dict:
+    """ManualInterviewQuestion. Questions written before guidance existed show null / []."""
+    body = {
         "id": turn.id, "intentId": turn.intent_id, "kind": turn.question_kind, "depth": turn.depth,
         "batchId": turn.probe_batch_id, "text": turn.content, "answered": answered,
     }
+    if guidance:
+        body["guidance"], body["guidanceCards"] = turn.guidance, list(turn.guidance_cards or [])
+    return body
 
 
 def session_body(db: Session, session: InterviewSession) -> dict:
@@ -234,11 +261,12 @@ def session_body(db: Session, session: InterviewSession) -> dict:
     manual = db.get(StoreManual, version.manual_id)
     question_set = db.get(InterviewQuestionSet, session.question_set_id)
     question = current_question(db, session)
+    guidance = guidance_responses()
     error = None
     if session.status == "ERROR":
         message = DRAFT_FAILED_MESSAGE if session.processing_kind == "DRAFT_GENERATION" else SESSION_FAILED_MESSAGE
         error = {"code": session.error_code, "message": message, "retryable": True}
-    return {
+    body = {
         "id": session.id,
         "storeId": manual.store_id,
         "draftVersionId": version.id,
@@ -248,13 +276,18 @@ def session_body(db: Session, session: InterviewSession) -> dict:
         "phase": phase_of(session),
         "intents": [intent_body(progress, intent) for progress, intent in session_intents(db, session.id)],
         "currentIntentId": session.current_intent_id,
-        "questions": [question_body(question)] if question is not None else [],
+        "questions": [question_body(question, guidance=guidance)] if question is not None else [],
         "processing": processing_body(session.processing_kind, session.processing_task_id,
                                       session.processing_attempt),
         "error": error,
         "startedAt": iso(session.started_at),
         "completedAt": iso(session.completed_at),
     }
+    if guidance:
+        answered = last_answered_question(db, session)
+        body["lastAnsweredQuestion"] = (
+            None if answered is None else question_body(answered, answered=True, guidance=True))
+    return body
 
 
 def review_body(review: InterviewIntentReview) -> dict:

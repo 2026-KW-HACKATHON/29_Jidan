@@ -3,7 +3,10 @@
 Fake mode (default): a `FakeAiProvider` with deterministic answers, so every manual step can be
 asserted exactly. Its outputs still go through the real parsing and server-side validation.
 
-* judge_sufficiency: COMMON_TASKS is short of detail once (one PROBE at depth 1); EQUIPMENT is
+* generate_question: the base question as written (a PROBE asks about the first missing aspect),
+  with fixed guidance on BASE questions and one example item ("첫 번째 할 일") on every question.
+* judge_sufficiency: an answer containing FAIL_ONCE fails its first evaluation (REFUSED);
+  COMMON_TASKS is short of detail once (one PROBE at depth 1); EQUIPMENT is
   never detailed enough (PROBEs up to depth 5, then NEEDS_DETAIL); every other answer suffices.
 * summarize_intent: two shifts, a "포스 마감" common task, an opening task on the first shift, a
   rule, an equipment section and an exception section (`SUMMARIES`).
@@ -35,6 +38,10 @@ POS_ANSWER = "포스 화면에서 마감 정산을 누르고, 출력한 영수�
 PROBED_ONCE = "COMMON_TASKS"
 NEEDS_DETAIL = "EQUIPMENT"
 SHIFT_08_30 = "08:30"
+QUESTION_GUIDANCE = "처음 일하는 근무자도 따라 할 수 있게 알려주세요."
+EXAMPLE_LABEL = "첫 번째 할 일"
+EXAMPLE_DESCRIPTION = "순서와 끝났다고 판단하는 기준"
+FAIL_ONCE = "(평가 실패 시험)"
 # summarize_intent x6 + compose_draft + revise_structure x2 + answer_question x4 + transcribe x2 = 15.
 DEFAULT_LIVE_OPS = ("summarize_intent", "compose_draft", "revise_structure", "answer_question", "transcribe")
 
@@ -62,7 +69,16 @@ SUMMARIES = {
 }
 
 
+_failed_once: set[str] = set()
+
+
 def judge(data):
+    # An answer carrying FAIL_ONCE fails its first evaluation (not retryable), so the scenario can
+    # watch ERROR, the kept question and the retry on the real server; the retry then succeeds.
+    answer = data["dialogue"][-1]["answer"]
+    if FAIL_ONCE in answer and answer not in _failed_once:
+        _failed_once.add(answer)
+        raise AiError(AiErrorCode.REFUSED, detail="e2e_fail_once")
     # Jev is not shown the probe counter; the latest turn of the dialogue carries the depth.
     key, depth = data["intent"]["key"], data["dialogue"][-1]["depth"]
     if key == NEEDS_DETAIL or (key == PROBED_ONCE and depth == 0):
@@ -101,9 +117,18 @@ def answer(data):
             "citations": [{"section_id": section["id"], "step_ids": [step["id"] for step in section["steps"]]}]}
 
 
+def question(data):
+    """The intent's question as written, with fixed guidance and one example per question kind."""
+    if data["kind"] == "BASE":
+        return {"question": data["intent"]["base_question"], "guidance": QUESTION_GUIDANCE,
+                "examples": [{"label": EXAMPLE_LABEL, "description": EXAMPLE_DESCRIPTION}]}
+    return {"question": f"{data['missing_aspects'][0]}에 대해 조금 더 자세히 알려 주세요.", "guidance": None,
+            "examples": [{"label": EXAMPLE_LABEL, "description": None}]}
+
+
 def install(fake: FakeAiProvider) -> FakeAiProvider:
-    return (fake.on("judge_sufficiency", judge).on("summarize_intent", summarize)
-            .on("revise_structure", revise).on("answer_question", answer))
+    return (fake.on("judge_sufficiency", judge).on("generate_question", question)
+            .on("summarize_intent", summarize).on("revise_structure", revise).on("answer_question", answer))
 
 
 class CallBudget:

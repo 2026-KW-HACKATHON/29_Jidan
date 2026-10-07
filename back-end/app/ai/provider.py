@@ -23,6 +23,10 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.ai.contracts import (
+    MAX_EXAMPLE_LABEL,
+    MAX_EXAMPLE_TEXT,
+    MAX_EXAMPLES,
+    MAX_GUIDANCE,
     CallMeta,
     DraftComposition,
     DraftRequest,
@@ -32,6 +36,7 @@ from app.ai.contracts import (
     IntentSummaryRequest,
     QaAnswer,
     QaRequest,
+    QuestionExample,
     QuestionRequest,
     StructureRevision,
     StructureRevisionRequest,
@@ -171,7 +176,20 @@ class AiProvider(ABC):
         text = clean_text(raw.question)
         if not text:
             raise invalid("blank_question")
-        return GeneratedQuestion(text=text, meta=self.meta())
+        # Guidance is optional decoration: what is blank, repeated or too long is left out, and
+        # only the first MAX_EXAMPLES examples are kept; it is never a reason to fail.
+        guidance = clean_text(raw.guidance or "")
+        examples: list[QuestionExample] = []
+        for example in raw.examples:
+            label, description = clean_text(example.label), clean_text(example.description or "")
+            if not label or len(label) > MAX_EXAMPLE_LABEL or any(e.label == label for e in examples):
+                continue
+            examples.append(QuestionExample(
+                label=label, description=description if 0 < len(description) <= MAX_EXAMPLE_TEXT else None))
+            if len(examples) == MAX_EXAMPLES:
+                break
+        return GeneratedQuestion(text=text, guidance=guidance if 0 < len(guidance) <= MAX_GUIDANCE else None,
+                                 examples=tuple(examples), meta=self.meta())
 
     def summarize_intent(self, request: IntentSummaryRequest) -> IntentSummary:
         raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json"))

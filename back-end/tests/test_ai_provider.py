@@ -127,7 +127,8 @@ def test_base_and_probe_questions(fake_ai):
 
 
 def test_blank_question_after_cleanup_is_invalid(fake_ai):
-    fake_ai.script("generate_question", FakeOutcome.ok({"question": "\u0000\u0007  "}))
+    fake_ai.script("generate_question", FakeOutcome.ok({"question": "\u0000\u0007  ", "guidance": None,
+                                                         "examples": []}))
     with expect_error(AiErrorCode.INVALID_OUTPUT):
         fake_ai.generate_question(QuestionRequest(kind="BASE", intent=INTENT, depth=0))
 

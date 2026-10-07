@@ -14,7 +14,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-07.1"  # Atomic missing aspects; a probe asks one sub-item (Q-INT-1).
+PROMPT_VERSION = "2026-10-08.1"  # Question guidance and examples (#158).
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.
@@ -79,6 +79,12 @@ INSTRUCTIONS: dict[str, str] = {
   측면만 남았다면 같은 문장으로 되묻지 말고 더 작은 단위(예: 첫 번째로 하는 일)로 바꿔 묻는다.
 - 이전 답변으로 기본 질문의 전제가 맞지 않게 되었다면(예: 근무조를 나누지 않는 매장) 그 사실에 맞게
   자연스럽게 바꿔 묻는다.
+- guidance: 질문 아래에 보여 줄 답변 요령 한두 문장(예: "처음 일하는 근무자도 따라 할 수 있게 알려주세요.").
+  질문을 반복하거나 새 질문을 덧붙이지 않는다. 필요 없으면 null.
+- examples: 점주가 무엇을 말하면 되는지 보여 주는 예시 항목(label)과 짧은 설명(description, 없으면 null).
+  이 질문이 묻는 하위 항목에 맞는 것만, 최대 8개. 점주가 말하지 않은 매장 사실을 지어내지 않고 일반적인
+  항목 이름으로 쓴다(예: 근무 구조 → "오전조" / "시작 시간과 종료 시간"). 선택지처럼 답을 유도하지 않는다.
+  필요 없으면 빈 배열.
 """,
     "summarize_intent": _COMMON + """
 [작업: 인텐트 이해 요약]

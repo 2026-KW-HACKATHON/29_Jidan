@@ -16,7 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.ai.contracts import (
     MAX_ASPECTS,
     MAX_CITATIONS,
+    MAX_EXAMPLES,
     MAX_MISSING,
+    MAX_RAW_EXAMPLES,
     MAX_SECTIONS,
     MAX_SHIFTS,
     MAX_STEPS,
@@ -95,7 +97,14 @@ JUDGE_SCHEMA = _object({
     ),
 })
 
-QUESTION_SCHEMA = _object({"question": _string("점주에게 할 질문 한 개 (2000자 이내)")})
+QUESTION_SCHEMA = _object({
+    "question": _string("점주에게 할 질문 한 개 (2000자 이내)"),
+    "guidance": _string("질문 아래에 보여 줄 답변 요령 한두 문장 (2000자 이내), 없으면 null", nullable=True),
+    "examples": _array(_object({
+        "label": _string("답변 예시 항목 이름 (200자 이내)"),
+        "description": _string("항목에 덧붙일 짧은 설명 (1000자 이내), 없으면 null", nullable=True),
+    }), f"점주가 답할 때 참고할 예시 항목 (최대 {MAX_EXAMPLES}개, 필요 없으면 빈 배열)"),
+})
 
 SUMMARY_SCHEMA = _object({
     "summary": _string("점주가 확인할 이해 요약 (해요체)"),
@@ -171,8 +180,18 @@ class RawJudgement(_Raw):
     )
 
 
+class RawExample(_Raw):
+    label: str
+    description: str | None
+
+
 class RawQuestion(_Raw):
+    """Guidance and examples are decoration: their limits are applied by the provider, which
+    leaves out what does not fit instead of failing the question (only an absurd list fails)."""
+
     question: str = Field(min_length=1, max_length=2000)
+    guidance: str | None
+    examples: list[RawExample] = Field(max_length=MAX_RAW_EXAMPLES)
 
 
 class RawSummary(_Raw):
