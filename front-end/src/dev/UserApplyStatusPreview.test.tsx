@@ -1,10 +1,31 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import PreviewApp from './PreviewApp'
 
 beforeAll(async () => { await Promise.all([import('./UserApplyStatusPreview'), import('./WorkerHomePreview')]) })
 beforeEach(() => { vi.stubGlobal('fetch', vi.fn()) })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+it('탭 키보드 이동이 끝에서 순환하고 주소 변경 후에도 포커스를 유지한다', async () => {
+  history.replaceState(null, '', '/__user/status')
+  render(<PreviewApp />)
+  const applying = await screen.findByRole('tab', { name: '신청 중 3' })
+  applying.focus()
+  fireEvent.keyDown(applying, { key: 'ArrowLeft' })
+  const ended = screen.getByRole('tab', { name: '종료 2' })
+  await waitFor(() => expect(ended).toHaveFocus())
+  expect(ended).toHaveAttribute('aria-selected', 'true')
+  expect(location.pathname).toBe('/__user/status/ended')
+  fireEvent.keyDown(ended, { key: 'ArrowRight' })
+  await waitFor(() => expect(applying).toHaveFocus())
+  expect(location.pathname).toBe('/__user/status')
+  fireEvent.keyDown(applying, { key: 'End' })
+  await waitFor(() => expect(ended).toHaveFocus())
+  fireEvent.keyDown(ended, { key: 'Home' })
+  await waitFor(() => expect(applying).toHaveFocus())
+  expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', applying.id)
+  expect(fetch).not.toHaveBeenCalled()
+})
 
 it.each([
   ['/__user/status', '주말 오픈 대타', 3],
@@ -25,20 +46,20 @@ it('홈의 신청 공고에서 탭·동일 탭·브라우저 이력·홈 복귀�
   fireEvent.click(await screen.findByRole('button', { name: '신청 중 공고' }))
   await screen.findByText('주말 오픈 대타')
   expect(location.pathname).toBe('/__user/status')
-  fireEvent.click(screen.getByRole('button', { name: '확정 1' }))
+  fireEvent.click(screen.getByRole('tab', { name: '확정 1' }))
   await screen.findByText('주말 마감 대타')
   expect(location.pathname).toBe('/__user/status/confirmed')
   const length = history.length
-  fireEvent.click(screen.getByRole('button', { name: '확정 1' }))
+  fireEvent.click(screen.getByRole('tab', { name: '확정 1' }))
   expect(history.length).toBe(length)
-  fireEvent.click(screen.getByRole('button', { name: '종료 2' }))
+  fireEvent.click(screen.getByRole('tab', { name: '종료 2' }))
   await screen.findByText('미선정')
   expect(location.pathname).toBe('/__user/status/ended')
   await act(async () => history.back())
   await screen.findByText('주말 마감 대타')
   await act(async () => history.forward())
   await screen.findByText('미선정')
-  fireEvent.click(screen.getByRole('button', { name: '신청 중 3' }))
+  fireEvent.click(screen.getByRole('tab', { name: '신청 중 3' }))
   await screen.findByText('주말 오픈 대타')
   fireEvent.click(screen.getByRole('button', { name: '뒤로 가기' }))
   await screen.findByRole('button', { name: '신청 중 공고' })
