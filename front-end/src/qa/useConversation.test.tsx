@@ -45,3 +45,10 @@ it('이탈한 화면의 늦은 생성 응답은 질문 제출로 이어지지 �
  act(()=>r.current.send(input));unmount();await act(async()=>resolve(result({id})))
  expect(call).toHaveBeenCalledOnce()
 })
+it('기존 대화를 불러오지 못하면 입력을 열지 않고 재조회로 복구한다',async()=>{
+ const call=vi.fn().mockRejectedValueOnce(new ApiError(0,'NETWORK_ERROR')).mockResolvedValue(result({turns:[],nextBeforeSequence:null}))
+ const service={storeId:id,call} as QaService
+ const {result:r}=renderHook(()=>useConversation(service,id))
+ await waitFor(()=>expect(r.current.error).not.toBe(''));expect(r.current.loading).toBe(true)
+ act(()=>r.current.retry());await waitFor(()=>expect(r.current.loading).toBe(false))
+})

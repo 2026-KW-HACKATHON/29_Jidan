@@ -13,7 +13,7 @@ export function WorkerQa({storeId,id,newChat,navigate}:{storeId:string;id:string
  const service=useMemo(()=>createQaService(storeId),[storeId])
  return <Resource load={load} onBack={back}>{access=>{
   if(!access.access.permissions.includes('USE_AI_QA')||!access.publishedVersionId)return <MobileLayout className="qa-screen" header={<AppBar title="AI 업무 질문" onBack={back}/>}><p>{!access.publishedVersionId?'아직 게시된 매뉴얼이 없어요. 점주님께 확인해 주세요.':'이 매장의 AI 질문을 이용할 수 없어요.'}</p></MobileLayout>
-  if(id||newChat)return <QaChat key={`${storeId}:${id}`} service={service} storeName={access.store.name} conversationId={id} onBack={()=>navigate(`/home?view=qa&store=${storeId}`)} onLatest={back}/>
+  if(id||newChat)return <QaChat key={`${storeId}:${id}`} service={service} storeName={access.store.name} conversationId={id} onBack={()=>navigate(`/home?view=qa&store=${storeId}`)} onLatest={back} onCreated={id=>navigate(`/home?view=qa&store=${storeId}&id=${id}`)}/>
   return <Conversations service={service} storeName={access.store.name} onBack={back} onOpen={id=>navigate(`/home?view=qa&store=${storeId}&${id?`id=${id}`:'new=1'}`)}/>
  }}</Resource>
 }

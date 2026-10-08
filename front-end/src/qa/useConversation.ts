@@ -9,7 +9,7 @@ export function mergeTurns(previous:QAQuestion[],incoming:QAQuestion[]){return [
 /** Mount per store/conversation. No transcript or attachment is persisted in browser storage. */
 export function useConversation(service:QaService,initialId:string) {
  const [id,setId]=useState(initialId),[turns,setTurns]=useState<QAQuestion[]>([]),[cursor,setCursor]=useState<number|null>(null)
- const [busy,setBusy]=useState(false),[loading,setLoading]=useState(!!initialId),[blocked,setBlocked]=useState(false)
+ const [busy,setBusy]=useState(false),[loading,setLoading]=useState(!!initialId),[loaded,setLoaded]=useState(!initialId),[blocked,setBlocked]=useState(false)
  const [error,setError]=useState(''),[pending,setPending]=useState(false),[sent,setSent]=useState(0),[pollEpoch,setPollEpoch]=useState(0)
  const life=useRef<AbortController|null>(null),lock=useRef(false),retry=useRef<Action|null>(null),conversation=useRef(initialId)
  const report=useCallback((e:unknown)=>{setError(qaError(e));if(accessLost(e)){setBlocked(true);setTurns([]);retry.current=null;setPending(false)}},[])
@@ -23,7 +23,7 @@ export function useConversation(service:QaService,initialId:string) {
  const reload=useCallback(()=>run(async signal=>{
   if(!conversation.current)return
   const {data}=await service.call('getQAConversation',undefined,{signal,params:{conversationId:conversation.current},query:{size:20}})
-  signal.throwIfAborted();setTurns(data.turns);setCursor(data.nextBeforeSequence);setPollEpoch(v=>v+1)
+  signal.throwIfAborted();setLoaded(true);setTurns(data.turns);setCursor(data.nextBeforeSequence);setPollEpoch(v=>v+1)
  }),[service,run])
  useEffect(()=>{
   const controller=new AbortController();life.current=controller;lock.current=false
@@ -71,7 +71,7 @@ export function useConversation(service:QaService,initialId:string) {
   signal.throwIfAborted();if(data.nextBeforeSequence!==null&&data.nextBeforeSequence>=before)throw new ApiError(0,'INVALID_RESPONSE')
   setTurns(t=>mergeTurns(t,data.turns));setCursor(data.nextBeforeSequence)
  })}
- return {id,turns,cursor,busy,loading,blocked,error,pending,sent,running:!!running,send,retryQuestion,older,reload,
+ return {id,turns,cursor,busy,loading:loading||!loaded&&!blocked,blocked,error,pending,sent,running:!!running,send,retryQuestion,older,reload,
   invalidate:report,
   retry:()=>{if(retry.current)void run(retry.current);else void reload()},dismiss:()=>setError('')}
 }

@@ -11,11 +11,12 @@ import {useConversation} from './useConversation'
 import type {QaService} from './service'
 import type {QACitation} from './types.generated'
 import './Qa.css'
-export function QaChat({service,storeName,conversationId='',onBack,onLatest}:{service:QaService;storeName:string;conversationId?:string;onBack:()=>void;onLatest:()=>void}){
+export function QaChat({service,storeName,conversationId='',onBack,onLatest,onCreated}:{service:QaService;storeName:string;conversationId?:string;onBack:()=>void;onLatest:()=>void;onCreated?:(id:string)=>void}){
  const chat=useConversation(service,conversationId),[citation,setCitation]=useState<QACitation|null>(null)
  const lastStatus=chat.turns.at(-1)?.status
  const end=useRef<HTMLDivElement>(null)
  useEffect(()=>{end.current?.scrollIntoView?.({block:'end'})},[chat.turns.length,lastStatus])
+ useEffect(()=>{if(chat.sent>0&&!conversationId&&chat.id)onCreated?.(chat.id)},[chat.sent,chat.id,conversationId,onCreated])
  const disabled=chat.busy||chat.loading||chat.pending||chat.running||chat.blocked
  return <MobileLayout className="qa-screen" header={<AppBar title="AI 업무 질문" onBack={onBack}/>} footer={!chat.blocked&&<QaComposer key={chat.sent} service={service} disabled={disabled} onSend={chat.send} onAccessLost={chat.invalidate}/>}>
   <div className="qa-messages"><p className="qa-muted">{storeName} · 점주가 확인한 매뉴얼</p>
@@ -32,6 +33,7 @@ export function QaChat({service,storeName,conversationId='',onBack,onLatest}:{se
      </section>
     </article>)}
     <p className="qa-muted">매뉴얼에 없는 내용은 점주님께 확인해 주세요.</p>
+    {chat.running&&!chat.busy&&<Button intent="secondary" onClick={()=>void chat.reload()}>답변 상태 다시 확인</Button>}
     {chat.pending&&!chat.busy&&<Button intent="secondary" onClick={chat.retry}>보낸 질문 확인 및 재시도</Button>}
    </>}
    <div ref={end}/>
