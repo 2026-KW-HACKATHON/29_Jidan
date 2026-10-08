@@ -1,5 +1,6 @@
 import {cleanup,fireEvent,render,screen} from '@testing-library/react'
 import {afterEach,expect,it,vi} from 'vitest'
+import {ManualDraftDetail} from './ManualDraftDetail'
 import {ManualWorkerPreview} from './ManualWorkerPreview'
 import {draftFixture} from '../dev/manualDraftFixtures'
 import {createManualPreviewService} from '../dev/manualPreviewService'
@@ -24,4 +25,18 @@ it('업무가 하나면 검토 완료로 돌아가고 게시·부족 확인을 �
  const service=createManualPreviewService(),call=vi.spyOn(service,'call'),onClose=vi.fn()
  render(<ManualWorkerPreview service={service} preview={{preview:true,versionId:draftFixture.versionId,revision:1,content:draftFixture.content}} onClose={onClose}/> )
  expect(screen.queryByRole('button',{name:'이전'})).toBeNull();expect(screen.queryByRole('button',{name:'다음'})).toBeNull();fireEvent.click(screen.getByRole('button',{name:'검토 완료'}));expect(onClose).toHaveBeenCalledOnce();expect(call).not.toHaveBeenCalled()
+})
+
+it('최종 상세와 미리보기는 같은 서버 섹션의 사진 순서와 보호된 mediaId를 사용한다',async()=>{
+ const create=vi.spyOn(URL,'createObjectURL').mockReturnValue('blob:photo'),revoke=vi.spyOn(URL,'revokeObjectURL').mockImplementation(()=>{})
+ const service=createManualPreviewService(true,'draft'),call=vi.spyOn(service,'call')
+ const photos=[{mediaId:crypto.randomUUID(),title:'입구 사진',caption:null},{mediaId:crypto.randomUUID(),title:'선반 사진',caption:null}]
+ const content={...draftFixture.content,sections:[{...draftFixture.content.sections[0],photos}]}
+ const {rerender}=render(<ManualDraftDetail service={service} content={content} group="common" disabled={false} onCorrect={vi.fn()} onPhotos={vi.fn()} onBack={vi.fn()}/>)
+ expect((await screen.findAllByRole('img')).map(image=>image.getAttribute('alt'))).toEqual(photos.map(photo=>photo.title))
+ rerender(<ManualWorkerPreview service={service} preview={{preview:true,versionId:draftFixture.versionId,revision:7,content}} onClose={vi.fn()}/>)
+ expect((await screen.findAllByRole('img')).map(image=>image.getAttribute('alt'))).toEqual(photos.map(photo=>photo.title))
+ expect(call.mock.calls.every(([name])=>name==='readManualPhoto')).toBe(true)
+ expect(call.mock.calls.map(([,params])=>params.mediaId)).toEqual([...photos,...photos].map(photo=>photo.mediaId))
+ create.mockRestore();revoke.mockRestore()
 })
