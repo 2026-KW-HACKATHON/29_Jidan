@@ -3,7 +3,6 @@ photo and retention hold. Every clip is encoded in the test with PyAV (tests/vid
 
 import io
 import struct
-import uuid
 import wave
 from datetime import timedelta
 
@@ -16,7 +15,6 @@ from app.db.models import MAX_VIDEO_BYTES, ManualMedia
 from app.media import retention, video
 from app.media.errors import MediaInvalid, MediaRejected, MediaTooLarge, MediaUnsupported
 from app.media.inspection import inspect_media
-from app.media.references import lock_photos_for_link
 from app.media.storage import LocalMediaStorage, set_media_storage
 from app.media.video import (
     AUDIO_MIME,
@@ -29,7 +27,6 @@ from app.media.video import (
     digest_video,
     inspect_video,
     sample_times,
-    store_video_poster,
 )
 from tests import media_samples
 from tests import video_samples as samples
@@ -76,7 +73,7 @@ def test_exactly_sixty_seconds_is_accepted_and_longer_is_too_large():
     assert inspect_video(samples.video(seconds=60, fps=1, **tiny)).duration_ms == 60_000
     # A phone's "1 minute" clip runs a few frames over; half a second of slack keeps it.
     assert inspect_video(samples.video(seconds=60.3, fps=10, **tiny)).duration_ms == 60_300
-    reject(samples.video(seconds=60.25, fps=4, **tiny), MediaTooLarge, "duration")
+    reject(samples.video(seconds=60.75, fps=4, **tiny), MediaTooLarge, "duration")  # past the slack
     reject(samples.video(seconds=61, fps=1, **tiny), MediaTooLarge, "duration")
     reject(samples.video("webm", seconds=61, fps=1, **tiny), MediaTooLarge, "duration")
 
@@ -355,44 +352,6 @@ def media_env(db_engine, tmp_path):
         ids = store.id, store.owner_id
     yield db_engine, storage, *ids
     set_media_storage(None)
-
-
-def test_poster_is_stored_as_an_ordinary_linkable_photo(media_env):
-    engine, storage, store_id, owner_id = media_env
-    poster = digest_video(samples.video(seconds=1, audio=None)).poster
-    clip = ManualMedia(id=str(uuid.uuid4()), store_id=store_id, uploaded_by_owner_id=owner_id, kind="VIDEO")
-    now = utcnow()
-    with Session(engine) as db:
-        row = store_video_poster(db, clip, poster, now=now)
-        db.commit()
-        poster_id, key = row.id, row.object_key
-    with Session(engine) as db:
-        stored = db.get(ManualMedia, poster_id)
-        assert (stored.kind, stored.mime_type, stored.byte_size, stored.duration_ms) == (
-            "IMAGE", "image/jpeg", len(poster.jpeg), None)
-        assert (stored.store_id, stored.uploaded_by_owner_id) == (store_id, owner_id)
-        assert abs(stored.expires_at - (now + retention.UNATTACHED_TTL)) < timedelta(seconds=1)
-        assert storage.read(key) == poster.jpeg and key.startswith(f"manual/{store_id}/")
-        assert [photo.id for photo in lock_photos_for_link(db, store_id, [poster_id])] == [poster_id]
-
-
-def test_poster_rolled_back_leaves_only_an_orphan_the_sweep_removes(media_env):
-    engine, storage, store_id, owner_id = media_env
-    picture_bytes = media_samples.jpeg(gps=False)
-    poster = VideoFrame(0, picture_bytes)
-    clip = ManualMedia(id=str(uuid.uuid4()), store_id=store_id, uploaded_by_owner_id=owner_id, kind="VIDEO")
-    with Session(engine) as db:
-        key = store_video_poster(db, clip, poster).object_key
-        db.rollback()
-    assert storage.read(key) == picture_bytes
-    assert retention.sweep_orphan_files(min_age_seconds=0) == 1 and not storage.exists(key)
-
-
-def test_empty_poster_is_refused(media_env):
-    engine, _storage, store_id, owner_id = media_env
-    clip = ManualMedia(id=str(uuid.uuid4()), store_id=store_id, uploaded_by_owner_id=owner_id, kind="VIDEO")
-    with Session(engine) as db, pytest.raises(MediaInvalid):
-        store_video_poster(db, clip, VideoFrame(0, b""))
 
 
 def test_video_hold_extends_only_videos_and_never_shortens():

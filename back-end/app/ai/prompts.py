@@ -17,7 +17,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-08.5"  # PROBE asking the owner to confirm a "does not apply" answer (no staff work).
+PROMPT_VERSION = "2026-10-08.6"  # Section writing from attached photos/video frames/transcripts (media as evidence).
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.

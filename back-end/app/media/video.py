@@ -2,7 +2,7 @@
 
 The language model takes text and images only, so a video is never sent as is. `digest_video`
 turns it into evenly spaced still frames, a poster frame that workers see as the section photo
-(stored as a derived MANUAL_PHOTO by `store_video_poster`) and the sound track as 16 kHz mono
+(kept for callers; the manual shows no media — the frames are AI input only) and the sound track as 16 kHz mono
 PCM WAV for transcription. The original bytes are only AI input and are purged by retention.
 
 Formats: MP4 (H.264/HEVC), QuickTime MOV (H.264/HEVC) and WebM (VP8/VP9/AV1); at most
@@ -29,21 +29,16 @@ import wave
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
 from fractions import Fraction
 
 import av
 from PIL import Image, ImageFilter, ImageStat
-from sqlalchemy.orm import Session
 
 from app.ai.silence import pcm_wav_is_silent
-from app.db import new_uuid, utcnow
-from app.db.models import MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, MAX_VIDEO_MILLISECONDS, ManualMedia
+from app.db.models import MAX_VIDEO_BYTES, MAX_VIDEO_MILLISECONDS
 from app.media.audio import DOC_TYPE, EBML_HEADER, SEGMENT, _element_id, _element_size, _elements
 from app.media.errors import MediaInvalid, MediaTooLarge, MediaUnsupported
 from app.media.inspection import InspectedMedia, sniff
-from app.media.retention import UNATTACHED_TTL
-from app.media.storage import get_media_storage, object_key
 
 MAX_VIDEO_FRAMES = 8           # frames handed to the model per video
 SECONDS_PER_FRAME = 2          # one sample per started 2 s (a 5 s clip gets 3), capped above
@@ -423,31 +418,3 @@ def digest_video(data: bytes) -> VideoDigest:
     frames = tuple(VideoFrame(t_ms, _jpeg(image)) for t_ms, image in sampled)
     poster = frames[choose_poster([image for _t, image in sampled])]
     return VideoDigest(duration_ms, frames, poster, audio, AUDIO_MIME if audio else None)
-
-
-# --- poster photo -------------------------------------------------------------------------------
-
-
-def store_video_poster(db: Session, video: ManualMedia, poster: VideoFrame, *,
-                       now: datetime | None = None) -> ManualMedia:
-    """Store `poster` as a new owner photo (ManualMedia kind IMAGE, image/jpeg) of the video's
-    store and owner, and return the flushed row. From then on it is an ordinary MANUAL_PHOTO:
-    link it with `lock_photos_for_link` like any photo; unlinked, it is purged after 24 h.
-
-    Call it in the transaction that records the link from the video to its poster. The file is
-    written before the row commits; if that transaction rolls back, the orphan sweep removes
-    the file (or delete `row.object_key` yourself)."""
-    if not poster.jpeg or len(poster.jpeg) > MAX_IMAGE_BYTES:  # 1024 px JPEG: never near 10 MiB
-        raise MediaInvalid("poster_bytes")
-    now = now or utcnow()
-    media_id = new_uuid()
-    location = object_key("manual", video.store_id, media_id)
-    get_media_storage().write(location, poster.jpeg)
-    row = ManualMedia(
-        id=media_id, store_id=video.store_id, uploaded_by_owner_id=video.uploaded_by_owner_id,
-        kind="IMAGE", object_key=location, mime_type="image/jpeg", byte_size=len(poster.jpeg),
-        duration_ms=None, created_at=now, expires_at=now + UNATTACHED_TTL,
-    )
-    db.add(row)
-    db.flush()
-    return row

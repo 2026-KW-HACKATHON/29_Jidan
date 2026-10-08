@@ -9,8 +9,7 @@ Policy (openapi uploadManualMedia, docs/erd/qa.md):
 * owner videos (VIDEO, MANUAL_VIDEO): AI input only, never shown to anyone. Their bytes go at
   `expires_at` even while referenced: 24 h after upload, and `hold_video_bytes` (called when a
   video is attached or a media-writing task is queued or finishes) moves that to 24 h after the
-  call. What workers see is the derived poster photo (app.media.video.store_video_poster), an
-  ordinary IMAGE kept while referenced;
+  call. Videos are AI input only: the manual and workers never show them or a frame of them;
 * deleted (tombstoned) media: at once.
 Metadata rows stay (tombstone, transcription text, answers); only `content_deleted_at` is set.
 The DB mark commits before the file is removed, so a crash leaves at most an orphan file, which
@@ -45,7 +44,7 @@ INTERVAL_SECONDS = 300
 def hold_video_bytes(media: ManualMedia, now: datetime | None = None) -> None:
     """Keep a video's bytes for `VIDEO_HOLD_TTL` from now (never shortens the current hold).
     Call it with the row locked, in the transaction that attaches the video or queues/finishes
-    the task that digests it; after that the original goes, the poster photo stays."""
+    the task that digests it; after that the original goes."""
     now = now or utcnow()
     if media.kind == "VIDEO" and media.expires_at < now + VIDEO_HOLD_TTL:
         media.expires_at = now + VIDEO_HOLD_TTL
