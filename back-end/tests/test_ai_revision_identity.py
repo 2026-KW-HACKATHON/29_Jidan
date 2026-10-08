@@ -1,54 +1,56 @@
-
+"""Free-form corrections pass through the normal provider validation contract."""
 import pytest
 
-from app.ai.contracts import (
-    SectionItem,
-    StructureSnapshot,
-)
+from app.ai.contracts import RevisionTarget, StructureRevisionRequest
 from app.ai.errors import AiError
-from app.ai.validation import check_section_identity
-
-
-def test_conservative_section_identity_guard():
-    section = SectionItem(id="old", category="COMMON_TASK", title="청소")
-    before = StructureSnapshot(sections=(section,))
-    renamed = section.model_copy(update={"title": "마감 청소"})
-    check_section_identity(before, StructureSnapshot(sections=(renamed,)), "이름 수정", "SECTION", "old")
-    check_section_identity(before, StructureSnapshot(), "청소를 삭제해 주세요", "SECTION", "old")
-    extra = section.model_copy(update={"id": "new"})
-    check_section_identity(before, StructureSnapshot(sections=(section, extra)), "업무 추가", "MANUAL", None)
-    with pytest.raises(AiError, match="invalid_output"):
-        check_section_identity(before, StructureSnapshot(sections=(extra,)), "청소를 삭제해 주세요", "SECTION", "old")
+from app.ai.fake import FakeOutcome, structure_to_raw
+from tests.test_ai_provider import snapshot
 
 
 @pytest.mark.parametrize("instruction", [
-    "삭제하지 마", "삭제하라는 문구를 바꿔", "이름을 마감 청소로 바꿔 주세요", "정산을 삭제해 주세요",
-    '"청소를 삭제해 주세요"', "청소를 삭제해 주세요 그리고 정산을 추가해 주세요",
-    "청소를 삭제해 주세요. 하지만 보존해 주세요",
+    "이제 오픈 업무는 하지 않으니 없애 주시겠어요?",
+    "오픈 업무는 앞으로 필요 없어요. 목록에서 빼 주시면 됩니다.",
 ])
-def test_omitted_section_requires_whole_unambiguous_command(instruction):
-    before = StructureSnapshot(sections=(SectionItem(id="old", category="COMMON_TASK", title="청소"),))
-    with pytest.raises(AiError):
-        check_section_identity(before, StructureSnapshot(), instruction, "SECTION", "old")
+def test_natural_deletion_preserves_surviving_ids(fake_ai, instruction):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    raw["sections"].pop(0)
+    fake_ai.script("revise_structure", FakeOutcome.ok({"outcome": "APPLIED", "summary": None, "structure": raw}))
+    result = fake_ai.revise_structure(StructureRevisionRequest(
+        current=current, target=RevisionTarget(kind="SECTION", target_id=current.sections[0].id),
+        instruction=instruction))
+    assert result.outcome == "APPLIED"
+    assert result.structure.sections == current.sections[1:]
+    assert result.structure.shifts == current.shifts
 
 
-def test_deletion_only_authorizes_exact_target_and_unique_name():
-    first = SectionItem(id="one", category="COMMON_TASK", title="청소")
-    second = first.model_copy(update={"id": "two"})
-    before = StructureSnapshot(sections=(first, second))
-    with pytest.raises(AiError):
-        check_section_identity(before, StructureSnapshot(), "삭제해 주세요", "SECTION", "one")
-    with pytest.raises(AiError):
-        check_section_identity(before, StructureSnapshot(sections=(second,)), "청소를 삭제해 주세요", "MANUAL", None)
-    check_section_identity(before, StructureSnapshot(sections=(second,)), "삭제해 주세요", "SECTION", "one")
+def test_manual_correction_can_combine_deletion_addition_and_edit(fake_ai):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    raw["sections"].pop(0)
+    raw["sections"][0]["title"] = "근무 복장"
+    raw["sections"].append({"ref": "new-1", "category": "COMMON_TASK", "shift_ref": None,
+                            "title": "정산", "steps": [{"ref": "new-2", "instruction": "금액 확인",
+                                                          "checklist_item": False}]})
+    fake_ai.script("revise_structure", FakeOutcome.ok({"outcome": "APPLIED", "summary": None, "structure": raw}))
+    result = fake_ai.revise_structure(StructureRevisionRequest(
+        current=current, target=RevisionTarget(kind="MANUAL"),
+        instruction="오픈 업무는 빼고 복장은 근무 복장으로 바꿔 주세요. 정산 업무도 추가하고 금액을 확인하게 해 주세요."))
+    assert result.outcome == "APPLIED"
+    assert result.structure.sections[0].id == current.sections[1].id
+    assert result.structure.sections[0].title == "근무 복장"
+    assert result.structure.sections[1].id not in {s.id for s in current.sections}
 
 
-
-
-def test_exact_named_remove_command_keeps_existing_supported_wording():
-    item = SectionItem(id="one", category="COMMON_TASK", title="손님 응대")
-    before = StructureSnapshot(sections=(item,))
-    check_section_identity(before, StructureSnapshot(), "손님 응대는 빼 주세요.", "MANUAL", None)
-    for command in ("손님 응대는 빼지 마세요.", "손님 응대는 빼 주세요. 그리고 내용을 바꿔 주세요."):
-        with pytest.raises(AiError):
-            check_section_identity(before, StructureSnapshot(), command, "MANUAL", None)
+@pytest.mark.parametrize("violation", ["outside_target", "unknown_id"])
+def test_deletion_does_not_bypass_reference_or_scope_validation(fake_ai, violation):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    raw["sections"].pop(0)
+    raw["sections"][0]["title" if violation == "outside_target" else "ref"] = "unknown"
+    fake_ai.script("revise_structure", FakeOutcome.ok({"outcome": "APPLIED", "summary": None, "structure": raw}))
+    with pytest.raises(AiError) as error:
+        fake_ai.revise_structure(StructureRevisionRequest(
+            current=current, target=RevisionTarget(kind="SECTION", target_id=current.sections[0].id),
+            instruction="이제 오픈 업무는 필요 없으니 없애 주세요."))
+    assert error.value.detail == ("revision_outside_target" if violation == "outside_target" else "unknown_ref:section")
