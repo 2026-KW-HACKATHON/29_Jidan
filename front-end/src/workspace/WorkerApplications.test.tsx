@@ -10,7 +10,7 @@ const list=(items:unknown[],page=0,totalItems=items.length)=>({items,page,size:1
 afterEach(()=>{cleanup();vi.unstubAllGlobals()})
 it('서버 탭과 집계·익일 시간을 사용하고 실제 지원 ID로 이동한다',async()=>{
  const fetch=vi.fn(async(url:unknown)=>json(String(url).includes('tab=CONFIRMED')?list([{...application,status:'CONFIRMED'}]):list([application])));vi.stubGlobal('fetch',fetch);const route=vi.fn();render(<WorkerApplications route={route}/>);
- fireEvent.click(await screen.findByRole('button',{name:application.job.title}));expect(route).toHaveBeenCalledWith('application',id);expect(screen.getByText(/22:00–다음 날 02:00/)).toBeInTheDocument();expect(screen.getByRole('tab',{name:'신청 중 101'})).toBeInTheDocument();
+ fireEvent.click(await screen.findByRole('button',{name:application.job.title}));expect(route).toHaveBeenCalledWith('application',id);expect(screen.getByText(/22:00 – 다음 날 02:00/)).toBeInTheDocument();expect(screen.getByRole('tab',{name:'신청 중 101'})).toBeInTheDocument();
  fireEvent.click(screen.getByRole('tab',{name:'확정 1'}));await screen.findByRole('button',{name:application.job.title});expect(fetch.mock.calls.some(([url])=>String(url).includes('tab=CONFIRMED'))).toBe(true)
 })
 it('빠른 탭 전환에서 이전 응답을 무시하고 빈 목록을 표시한다',async()=>{

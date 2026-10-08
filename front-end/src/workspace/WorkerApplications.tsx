@@ -7,7 +7,7 @@ const serverTabs={APPLYING:'PENDING',CONFIRMED:'CONFIRMED',ENDED:'ENDED'} as con
 const badges={APPLIED:'신청 중',REQUESTED:'근무 요청 도착',CONFIRMED:'확정',WITHDRAWN:'신청 취소',NOT_SELECTED:'미선정',COMPLETED:'근무 완료'} as const
 function item(a:JobApplication):ApplicationListItem{
  const [year,month,day]=a.job.workDate.split('-');void year
- return {id:a.id,title:a.job.title,desc:a.job.store.name,time:`${Number(month)}월 ${Number(day)}일 ㅣ ${a.job.startTime}–${a.job.endsNextDay?'다음 날 ':''}${a.job.endTime}`,badgeText:badges[a.status],badgeType:a.status==='CONFIRMED'?'green':a.status==='APPLIED'||a.status==='REQUESTED'?'blue':'gray'}
+ return {id:a.id,title:a.job.title,desc:a.job.store.name,time:`${Number(month)}월 ${Number(day)}일 ㅣ ${a.job.startTime} – ${a.job.endsNextDay?'다음 날 ':''}${a.job.endTime}`,badgeText:badges[a.status],badgeType:a.status==='CONFIRMED'?'green':a.status==='APPLIED'||a.status==='REQUESTED'?'blue':'gray'}
 }
 export function WorkerApplications({route}:{route:Route}){
  const [tab,setTab]=useState<UserApplicationTab>('APPLYING'),[attempt,setAttempt]=useState(0)

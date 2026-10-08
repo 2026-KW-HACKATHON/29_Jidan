@@ -29,7 +29,7 @@ describe('승인된 공고 필터 기준', () => {
   it('다음 날 종료의 근무 시간을 계산한다',()=>{
     const job={...base,start:'22:00',end:'02:30',nextDay:true}
     expect(jobHours(job)).toBe(4.5)
-    expect(jobTime(job)).toBe('22:00–다음 날 02:30')
+    expect(jobTime(job)).toBe('22:00 – 다음 날 02:30')
   })
 })
 

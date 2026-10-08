@@ -10,7 +10,7 @@ it('철회 실패 시 승인을 유지하고 재시도 성공 시에만 복귀�
   const withdraw=vi.fn<ApplicationService['withdraw']>().mockRejectedValueOnce(Error('MOCK')).mockResolvedValue(undefined),success=vi.fn(),home=vi.fn()
   render(<ApplicationComplete application={application} service={{submit:vi.fn(),withdraw}} onHome={home} onBack={()=>{}} onWithdrawn={success}/>)
   expect(screen.getByText('2026. 09. 26')).toBeInTheDocument()
-  expect(screen.getByText('9:00-14:00')).toBeInTheDocument()
+  expect(screen.getByText('9:00 - 14:00')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button',{name:'신청 취소하기'}))
   let modal=within(screen.getByRole('alertdialog'))
   fireEvent.click(modal.getByRole('button',{name:'신청 취소'}))

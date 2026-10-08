@@ -11,7 +11,7 @@ export const UserNotificationPage = ({ state, onFilter, onBack }: {
     {
       id: 1,
       title: '대타 근무가 확정됐어요',
-      desc: <>컴포즈커피 광운대점<br />9월 26일 09:00–14:00</>,
+      desc: <>컴포즈커피 광운대점<br />9월 26일 09:00 – 14:00</>,
       time: '방금 전',
       isUnread: true
     },
