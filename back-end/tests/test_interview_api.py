@@ -266,6 +266,7 @@ def test_insufficient_answers_probe_up_to_depth_five_then_needs_detail(ctx, fake
     assert sorted(e.depth for e in evaluations) == [0, 1, 2, 3, 4, 5]
     assert all(e.applied_at and e.needs_follow_up and e.status == "SUCCEEDED" for e in evaluations)
     assert all(e.missing_aspects == INSUFFICIENT["missing_aspects"] for e in evaluations)
+    assert fake_ai.calls_for("summarize_intent")[0].data["missing_aspects"] == INSUFFICIENT["missing_aspects"]
     # Jev saw the whole dialogue of the intent, BASE first.
     last = fake_ai.calls_for("judge_sufficiency")[5].data
     assert [t["depth"] for t in last["dialogue"]] == [0, 1, 2, 3, 4, 5] and "depth" not in last
