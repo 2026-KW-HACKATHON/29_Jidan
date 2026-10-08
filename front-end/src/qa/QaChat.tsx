@@ -39,6 +39,6 @@ export function QaChat({service,storeName,conversationId='',onBack,onLatest,onCr
    <div ref={end}/>
   </div>
   <Modal open={!!chat.error} state="error" title="질문 상태를 확인해 주세요" description={chat.error} onClose={chat.dismiss} confirmLabel={chat.blocked?'매장으로 돌아가기':'다시 시도'} closeOnConfirm={false} onConfirm={chat.blocked?onBack:chat.retry} busy={chat.busy}/>
-  {citation&&!chat.blocked&&<QaCitation citation={citation} storeId={service.storeId} onClose={()=>setCitation(null)} onLatest={onLatest}/>}
+  {citation&&!chat.blocked&&<QaCitation citation={citation} storeId={service.storeId} onClose={()=>setCitation(null)} onLatest={onLatest} onAccessLost={chat.invalidate}/>}
  </MobileLayout>
 }
