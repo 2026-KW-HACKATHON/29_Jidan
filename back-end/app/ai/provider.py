@@ -28,6 +28,8 @@ from pydantic import ValidationError
 
 from app.ai.aspects import aspects_for
 from app.ai.contracts import (
+    MAX_MEDIA_IMAGE_BYTES,
+    MAX_MEDIA_IMAGES,
     CallMeta,
     DraftComposition,
     DraftRequest,
@@ -35,6 +37,8 @@ from app.ai.contracts import (
     ImageInput,
     IntentSummary,
     IntentSummaryRequest,
+    LabeledImage,
+    MediaWritingRequest,
     PhotoSuggestion,
     PhotoSuggestionItem,
     PhotoSuggestions,
@@ -53,11 +57,12 @@ from app.ai.contracts import (
 )
 from app.ai.decisions import Thresholds, build_request, config_tag, decide, not_applicable_outcome
 from app.ai.errors import AiError, AiErrorCode
-from app.ai.prompts import INSTRUCTIONS, PROMPT_VERSION, data_message
+from app.ai.prompts import INSTRUCTIONS, PROMPT_VERSION, data_message, image_label
 from app.ai.schemas import (
     OUTPUTS,
     RawDraft,
     RawJudgement,
+    RawMediaWriting,
     RawMissing,
     RawQa,
     RawQuestion,
@@ -71,6 +76,7 @@ from app.ai.validation import (
     build_citations,
     check_draft_facts,
     check_revision_scope,
+    cited_removals,
     dangling_shift_references,
     drop_contentless_steps,
     empty_structure,
@@ -79,7 +85,9 @@ from app.ai.validation import (
     known_ids,
     materialize_structure,
     repeats_removed_text,
+    restore_existing_steps,
     same_content,
+    same_except_gap_wording,
 )
 
 logger = logging.getLogger("jidan.ai")
@@ -101,18 +109,22 @@ class RawTranscript:
     speech_detected: bool | None = None
 
 
+def _shift_times(shift) -> tuple:
+    return (shift.start_time, shift.end_time, shift.ends_next_day)
+
+
 def _structure_payload(snapshot: StructureSnapshot) -> dict[str, Any]:
     return snapshot.model_dump(mode="json")
 
 
-def _ground(operation: str, raw_structure, evidence, *, strict: bool = False, **exempt):
-    """`ground_structure` against the request's evidence; logs counts only (never text).
+def _ground(operation: str, raw_structure, evidence, *, citable_ids=(), strict: bool = False, **exempt):
+    """Ground against owner evidence and optional media IDs; log counts only.
 
-    `strict` (corrections): anything grounding would restore, drop or clear fails the whole
-    output as INVALID_OUTPUT instead. A correction's evidence holds the owner's instruction, so a
-    faithful change can always cite it; an altered result would no longer be what the outcome
-    and the model's summary describe (e.g. "APPLIED, changed X" with X silently restored)."""
-    structure, grounding = ground_structure(raw_structure, (chunk.id for chunk in evidence), **exempt)
+    Strict corrections reject any restored/dropped fact rather than applying an altered
+    result. Media writing keeps its own restoration policy and may cite photos/video IDs.
+    """
+    ids = [chunk.id for chunk in evidence] + list(citable_ids)
+    structure, grounding = ground_structure(raw_structure, ids, **exempt)
     if grounding.dropped_steps or grounding.cleared_shifts:
         logger.info("ai grounding op=%s dropped_steps=%d dropped_in_kept_sections=%d cleared_shifts=%d",
                     operation, grounding.dropped_steps, grounding.dropped_in_kept_sections,
@@ -414,6 +426,102 @@ class AiProvider(ABC):
             return StructureRevision(outcome="NO_CHANGE", meta=meta)
         return StructureRevision(outcome="APPLIED", structure=structure, summary=summary, meta=meta)
 
+    def write_section_from_media(self, request: MediaWritingRequest) -> StructureRevision:
+        """Write or complete the target section's steps from the photos, video frames and video
+        transcripts attached to it (docs/ai-foundation.md "사진·영상 기반 작성").
+
+        What the media visibly shows counts as evidence like the owner's words: steps cite media
+        IDs or evidence chunk IDs. Only the target section may change; its title, category and
+        shift stay; existing steps stay unless their removal is cited (restored otherwise).
+        """
+        target = request.target
+        current = request.current
+        ids = known_ids(current)
+        if target.kind != "SECTION" or target.target_id not in ids["section"]:
+            raise ValueError("media writing targets one section of the current content")
+        images = request.images
+        if len(images) > MAX_MEDIA_IMAGES:
+            raise AiError(AiErrorCode.INPUT_REJECTED, detail="too_many_images")
+        if sum(len(item.image.data) for item in images) > MAX_MEDIA_IMAGE_BYTES:
+            raise AiError(AiErrorCode.INPUT_REJECTED, detail="images_too_large")
+        payload = request.model_dump(mode="json", exclude={"media"})
+        index = {item.id: number for number, item in enumerate(images, start=1)}
+        payload["media"] = [
+            {"id": item.id, "kind": item.kind, "title": item.title, "caption": item.caption,
+             "text": item.text, "image_index": index.get(item.id)}
+            for item in request.media
+        ]
+        payload["image_count"] = len(images)
+        labeled = [
+            LabeledImage(mime_type=item.image.mime_type, data=item.image.data, label=image_label(number, item.id))
+            for number, item in enumerate(images, start=1)
+        ]
+        raw: RawMediaWriting = self._structured("write_section_from_media", payload, labeled)
+        meta = self.meta("write_section_from_media")
+        if raw.outcome == "NO_CHANGE":
+            return StructureRevision(outcome="NO_CHANGE", meta=meta)
+
+        section = next(s for s in current.sections if s.id == target.target_id)
+        media_ids = [item.id for item in request.media]
+        allowed = [chunk.id for chunk in request.evidence] + media_ids
+        removed = cited_removals(raw.removed_steps, (step.id for step in section.steps), allowed)
+        written = raw.structure
+        # Nothing new outside the target: no new shift or section (the scope check below lets new
+        # items through, which suits a correction but not writing one section's steps).
+        if any(shift.ref not in ids["shift"] for shift in written.shifts) or any(
+                item.ref not in ids["section"] for item in written.sections):
+            raise invalid("revision_outside_target")
+        # The section's labels are the owner's, not the photos': kept as they were.
+        written = written.model_copy(update={"sections": [
+            item.model_copy(update={"title": section.title, "category": section.category,
+                                    "shift_ref": section.shift_id})
+            if item.ref == section.id else item
+            for item in written.sections
+        ]})
+        # Existing steps of the target: uncited rewrites and silent omissions are undone first
+        # (in place); a cited rewrite that the content backstop then removes is put back after.
+        written, restored = restore_existing_steps(written, section.id, section.steps, removed)
+        existing_steps = {step.id: step.instruction for s in current.sections for step in s.steps}
+        written = _contentless("write_section_from_media", written, kept_section_refs=ids["section"],
+                               existing_steps=existing_steps)
+        grounded = _ground(
+            "write_section_from_media", written, request.evidence, citable_ids=media_ids,
+            grounded_steps=existing_steps,
+            grounded_shifts={shift.id: _shift_times(shift) for shift in current.shifts},
+        )
+        grounded, again = restore_existing_steps(grounded, section.id, section.steps, removed)
+        restored += again
+        if restored or removed:
+            logger.info("ai media_writing restored_steps=%d removed_steps=%d", restored, len(removed))
+        external_ids = {shift.id for shift in request.external_shifts}
+        structure = materialize_structure(
+            grounded,
+            known_shift_ids=ids["shift"] | external_ids,
+            known_section_ids=ids["section"], known_step_ids=ids["step"],
+            external_shifts=request.external_shifts,
+            previous_missing=current.missing_information,
+            require_manual_level=request.require_manual_level,
+        )
+        # Media writing restores unrelated gap wording before the common scope guard;
+        # text/voice corrections retain their stricter reject-on-change behavior.
+        kept_gaps = {(m.target, m.target_id, m.field): m.description for m in current.missing_information
+                     if not (m.target == "SECTION" and m.target_id == section.id)}
+        structure = structure.model_copy(update={"missing_information": tuple(
+            m.model_copy(update={"description": kept_gaps.get((m.target, m.target_id, m.field), m.description)})
+            for m in structure.missing_information)})
+        check_revision_scope(current, structure, "SECTION", section.id)
+        # Model output may reorder otherwise identical objects. Only the target's steps may
+        # move: preserve the owner's shift/section order before comparing or storing content.
+        shifts = {item.id: item for item in structure.shifts}
+        sections = {item.id: item for item in structure.sections}
+        structure = structure.model_copy(update={
+            "shifts": tuple(shifts[item.id] for item in current.shifts),
+            "sections": tuple(sections[item.id] for item in current.sections),
+        })
+        if same_except_gap_wording(current, structure):
+            return StructureRevision(outcome="NO_CHANGE", meta=meta)
+        return StructureRevision(outcome="APPLIED", structure=structure, meta=meta)
+
     def compose_draft(self, request: DraftRequest) -> DraftComposition:
         raw: RawDraft = self._structured("compose_draft", request.model_dump(mode="json"))
         shift_ids: set[str] = set()
@@ -588,6 +696,9 @@ class FallbackAiProvider(AiProvider):
 
     def compose_draft(self, request):
         return self._delegate("compose_draft", request)
+
+    def write_section_from_media(self, request):
+        return self._delegate("write_section_from_media", request)
 
     def answer_question(self, request):
         return self._delegate("answer_question", request)

@@ -74,6 +74,7 @@ def test_revisions_form_a_chain_on_top_of_the_untouched_baseline():
     assert script.get_revision("0041").down_revision == "0040"
     assert script.get_revision("0042").down_revision == "0041"
     assert script.get_revision("0043").down_revision == "0042"
+    assert script.get_revision("0044").down_revision == "0043"
 
 
 def test_upgrade_creates_every_baseline_table(engine):
@@ -446,5 +447,41 @@ def test_0042_keeps_existing_turns_and_allows_answer_snapshots(engine):
         assert connection.execute(text(
             "SELECT id, content, reply_to_question_turn_id FROM interview_turns ORDER BY turn_no")).all() == [
             ("q", "질문?", None), ("a", "답변", "q")]
+        command.upgrade(config, "head")
+        connection.commit()
+
+
+def test_0044_keeps_rows_and_refuses_to_downgrade_over_new_values(engine):
+    """0044 rebuilds five SQLite tables from their stored DDL: existing rows survive both ways,
+    the new CHECKs apply, and a downgrade stops (before any DDL) while a row uses a 0044 value."""
+    insert = text(
+        "INSERT INTO background_tasks (id, kind, subject_id, attempt, status, tries, max_tries, payload,"
+        " available_at, created_at) VALUES (:id, :kind, 's', 1, 'QUEUED', 0, 3, '{}',"
+        " '2026-10-01 00:00:00', '2026-10-01 00:00:00')")
+    with engine.connect() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, "0043")
+        connection.commit()
+        connection.execute(insert, {"id": "old", "kind": "DRAFT_CORRECTION"})
+        connection.commit()
+        with pytest.raises(Exception, match="CHECK"):
+            connection.execute(insert, {"id": "new", "kind": "REVIEW_MEDIA_WRITING"})
+        connection.rollback()
+        command.upgrade(config, "head")
+        connection.commit()
+        connection.execute(insert, {"id": "new", "kind": "REVIEW_MEDIA_WRITING"})
+        connection.commit()
+        assert {c["name"] for c in inspect(connection).get_columns("manual_draft_corrections")
+                if c["name"] == "input_text" and c["nullable"]} == {"input_text"}
+        with pytest.raises(RuntimeError, match="background_tasks"):
+            command.downgrade(config, "0043")
+        connection.rollback()
+        connection.execute(text("DELETE FROM background_tasks WHERE id = 'new'"))
+        connection.commit()
+        command.downgrade(config, "0043")
+        connection.commit()
+        assert {c["name"] for c in inspect(connection).get_columns("manual_draft_corrections")
+                if c["name"] == "input_text" and c["nullable"]} == set()
+        assert connection.execute(text("SELECT id, kind FROM background_tasks")).all() == [("old", "DRAFT_CORRECTION")]
         command.upgrade(config, "head")
         connection.commit()

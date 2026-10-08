@@ -10,9 +10,10 @@ and replaces placeholders with fresh UUIDs, so a result's `StructureSnapshot` al
 unique UUIDs whose references resolve.
 """
 
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 STAGES = ("WORK_STRUCTURE", "COMMON_TASKS", "SHIFT_TASKS", "COMPLEMENTS")
 SECTION_CATEGORIES = ("COMMON_TASK", "SHIFT_TASK", "RULE", "EQUIPMENT")
@@ -40,6 +41,16 @@ MAX_CONTEXT_NOTES = 50
 MAX_ASPECTS = 5
 MAX_EVIDENCE = 200
 MAX_EVIDENCE_IDS = 20  # citations per step / shift
+MAX_MEDIA = 20  # media evidence items of one media-writing request
+MAX_MEDIA_IMAGES = 16  # images among them (photos + video frames); more is INPUT_REJECTED
+MAX_MEDIA_IMAGE_BYTES = 32 * 1024 * 1024  # their total raw size (base64 adds a third on the wire)
+MEDIA_KINDS = ("PHOTO", "VIDEO_FRAME", "VIDEO_TRANSCRIPT")
+MediaKind = Literal["PHOTO", "VIDEO_FRAME", "VIDEO_TRANSCRIPT"]
+# media:<uuid> (photo), media:<uuid>@<t_ms> (video frame), media:<uuid>#transcript (video audio).
+# Built by the server from stored IDs only, so it can be shown to the model next to an image.
+MEDIA_ID = re.compile(
+    r"^media:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(@(0|[1-9][0-9]{0,8})|#transcript)?$")
+_MEDIA_SUFFIX = {"PHOTO": "", "VIDEO_FRAME": "@", "VIDEO_TRANSCRIPT": "#"}
 
 
 def clean_text(value: str) -> str:
@@ -245,6 +256,75 @@ class DraftRequest(_Model):
 class ImageInput(_Model):
     mime_type: Literal["image/jpeg", "image/png", "image/webp"]
     data: bytes = Field(repr=False)
+
+
+class LabeledImage(ImageInput):
+    """An image the backend shows right after a text part holding `label` (server-built text
+    naming the image's evidence ID, never user text), so the model can cite what it saw."""
+
+    label: str = Field(min_length=1, max_length=200)
+
+
+class MediaEvidence(_Model):
+    """One piece of what the owner attached to a section: a photo, a sampled video frame or the
+    transcript of a video's audio track. What it visibly shows (or what is heard) counts as the
+    owner's own statement (user decision 2026-10-08) and is cited by `id`.
+
+    `title`/`caption` are what the owner typed for the attachment (owner statements too).
+    PHOTO/VIDEO_FRAME carry `image` and no `text`; VIDEO_TRANSCRIPT carries `text` only.
+    """
+
+    id: str = Field(min_length=1, max_length=80)
+    kind: MediaKind
+    title: str | None = Field(default=None, max_length=100)
+    caption: str | None = Field(default=None, max_length=1000)
+    image: ImageInput | None = None
+    text: str | None = Field(default=None, min_length=1, max_length=10000)
+
+    @model_validator(mode="after")
+    def _shape(self) -> "MediaEvidence":
+        match = MEDIA_ID.match(self.id)
+        suffix = match.group(1) if match else None
+        if match is None or (suffix or "")[:1] != _MEDIA_SUFFIX[self.kind]:
+            raise ValueError("media id does not match its kind")
+        if (self.kind == "VIDEO_TRANSCRIPT") != (self.text is not None) or \
+                (self.kind == "VIDEO_TRANSCRIPT") == (self.image is not None):
+            raise ValueError("images need image, transcripts need text")
+        return self
+
+
+class MediaWritingRequest(_Model):
+    """Write or complete one section's steps from the photos/videos attached to it.
+
+    `current` is the content holding the section (review content, or draft content);
+    `intent` is the review's intent (None for a draft). `target` must be the SECTION being
+    written: only it may change (`app.ai.validation.check_revision_scope`). `evidence` are the
+    owner's retrieved answers, citable next to the media IDs. At most MAX_MEDIA_IMAGES of the
+    media may be images; more is refused as INPUT_REJECTED by the provider.
+    """
+
+    intent: IntentBrief | None = None
+    current: StructureSnapshot
+    target: RevisionTarget
+    media: tuple[MediaEvidence, ...] = Field(min_length=1, max_length=MAX_MEDIA)
+    evidence: tuple[EvidenceChunk, ...] = Field(default=(), max_length=MAX_EVIDENCE)
+    external_shifts: tuple[ShiftItem, ...] = Field(default=(), max_length=MAX_SHIFTS)
+    require_manual_level: bool = False
+    store: StoreContext | None = None
+
+    @model_validator(mode="after")
+    def _unique_media(self) -> "MediaWritingRequest":
+        ids = [item.id for item in self.media]
+        if len(set(ids)) != len(ids):
+            raise ValueError("media ids must be unique")
+        if set(ids) & {chunk.id for chunk in self.evidence}:
+            raise ValueError("media ids must not collide with evidence ids")
+        return self
+
+    @property
+    def images(self) -> tuple[MediaEvidence, ...]:
+        """The image media in request order (the order they are shown to the model)."""
+        return tuple(item for item in self.media if item.image is not None)
 
 
 class QaRequest(_Model):

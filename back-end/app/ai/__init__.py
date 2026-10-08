@@ -10,7 +10,14 @@ Configuration (environment):
     OPENAI_FALLBACK_MODEL            optional second model tried after a retryable failure
     OPENAI_TRANSCRIBE_MODEL          default gpt-transcribe
     OPENAI_SERVICE_TIER              default fast (auto|default|fast|priority)
-    OPENAI_REASONING_EFFORT          default low (none|low|medium|high|xhigh|max, or empty)
+    OPENAI_REASONING_EFFORT          default low (none|low|medium|high|xhigh|max, or empty);
+                                     answer_question, and Jev on the responses backend
+    OPENAI_QUESTION_REASONING_EFFORT default low: generate_question
+    OPENAI_WRITING_REASONING_EFFORT  default medium: summarize_intent, compose_draft, revise_structure,
+                                     write_section_from_media
+    OPENAI_JUDGE_BACKEND             decisions (default; POST /v1/decisions) | responses
+    OPENAI_JUDGE_ASPECT_THRESHOLD    default 0.7 (0.5 <= x < 1): an aspect counts as covered
+    OPENAI_JUDGE_NOT_APPLICABLE_THRESHOLD default 0.8: the intent counts as not applicable
     OPENAI_TIMEOUT_SECONDS           default 60 (per LLM call)
     OPENAI_WRITING_TIMEOUT_SECONDS   default 120 (per manual-writing call, medium effort)
     OPENAI_TRANSCRIBE_TIMEOUT_SECONDS default 120

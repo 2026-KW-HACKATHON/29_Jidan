@@ -66,6 +66,16 @@ def correction_evidence(db: Session, session_id: str, intent_key: str, correctio
                     budget_chars=CORRECTION_BUDGET)
 
 
+def media_writing_evidence(db: Session, session_id: str, query: str, *,
+                           intent_key: str | None = None) -> tuple[EvidenceChunk, ...]:
+    """The owner's words about one section, for writing it from photos/videos (0.12.0): the
+    intent's own answers and corrections (a review) plus related ones. Reviews freeze it in the
+    task payload when the request is accepted; drafts rebuild it from the completed session
+    (unchanged since), so every attempt cites the same chunks."""
+    return retrieve(chunk_utterances(session_utterances(db, session_id)), query, required_intent=intent_key,
+                    top_k=CORRECTION_TOP_K, budget_chars=CORRECTION_BUDGET)
+
+
 def draft_evidence(db: Session, session_id: str, reviews: Iterable[dict]) -> tuple[EvidenceChunk, ...]:
     """Answers related to the reviewed content (for anything the draft adds beyond the reviews)."""
     parts: list[str | None] = []

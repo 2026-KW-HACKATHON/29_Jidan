@@ -120,6 +120,8 @@ class TaskHandler:
     execute(ctx) -> result            outside any transaction; raise AiError (classified) on failure
     apply(db, ctx, result)            lock the domain row, ctx.ensure(...), write the result
     fail(db, ctx, error)              lock the domain row, ctx.ensure(...), record a public ERROR
+    cancel(db, ctx)                   optional cleanup after stale savepoint rollback or explicit cancel;
+                                     must preserve any successor's resources
 
     provider_calls: the most AI/STT calls one execute makes in sequence (for the lease check).
     after_success: optional best-effort hook after primary commit/lock release; no retry guarantee.
@@ -133,6 +135,8 @@ class TaskHandler:
     lease_seconds: float = DEFAULT_LEASE_SECONDS
     backoff_seconds: tuple[float, ...] = DEFAULT_BACKOFF
     provider_calls: int = 1
+    cancel: Callable[[Session, TaskContext], None] | None = None
+
     after_success: Callable[[TaskContext], None] | None = None
 
     def __post_init__(self) -> None:
@@ -240,12 +244,20 @@ def cancel_tasks(db: Session, kind: str, subject_id: str) -> int:
     # enqueue, so no task of this subject appears between the read and the updates.
     now = utcnow()
     live = ("QUEUED", "RUNNING")
-    ids = db.scalars(select(BackgroundTask.id).where(
-        BackgroundTask.kind == kind, BackgroundTask.subject_id == subject_id, BackgroundTask.status.in_(live)))
-    return update_by_key(db, BackgroundTask, ids, {
-        "status": "CANCELLED", "finished_at": now, "lease_token": None, "lease_expires_at": None,
-        "last_error_code": STALE,
-    }, BackgroundTask.status.in_(live))
+    ids = list(db.scalars(select(BackgroundTask.id).where(
+        BackgroundTask.kind == kind, BackgroundTask.subject_id == subject_id, BackgroundTask.status.in_(live))))
+    handler = registered_handlers().get(kind)
+    changed = 0
+    for task_id in sorted(ids):
+        count = update_by_key(db, BackgroundTask, [task_id], {
+            "status": "CANCELLED", "finished_at": now, "lease_token": None, "lease_expires_at": None,
+            "last_error_code": STALE,
+        }, BackgroundTask.status.in_(live))
+        changed += count
+        if count and handler is not None and handler.cancel is not None:
+            task = db.get(BackgroundTask, task_id, populate_existing=True)
+            handler.cancel(db, _context(task))
+    return changed
 
 
 @dataclass(frozen=True)
@@ -419,6 +431,8 @@ def _finish_failure(db: Session, task: BackgroundTask, handler: TaskHandler, ctx
         with db.begin_nested():
             handler.fail(db, ctx, error)
     except StaleTask:
+        if handler.cancel is not None:
+            handler.cancel(db, ctx)  # outside the rolled-back domain savepoint
         _close(task, "CANCELLED", now, STALE)
         return TaskRun(task.id, task.kind, "cancelled", STALE)
     _close(task, "FAILED", now, code)
@@ -482,6 +496,8 @@ def _finalize(claimed: ClaimedTask, handler: TaskHandler, result: Any, error: Ex
             with db.begin_nested():
                 handler.apply(db, ctx, result)
         except StaleTask:
+            if handler.cancel is not None:
+                handler.cancel(db, ctx)  # outside the rolled-back domain savepoint
             _close(task, "CANCELLED", now, STALE)
             return TaskRun(task.id, task.kind, "cancelled", STALE)
         _close(task, "SUCCEEDED", now)

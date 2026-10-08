@@ -1,4 +1,5 @@
-"""Task handlers of the interview: questions, Jev, intent summaries/corrections, the draft.
+"""Task handlers of the interview: questions, Jev, intent summaries/corrections/media writing,
+the draft.
 
 Every `apply`/`fail` locks the session row first (then the review), and checks with
 `ctx.ensure` that the row still waits for exactly this task (task ID, state and the input
@@ -23,12 +24,15 @@ from app.ai.contracts import (
     GeneratedQuestion,
     IntentSummary,
     IntentSummaryRequest,
+    MediaWritingRequest,
     QuestionRequest,
+    RevisionTarget,
     StructureRevision,
     StructureRevisionRequest,
     SufficiencyJudgement,
     SufficiencyRequest,
 )
+from app.ai.errors import AiError, AiErrorCode
 from app.db import session_scope, utcnow
 from app.db.models import (
     InterviewEvaluation,
@@ -46,6 +50,7 @@ from app.interview.flow import (
     apply_judgement,
     available_shifts,
     fallback_question,
+    intent_brief,
     question_card_history,
     shift_summary_pending,
     store_context,
@@ -53,6 +58,9 @@ from app.interview.flow import (
     write_question,
 )
 from app.interview.photos import suggest_current_question_photos
+from app.manual_media_writing import LEASE_SECONDS as MEDIA_LEASE_SECONDS
+from app.manual_media_writing import MEDIA_HOLDER, gather_media, release_media
+from app.manual_media_writing import PROVIDER_CALLS as MEDIA_PROVIDER_CALLS
 from app.media.references import replace_snapshot_refs
 from app.tasks import TaskContext, TaskDeferred, TaskHandler, register_handler, task_error_code
 
@@ -251,6 +259,57 @@ def _correction_apply(db: Session, ctx: TaskContext, revision: StructureRevision
     _review_ready(review, content)
 
 
+# --- REVIEW_MEDIA_WRITING (0.12.0) -------------------------------------------------------------
+
+
+def _media_writing_execute(ctx: TaskContext) -> StructureRevision:
+    """One review section written from the request's photos/videos (0.12.0). The review's READY
+    content (unchanged while PROCESSING) gives the section; the owner's words are the evidence
+    frozen at acceptance; the files are read and decoded outside any transaction."""
+    intent_id, section_id = ctx.payload["intentId"], ctx.payload["sectionId"]
+    with session_scope() as db:
+        review = db.get(InterviewIntentReview, (ctx.subject_id, intent_id))
+        content = review.ready_content if review is not None else None
+        if not any(s["id"] == section_id for s in (content or {}).get("sections", [])):
+            raise AiError(AiErrorCode.INPUT_REJECTED, detail="section_gone")  # a public ERROR at once
+        session = db.get(InterviewSession, ctx.subject_id)
+        base = {
+            "intent": intent_brief(db.get(InterviewIntent, intent_id)),
+            "current": snapshot_from_content(content),
+            "target": RevisionTarget(kind="SECTION", target_id=section_id),
+            "evidence": tuple(EvidenceChunk.model_validate(chunk) for chunk in ctx.payload.get("evidence", ())),
+            "external_shifts": tuple(available_shifts(db, ctx.subject_id, intent_id)),
+            "store": store_context(store_of(db, session)),
+        }
+    request = MediaWritingRequest(**base, media=gather_media(ctx.payload["mediaIds"], ctx))
+    return get_ai_provider().write_section_from_media(request)
+
+
+def _media_writing_apply(db: Session, ctx: TaskContext, revision: StructureRevision) -> None:
+    """Applied like a correction (locks, revision check, photo re-join, confirmation restore on
+    NO_CHANGE); the files it read are released (app.manual_media_writing)."""
+    _correction_apply(db, ctx, revision)
+    release_media(db, MEDIA_HOLDER, ctx.task_id, intent_id=ctx.payload["intentId"])
+    # Compatibility with jobs accepted before references were scoped to a task ID.
+    release_media(db, MEDIA_HOLDER, ctx.subject_id, intent_id=ctx.payload["intentId"])
+
+
+def _media_writing_fail(db: Session, ctx: TaskContext, error: Exception) -> None:
+    _review_fail(db, ctx, error)
+    release_media(db, MEDIA_HOLDER, ctx.task_id, intent_id=ctx.payload["intentId"])
+    release_media(db, MEDIA_HOLDER, ctx.subject_id, intent_id=ctx.payload["intentId"])
+
+
+def _media_writing_cancel(db: Session, ctx: TaskContext) -> None:
+    """Called after the stale apply/fail savepoint rolls back; preserve a successor's hold."""
+    lock_session_row(db, ctx.subject_id)
+    review = lock_review(db, ctx.subject_id, ctx.payload["intentId"])
+    release_media(db, MEDIA_HOLDER, ctx.task_id, intent_id=ctx.payload["intentId"])
+    if (review is None or review.status != "PROCESSING"
+            or review.processing_task_id == ctx.task_id):
+        release_media(db, MEDIA_HOLDER, ctx.subject_id, intent_id=ctx.payload["intentId"])
+
+
 # --- registration -------------------------------------------------------------------------------
 
 HANDLERS = (
@@ -264,6 +323,10 @@ HANDLERS = (
                 fail=_review_fail, after_success=suggest_current_question_photos, **LIMITS),
     TaskHandler(kind="REVIEW_CORRECTION", execute=_correction_execute, apply=_correction_apply,
                 fail=_review_fail, **LIMITS),
+    TaskHandler(kind="REVIEW_MEDIA_WRITING", execute=_media_writing_execute, apply=_media_writing_apply,
+                fail=_media_writing_fail, cancel=_media_writing_cancel,
+                **{**LIMITS, "lease_seconds": MEDIA_LEASE_SECONDS},
+                provider_calls=MEDIA_PROVIDER_CALLS),
     TaskHandler(kind="DRAFT_GENERATION", execute=drafting.execute, apply=drafting.apply,
                 fail=drafting.fail, **LIMITS),
 )

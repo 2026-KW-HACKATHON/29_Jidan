@@ -10,6 +10,7 @@ schema validation and server-side re-validation as real OpenAI output.
     fake.script("summarize_intent", FakeOutcome.raw('{"summary": '))    # broken JSON
     fake.script("transcribe", FakeOutcome.ok(""))                        # silence -> EMPTY_TRANSCRIPT
     fake.script("answer_question", FakeOutcome.delay(5.0))                # >= timeout -> TIMEOUT
+    fake.script("write_section_from_media", FakeOutcome.ok({"outcome": "NO_CHANGE", ...}))
 
 Scripted outcomes are consumed in order per operation; when the queue is empty the operation's
 default responder answers (`on(...)` replaces it). `calls` records every call with the parsed
@@ -38,14 +39,20 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.ai.contracts import ImageInput, StructureSnapshot, SufficiencyRequest, TranscriptionRequest
+from app.ai.contracts import (
+    ImageInput,
+    LabeledImage,
+    StructureSnapshot,
+    SufficiencyRequest,
+    TranscriptionRequest,
+)
 from app.ai.decisions import NOT_APPLICABLE
 from app.ai.errors import AiError, AiErrorCode
 from app.ai.provider import JUDGE_BACKENDS, AiProvider
 
 OPERATIONS = (
     "suggest_review_photos", "judge_sufficiency", "generate_question", "summarize_intent", "revise_structure",
-    "compose_draft", "answer_question", "transcribe",
+    "compose_draft", "answer_question", "transcribe", "write_section_from_media",
 )
 
 
@@ -219,6 +226,21 @@ def _default_transcript(_request):
     return "테스트 전사 결과예요."
 
 
+def _default_media_writing(data):
+    """Keep the content and append one step to the target section, citing the first media item
+    (worded from its title, caption or transcript)."""
+    current = StructureSnapshot.model_validate(data["current"])
+    raw = structure_to_raw(current)
+    first = data["media"][0]
+    label = (first.get("title") or first.get("caption") or first.get("text") or "").strip()[:2900]
+    instruction = f"{label}: 첨부한 자료에 보이는 대로 해요." if label else "첨부한 사진에 보이는 대로 해요."
+    for section in raw["sections"]:
+        if section["ref"] == data["target"]["target_id"]:
+            section["steps"].append({"ref": "new-1", "instruction": instruction, "checklist_item": False,
+                                     "evidence_ids": [first["id"]]})
+    return {"outcome": "APPLIED", "structure": raw, "removed_steps": []}
+
+
 DEFAULTS: dict[str, Callable[[Any], Any]] = {
     "judge_sufficiency": _default_judge,
     "generate_question": _default_question,
@@ -228,21 +250,23 @@ DEFAULTS: dict[str, Callable[[Any], Any]] = {
     "compose_draft": _default_draft,
     "answer_question": _default_answer,
     "transcribe": _default_transcript,
+    "write_section_from_media": _default_media_writing,
 }
 
 
-GROUNDED_OPERATIONS = ("summarize_intent", "revise_structure", "compose_draft")
+GROUNDED_OPERATIONS = ("summarize_intent", "revise_structure", "compose_draft", "write_section_from_media")
 
 
 def _auto_cite(data: dict[str, Any] | None, result: Any) -> Any:
     """Scripted structures written before grounding omit `evidence_ids`; cite the request's
-    first evidence chunk for them so they keep their meaning. An explicit `evidence_ids`
-    (even an empty list) is left alone, so grounding tests script exactly what they mean."""
-    evidence = (data or {}).get("evidence") or []
+    first evidence chunk (media writing: its first media item) for them so they keep their
+    meaning. An explicit `evidence_ids` (even an empty list) is left alone, so grounding tests
+    script exactly what they mean."""
+    citable = ((data or {}).get("media") or []) + ((data or {}).get("evidence") or [])
     structure = result.get("structure") if isinstance(result, dict) else None
-    if not evidence or not isinstance(structure, dict):
+    if not citable or not isinstance(structure, dict):
         return result
-    first = [evidence[0]["id"]]
+    first = [citable[0]["id"]]
     for shift in structure.get("shifts") or []:
         if isinstance(shift, dict):
             shift.setdefault("evidence_ids", first)
@@ -392,7 +416,9 @@ class FakeAiProvider(AiProvider):
                   images: Sequence[ImageInput]) -> list[str]:
         data = _parse_data(message)
         with self._lock:
-            self.calls.append(FakeCall(operation, data, instructions, len(images)))
+            labels = [image.label for image in images if isinstance(image, LabeledImage)]
+            self.calls.append(FakeCall(operation, data, instructions, len(images),
+                                       extra={"image_labels": labels} if labels else {}))
         result = self._resolve(operation, self._next(operation), data)
         if isinstance(result, FakeOutcome):
             if result.kind == "raw":

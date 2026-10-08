@@ -11,10 +11,11 @@ the owner's words given as evidence. A violation raises `AiError(INVALID_OUTPUT)
 import difflib
 import re
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from app.ai.contracts import (
+    MAX_STEPS,
     Citation,
     MissingItem,
     SectionItem,
@@ -24,7 +25,7 @@ from app.ai.contracts import (
     clean_text,
 )
 from app.ai.errors import AiError, AiErrorCode
-from app.ai.schemas import RawCitation, RawMissing, RawShift, RawStructure
+from app.ai.schemas import RawCitation, RawMissing, RawRemovedStep, RawShift, RawStep, RawStructure
 
 NEW_REF = re.compile(r"^new-[1-9][0-9]{0,3}$")
 TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -320,6 +321,91 @@ def ground_structure(
     grounded = raw.model_copy(update={"shifts": shifts, "sections": sections, "missing_information": missing})
     return grounded, Grounding(dropped_steps=dropped, cleared_shifts=cleared,
                               dropped_in_kept_sections=partial, restored_steps=restored)
+
+
+# --- media writing: existing steps are kept unless a removal is cited -------------------------
+#
+# Figma 777-3464: deleting a photo never deletes the written steps. The same holds the other way
+# round: writing a section from its photos may add and (with a citation) change steps, but an
+# existing step leaves only when the model names it in `removed_steps` with a citation. One that
+# simply went missing (omitted, or changed without a citation and then removed by grounding) is
+# put back as it was.
+
+
+def cited_removals(removed: Sequence[RawRemovedStep], existing_step_ids: Iterable[str],
+                   allowed_ids: Iterable[str]) -> set[str]:
+    """The existing step IDs whose removal is cited. A removal naming a step that is not an
+    existing step of the target, or citing an unknown ID, is INVALID_OUTPUT; one without any
+    citation is ignored (the step is restored)."""
+    existing, allowed = set(existing_step_ids), set(allowed_ids)
+    result: set[str] = set()
+    for item in removed:
+        if item.ref not in existing:
+            raise invalid("unknown_removed_step")
+        if any(value not in allowed for value in item.evidence_ids):
+            raise invalid("unknown_evidence_id")
+        if item.evidence_ids:
+            result.add(item.ref)
+    return result
+
+
+def restore_existing_steps(raw: RawStructure, section_ref: str, original: Sequence[StepItem],
+                           removed: Iterable[str] = ()) -> tuple[RawStructure, int]:
+    """Keep every `original` step of `section_ref` unless its ID is in `removed`.
+
+    * An original step whose instruction changed without any citation goes back to its original
+      content where the model put it (a changed step needs a citation).
+    * An original step missing from `raw` comes back unchanged right after the original step
+      that preceded it (or first), so the owner's order survives.
+    Restored steps carry no citation; `ground_structure` exempts them as unchanged content.
+    Returns the structure and how many steps were put back.
+    """
+    removed = set(removed)
+    by_id = {step.id: step for step in original}
+    index = next((i for i, section in enumerate(raw.sections) if section.ref == section_ref), None)
+    if index is None:
+        raise invalid("target_section_missing")
+    section = raw.sections[index]
+
+    def as_raw(step: StepItem) -> RawStep:
+        return RawStep(ref=step.id, instruction=step.instruction, checklist_item=step.checklist_item,
+                       evidence_ids=[])
+
+    restored = 0
+    steps: list[RawStep] = []
+    for step in section.steps:
+        before = by_id.get(step.ref)
+        if before is not None and not step.evidence_ids and \
+                clean_text(before.instruction) != clean_text(step.instruction):
+            step = as_raw(before)
+            restored += 1
+        steps.append(step)
+    present = {step.ref for step in steps}
+    previous: str | None = None
+    for step in original:
+        if step.id not in present and step.id not in removed:
+            position = 0 if previous is None else next(
+                i for i, item in enumerate(steps) if item.ref == previous) + 1
+            steps.insert(position, as_raw(step))
+            present.add(step.id)
+            restored += 1
+        if step.id in present:
+            previous = step.id
+    if not restored:
+        return raw, 0
+    if len(steps) > MAX_STEPS:
+        raise invalid("too_many_steps")
+    sections = list(raw.sections)
+    sections[index] = section.model_copy(update={"steps": steps})
+    return raw.model_copy(update={"sections": sections}), restored
+
+
+def same_except_gap_wording(left: StructureSnapshot, right: StructureSnapshot) -> bool:
+    """Equal content with the same missing-information keys; only their wording may differ
+    (a fixed server text replacing the owner-visible one is not a change worth a revision)."""
+    def keys(snapshot: StructureSnapshot):
+        return sorted((m.target, m.target_id or "", m.field) for m in snapshot.missing_information)
+    return _without_missing(left) == _without_missing(right) and keys(left) == keys(right)
 
 
 # --- content-free steps (backstop for the writing prompts) --------------------------------------

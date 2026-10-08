@@ -6,7 +6,8 @@ audio transcriptions.
   (`additionalProperties: false` over model/input/questions/safety_identifier), so nothing is
   sent for it there.
 * Reasoning effort per operation group: questions `question_effort` (default low), manual writing
-  (`summarize_intent`, `compose_draft`, `revise_structure`) `writing_effort` (default medium,
+  (`summarize_intent`, `compose_draft`, `revise_structure`, `write_section_from_media`)
+  `writing_effort` (default medium,
   with the longer `writing_timeout_seconds`), everything else `reasoning_effort`. Decisions takes
   no effort.
 * The installed SDK has no Decisions method, so `_decide` uses the client's low-level `post`:
@@ -34,7 +35,7 @@ from typing import Any
 import httpx
 import openai
 
-from app.ai.contracts import ImageInput, TranscriptionRequest
+from app.ai.contracts import ImageInput, LabeledImage, TranscriptionRequest
 from app.ai.decisions import Thresholds
 from app.ai.errors import AiError, AiErrorCode
 from app.ai.provider import JUDGE_BACKENDS, AiProvider, RawTranscript
@@ -50,8 +51,12 @@ MAX_OUTPUT_TOKENS = {
     "revise_structure": 32000,
     "compose_draft": 32000,
     "answer_question": 8000,
+    # Returns the whole structure like revise_structure, after reading up to 16 images.
+    "write_section_from_media": 32000,
 }
-WRITING_OPERATIONS = frozenset({"summarize_intent", "compose_draft", "revise_structure"})
+WRITING_OPERATIONS = frozenset({"summarize_intent", "compose_draft", "revise_structure", "write_section_from_media"})
+# Operations whose images must be read closely (small printed text on shelves and signs).
+HIGH_DETAIL_OPERATIONS = frozenset({"write_section_from_media"})
 QUESTION_OPERATIONS = frozenset({"generate_question"})
 SERVICE_TIERS = ("auto", "default", "fast", "priority")
 AUDIO_EXTENSIONS = {"audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/webm": "webm", "audio/wav": "wav"}
@@ -141,11 +146,15 @@ class OpenAiProvider(AiProvider):
     ) -> list[str]:
         name, schema, _parser = OUTPUTS[operation]
         content = [{"type": "input_text", "text": message}]
+        detail = "high" if operation in HIGH_DETAIL_OPERATIONS else "auto"
         for image in images:
+            if isinstance(image, LabeledImage):
+                # Server-built label naming the image's evidence ID, so the model can cite it.
+                content.append({"type": "input_text", "text": image.label})
             encoded = base64.b64encode(image.data).decode("ascii")
             content.append({
                 "type": "input_image", "image_url": f"data:{image.mime_type};base64,{encoded}",
-                "detail": "auto",
+                "detail": detail,
             })
         options = {}
         effort = self.effort_for(operation)

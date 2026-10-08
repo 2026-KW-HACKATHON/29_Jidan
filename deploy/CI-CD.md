@@ -247,11 +247,18 @@ backend CI는 `python3 deploy/scripts/verify_nginx.py`로 dev/production 원본 
 이 검사는 서버 설정을 교체하거나 reload하지 않는다. 실제 서버의 설정 반영과
 `nginx -t`/reload 및 로그 차단 확인은 배포 시 별도로 수행해야 한다.
 
-요청 body 상한은 기본 10m이고, 매뉴얼·질문 미디어 업로드 경로
-(`/api/stores/{storeId}/manual/media`, `/api/stores/{storeId}/manual/qa/media`)만 20 MiB 음성과
-multipart 구분자를 위해 21m이다. 용도별 정확한 상한(사진 10 MiB, 음성 20 MiB·120초)은 앱이
-413으로 판정한다. 같은 스크립트가 두 경로의 20 MiB 업로드 통과와 그 밖의 경로·상한 초과의
-413을 확인한다.
+요청 body 상한은 기본 10m이다. 점주 미디어 경로 `/api/stores/{storeId}/manual/media`는
+0.12.0의 100 MiB 영상과 multipart 구분자를 위해 101m, 질문 미디어 경로
+`/api/stores/{storeId}/manual/qa/media`는 기존대로 20 MiB 음성과 구분자를 위해 21m이다.
+용도별 정확한 상한(사진 10 MiB, 음성 20 MiB·120초, 점주 영상 100 MiB)은 앱이 413으로
+판정한다. 같은 스크립트가 dev/production에서 점주 100 MiB+구분자와 질문 20 MiB+구분자의
+프록시 수용, 각각 102 MiB·22 MiB 및 일반 경로 11 MiB의 413을 확인한다.
+
+0.12.0 영상 기능을 배포할 때는 호스트의 해당 환경 Nginx 설정에도 이 변경을 반영한 뒤
+`nginx -t`와 reload를 별도로 수행해야 한다. `deploy.sh`는 호스트 Nginx 설정을 복사하거나
+reload하지 않으므로 앱 이미지 배포만으로 100 MiB 영상 업로드가 허용되지는 않는다.
+일회용 Docker 검증 통과는 실제 서버의 설정 적용 증거가 아니며, 서버 반영과 공개 경로의
+영상 업로드 검증 결과를 별도로 기록한다.
 
 ## 배포 후 백엔드 검증
 

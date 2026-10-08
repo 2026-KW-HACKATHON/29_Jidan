@@ -137,6 +137,15 @@ def test_build_from_env(monkeypatch):
         ai_scenario.build_from_env()
 
 
+def test_router_delegates_every_ai_operation():
+    """A new operation must be routed too; otherwise the base class calls the router's
+    `_complete`, which raises (write_section_from_media was missing at first)."""
+    from app.ai.fake import OPERATIONS
+    from app.ai.provider import AiProvider
+
+    for operation in OPERATIONS:
+        assert getattr(ai_scenario.RoutedAiProvider, operation) is not getattr(AiProvider, operation), operation
+
 def test_photo_operation_defaults_to_fake_without_spending_live_budget(tmp_path):
     provider, live, counter = routed(tmp_path, ops=ai_scenario.DEFAULT_LIVE_OPS)
     request = PhotoSuggestionsRequest(summary="포스 마감 위치", structure=manual(POS))

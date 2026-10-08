@@ -47,6 +47,13 @@ SAMPLES = {
         "shifts": [], "sections": [], "missing_information": []}},
     "compose_draft": {"structure": {"shifts": [], "sections": [], "missing_information": []}},
     "answer_question": {"outcome": "NEEDS_OWNER", "answer": "점주 확인이 필요해요.", "citations": []},
+    "write_section_from_media": {"outcome": "APPLIED", "structure": {
+        "shifts": [], "sections": [{"ref": "s1", "category": "COMMON_TASK", "shift_ref": None, "title": "재고",
+                                    "steps": [{"ref": "new-1", "instruction": "먼저 들어온 우유를 앞에 둬요",
+                                               "checklist_item": False,
+                                               "evidence_ids": ["media:00000000-0000-4000-8000-000000000001"]}]}],
+        "missing_information": []},
+        "removed_steps": [{"ref": "t1", "evidence_ids": ["media:00000000-0000-4000-8000-000000000001#transcript"]}]},
 }
 
 
