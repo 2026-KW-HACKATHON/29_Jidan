@@ -87,7 +87,8 @@ def reset_manual_data(db: Session, users: list[str], stores: list[str]) -> None:
                                                 ManualDraftCorrection.requested_by_owner_id.in_(users),
                                                 ManualDraftCorrection.transcription_id.in_(transcriptions))),
         delete(ManualPhotoAttachment).where(or_(ManualPhotoAttachment.version_id.in_(versions),
-                                                ManualPhotoAttachment.media_id.in_(manual_media))),
+                                                ManualPhotoAttachment.media_id.in_(manual_media),
+                                                ManualPhotoAttachment.video_media_id.in_(manual_media))),
         delete(ManualStep).where(ManualStep.section_id.in_(sections)),
         delete(ManualSection).where(ManualSection.id.in_(sections)),
         delete(ManualShift).where(ManualShift.version_id.in_(versions)),
@@ -96,6 +97,8 @@ def reset_manual_data(db: Session, users: list[str], stores: list[str]) -> None:
         delete(StoreManual).where(StoreManual.id.in_(manuals)),
         delete(ManualMediaSnapshotRef).where(ManualMediaSnapshotRef.media_id.in_(manual_media)),
         delete(MediaTranscription).where(MediaTranscription.id.in_(transcriptions)),
+        # A video refers to its poster (same table): unlink before the rows go.
+        update(ManualMedia).where(ManualMedia.id.in_(manual_media)).values(poster_media_id=None),
         delete(ManualMedia).where(ManualMedia.id.in_(manual_media)),
         delete(QaMedia).where(QaMedia.id.in_(qa_media)),
     ):

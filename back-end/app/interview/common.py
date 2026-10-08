@@ -45,6 +45,8 @@ SESSION_FAILED_MESSAGE = "AI 처리에 실패했어요. 저장한 답변으로 �
 DRAFT_FAILED_MESSAGE = "매뉴얼 초안을 만들지 못했어요. 저장한 내용으로 다시 시도해 주세요."
 SUMMARY_FAILED_MESSAGE = "요약을 만들지 못했어요. 저장한 답변으로 다시 시도해 주세요."
 CORRECTION_FAILED_MESSAGE = "정정 내용을 다시 구성하지 못했습니다. 저장한 입력으로 재시도해 주세요."
+MEDIA_WRITING_FAILED_MESSAGE = "사진·영상으로 업무 내용을 작성하지 못했어요. 다시 시도해 주세요."
+REVIEW_FAILED_MESSAGES = {"CORRECTION": CORRECTION_FAILED_MESSAGE, "MEDIA_WRITING": MEDIA_WRITING_FAILED_MESSAGE}
 STATE_CONFLICT_MESSAGE = "인터뷰의 현재 상태에서는 처리할 수 없어요. 최신 상태를 다시 확인해 주세요."
 REVISION_CONFLICT_MESSAGE = "최신 내용을 다시 확인해 주세요."
 REVIEW_NOT_READY_MESSAGE = "아직 요약이 준비되지 않았어요."
@@ -293,7 +295,7 @@ def session_body(db: Session, session: InterviewSession) -> dict:
 def review_body(review: InterviewIntentReview) -> dict:
     error = None
     if review.status == "ERROR":
-        message = CORRECTION_FAILED_MESSAGE if review.processing_kind == "CORRECTION" else SUMMARY_FAILED_MESSAGE
+        message = REVIEW_FAILED_MESSAGES.get(review.processing_kind, SUMMARY_FAILED_MESSAGE)
         error = {"code": review.error_code, "message": message, "retryable": True}
     return {
         "intentId": review.intent_id,

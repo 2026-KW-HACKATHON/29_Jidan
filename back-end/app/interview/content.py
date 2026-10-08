@@ -1,14 +1,17 @@
 """Review content: the API `ManualInterviewReview` JSON kept in `ready_content`, and its
 conversion to and from the AI's photo-free `StructureSnapshot`.
 
-The model never sees photos. Whenever a structure comes back from the AI the photos are joined
+Structures never carry photos. Whenever a structure comes back from the AI the photos are joined
 again by section ID (and the work-structure photos are kept as they are), so a summary or a
 correction can neither invent, move nor drop a photo except by deleting its section.
+Media writing (0.12.0) shows the model a section's photos/videos as evidence, but the
+attachment list itself is re-joined the same way, so the model never edits it either.
 """
 
 from typing import Any
 
 from app.ai.contracts import MissingItem, SectionItem, ShiftItem, StepItem, StructureSnapshot
+from app.manual_attachments import referenced_ids
 
 
 def snapshot_from_content(content: dict[str, Any]) -> StructureSnapshot:
@@ -67,13 +70,14 @@ def content_from_structure(intent_id: str, summary: str, structure: StructureSna
 
 
 def photo_ids(content: dict[str, Any] | None) -> list[str]:
-    """Every photo the content shows, in display order, without duplicates."""
+    """Every file the content keeps alive (photos, section videos and their posters; see
+    app.manual_attachments), in display order, without duplicates."""
     if not content:
         return []
-    ids = [p["mediaId"] for p in content.get("structurePhotos", [])]
+    items = list(content.get("structurePhotos", []))
     for section in content.get("sections", []):
-        ids.extend(p["mediaId"] for p in section.get("photos", []))
-    return list(dict.fromkeys(ids))
+        items.extend(section.get("photos", []))
+    return referenced_ids(items)
 
 
 def shift_ids(content: dict[str, Any] | None) -> set[str]:

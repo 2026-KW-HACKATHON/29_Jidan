@@ -1,6 +1,6 @@
 """Owner manual media and transcription API (#119; openapi tag 매뉴얼 미디어).
 
-    POST   /api/stores/{storeId}/manual/media                       upload a photo or recording
+    POST   /api/stores/{storeId}/manual/media                       upload a photo, video or recording
     DELETE /api/stores/{storeId}/manual/media/{mediaId}             delete an unreferenced file
     GET    /api/stores/{storeId}/manual/media/{mediaId}/content     protected photo bytes
     POST   /api/stores/{storeId}/manual/transcriptions              start / retry transcription
@@ -9,6 +9,10 @@
 Owners need an ACTIVE OWNER session, ownership of the store and APPROVED status on every
 request (app.store_access). The photo endpoint also serves workers with a currently valid
 store access, but only photos of the store's current published version.
+
+Videos (MANUAL_VIDEO, 0.12.0) are AI input only: the upload also stores the video's
+representative frame as an IMAGE row (`poster_media_id`), which is what readers are shown
+(app.manual_attachments). Video bytes are never served.
 """
 
 import hashlib
@@ -26,6 +30,7 @@ from app.auth import ROLE_OWNER, CurrentMember, CurrentOwner, DbSession
 from app.csrf import CsrfOwner
 from app.db import new_uuid, utcnow
 from app.db.models import (
+    MAX_VIDEO_BYTES,
     ManualMedia,
     ManualPhotoAttachment,
     MediaTranscription,
@@ -34,8 +39,10 @@ from app.db.models import (
 )
 from app.errors import ApiError, ErrorCode
 from app.idempotency import IdempotencyKey, IdempotentResult, run_idempotent
+from app.manual_attachments import is_poster
+from app.media import video as video_layer
 from app.media.errors import MediaRejected
-from app.media.inspection import inspect_media
+from app.media.inspection import InspectedMedia, inspect_media
 from app.media.multipart import read_media_form
 from app.media.references import manual_media_in_use, transcription_running
 from app.media.retention import UNATTACHED_TTL, purge_media_content
@@ -60,9 +67,11 @@ from app.worker_stores import published_version_id
 router = APIRouter()
 logger = logging.getLogger("jidan.media")
 
-PURPOSE_KIND = {"MANUAL_PHOTO": "IMAGE", "INTERVIEW_AUDIO": "AUDIO"}
+PURPOSE_KIND = {"MANUAL_PHOTO": "IMAGE", "INTERVIEW_AUDIO": "AUDIO", "MANUAL_VIDEO": "VIDEO"}
 KIND_PURPOSE = {kind: purpose for purpose, kind in PURPOSE_KIND.items()}
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+# The form is read before its purpose is known: the largest purpose (video) bounds the stream;
+# each purpose's own limit is enforced by inspection (413 either way).
+MAX_UPLOAD_BYTES = MAX_VIDEO_BYTES
 MANUAL_NOT_FOUND = "매뉴얼 리소스를 찾을 수 없습니다."
 
 MediaIdPath = Annotated[str, Path(alias="mediaId", pattern=UUID_PATTERN)]
@@ -74,10 +83,23 @@ def _not_found() -> ApiError:
 
 
 def media_body(media: ManualMedia) -> dict:
-    return {
+    body = {
         "id": media.id, "storeId": media.store_id, "purpose": KIND_PURPOSE[media.kind],
         "mimeType": media.mime_type, "sizeBytes": media.byte_size, "createdAt": iso(media.created_at),
     }
+    if media.kind == "VIDEO":
+        body["posterMediaId"] = media.poster_media_id
+    return body
+
+
+def _inspect_upload(purpose: str, data: bytes) -> tuple[InspectedMedia, InspectedMedia | None]:
+    """(file, poster) after content checks; a video also yields its representative frame,
+    normalized like any uploaded photo. Raises MediaRejected."""
+    if purpose != "MANUAL_VIDEO":
+        return inspect_media(data, PURPOSE_KIND[purpose]), None
+    video = video_layer.inspect_video(data)
+    poster = video_layer.digest_video(video.data).poster
+    return video, inspect_media(poster.jpeg, "IMAGE")
 
 
 # --- upload -----------------------------------------------------------------------------------
@@ -90,22 +112,29 @@ def _store_upload(db: Session, owner, store_id: str, key: str, path: str, purpos
 
     def work() -> IdempotentResult:
         try:
-            inspected = inspect_media(data, PURPOSE_KIND[purpose])
+            inspected, poster = _inspect_upload(purpose, data)
         except MediaRejected as rejected:
             raise ApiError(rejected.status_code, rejected.code) from None
         store = load_owned_store(db, owner.user_id, store_id)
         now = utcnow()
-        media_id = new_uuid()
-        location = object_key("manual", store.id, media_id)
-        storage.write(location, inspected.data)
-        written.append(location)
-        media = ManualMedia(
-            id=media_id, store_id=store.id, uploaded_by_owner_id=owner.user_id, kind=inspected.kind,
-            object_key=location, mime_type=inspected.mime_type, byte_size=len(inspected.data),
-            duration_ms=inspected.duration_ms, created_at=now, expires_at=now + UNATTACHED_TTL,
-        )
-        db.add(media)
-        db.flush()
+
+        def stored(file: InspectedMedia, poster_id: str | None = None) -> ManualMedia:
+            media_id = new_uuid()
+            location = object_key("manual", store.id, media_id)
+            storage.write(location, file.data)
+            written.append(location)
+            row = ManualMedia(
+                id=media_id, store_id=store.id, uploaded_by_owner_id=owner.user_id, kind=file.kind,
+                object_key=location, mime_type=file.mime_type, byte_size=len(file.data),
+                duration_ms=file.duration_ms, created_at=now, expires_at=now + UNATTACHED_TTL,
+                poster_media_id=poster_id,
+            )
+            db.add(row)
+            db.flush()
+            return row
+
+        poster_row = stored(poster) if poster is not None else None  # first: the video refers to it
+        media = stored(inspected, poster_row.id if poster_row else None)
         return IdempotentResult(201, media_body(media))
 
     body = {"purpose": purpose, "fileSha256": hashlib.sha256(data).hexdigest()}
@@ -161,15 +190,32 @@ def delete_unused_manual_media(
     if media.deleted_at is None:
         if manual_media_in_use(db, media.id) or (
             media.kind == "AUDIO" and transcription_running(db, manual_media_id=media.id)
-        ):
+        ) or (media.kind == "IMAGE" and _live_poster(db, media.id)):
             raise ApiError(409, ErrorCode.MEDIA_IN_USE, "사용 중인 파일은 삭제할 수 없습니다. 먼저 연결을 해제해 주세요.")
-        media.deleted_at = utcnow()
+        now = utcnow()
+        media.deleted_at = now
+        deleted = [media.id]
+        if media.kind == "VIDEO" and media.poster_media_id:
+            # The poster goes with its video unless something still shows it.
+            poster = db.scalars(select(ManualMedia).where(ManualMedia.id == media.poster_media_id)
+                                .with_for_update()).first()
+            if poster is not None and poster.deleted_at is None and not manual_media_in_use(db, poster.id):
+                poster.deleted_at = now
+                deleted.append(poster.id)
         db.commit()
         try:  # best effort now; the retention task retries anything left behind
-            purge_media_content(media_ids=[media.id])
+            purge_media_content(media_ids=deleted)
         except Exception:  # noqa: BLE001 - deletion is already recorded
             logger.error("immediate media purge failed; retention retries")
     return Response(status_code=204)
+
+
+def _live_poster(db: Session, media_id: str) -> bool:
+    """A video's representative frame, while the video itself is not deleted."""
+    if not is_poster(db, media_id):
+        return False
+    return db.scalar(select(ManualMedia.id).where(
+        ManualMedia.poster_media_id == media_id, ManualMedia.deleted_at.is_(None)).limit(1)) is not None
 
 
 # --- protected photo bytes --------------------------------------------------------------------

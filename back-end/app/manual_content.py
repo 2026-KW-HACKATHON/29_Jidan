@@ -7,8 +7,14 @@ normalized per version (shifts, sections, steps, photo attachments) and gaps are
 
     store = require_manual_reader(db, member, store_id)          # OWNER or WORKER, 404/403
     version = current_published_version(db, store.id)            # None: not published
-    content = content_body(db, version.id)                       # API ManualContent
+    content = content_body(db, version.id)                       # API ManualContent (reader view)
     snapshot = structure_snapshot(db, version.id)                # app.ai StructureSnapshot
+
+Views (0.12.0, app.manual_attachments): `owner=True` shows a section video as itself (mediaId =
+video, kind VIDEO, posterMediaId); the default reader view shows only its poster as a photo.
+Owner views are the draft (GET, edit and acknowledgement responses) and every server-side
+rewrite of the content (edits compare and corrections rebuild it), so videos survive them.
+Published content (also the publication response) and the preview use the reader view.
 """
 
 from dataclasses import dataclass
@@ -199,7 +205,10 @@ def order_missing(issues, shifts, sections) -> list[ManualReviewIssue]:
 # --- API serialization ------------------------------------------------------------------------
 
 
-def photo_body(photo: ManualPhotoAttachment) -> dict:
+def photo_body(photo: ManualPhotoAttachment, owner: bool = False) -> dict:
+    if owner and photo.video_media_id is not None:
+        return {"mediaId": photo.video_media_id, "kind": "VIDEO", "posterMediaId": photo.media_id,
+                "title": photo.title, "caption": photo.caption}
     return {"mediaId": photo.media_id, "title": photo.title, "caption": photo.caption}
 
 
@@ -210,7 +219,7 @@ def shift_body(shift: ManualShift) -> dict:
     }
 
 
-def section_body(rows: VersionRows, section: ManualSection) -> dict:
+def section_body(rows: VersionRows, section: ManualSection, owner: bool = False) -> dict:
     return {
         "id": section.id, "category": section.category, "shiftId": section.shift_id,
         "title": section.title,
@@ -218,7 +227,7 @@ def section_body(rows: VersionRows, section: ManualSection) -> dict:
             {"id": step.id, "instruction": step.instruction, "checklistItem": step.checklist_item}
             for step in rows.steps[section.id]
         ],
-        "photos": [photo_body(photo) for photo in rows.photos.get(section.id, [])],
+        "photos": [photo_body(photo, owner) for photo in rows.photos.get(section.id, [])],
     }
 
 
@@ -229,18 +238,18 @@ def missing_body(issue: ManualReviewIssue) -> dict:
     }
 
 
-def rows_content_body(rows: VersionRows) -> dict:
+def rows_content_body(rows: VersionRows, *, owner: bool = False) -> dict:
     return {
         "shifts": [shift_body(shift) for shift in rows.shifts],
-        "sections": [section_body(rows, section) for section in rows.sections],
-        "structurePhotos": [photo_body(photo) for photo in rows.photos.get(None, [])],
+        "sections": [section_body(rows, section, owner) for section in rows.sections],
+        "structurePhotos": [photo_body(photo, owner) for photo in rows.photos.get(None, [])],
         "missingInformation": [missing_body(issue) for issue in rows.missing],
     }
 
 
-def content_body(db: Session, version_id: str) -> dict:
-    """The API `ManualContent` of a version (draft or published)."""
-    return rows_content_body(load_rows(db, version_id))
+def content_body(db: Session, version_id: str, *, owner: bool = False) -> dict:
+    """The API `ManualContent` of a version (draft or published); `owner` shows videos."""
+    return rows_content_body(load_rows(db, version_id), owner=owner)
 
 
 def structure_snapshot(db: Session, version_id: str) -> StructureSnapshot:

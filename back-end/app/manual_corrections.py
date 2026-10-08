@@ -26,6 +26,13 @@ step is removed (a section left empty becomes "steps unknown") like in interview
 | RUNNING | AI failure after automatic retries, invalid output | ERROR AI_PROCESSING_FAILED (retryable) |
 | RUNNING | draft replaced / revision moved meanwhile | ERROR MANUAL_VERSION_CONFLICT / REVISION_CONFLICT |
 | ERROR (retryable, latest) | retry | RUNNING, attempt + 1, new task; the old task's result is discarded |
+
+Media writing (OpenAPI 0.12.0). `input.method=MEDIA` with a SECTION target writes that section
+from its attached photos/videos instead of an instruction: same row, locks, polling, retries and
+outcomes, no input text, task kind DRAFT_MEDIA_WRITING (its lease covers the video
+transcriptions, app.manual_media_writing). The attachments are read at execute time from the
+draft at the base revision, which no other path can change while the correction runs; the
+owner's words of the draft's interview are the evidence besides the media.
 """
 
 from datetime import datetime
@@ -40,19 +47,30 @@ from app.ai import get_ai_provider
 from app.ai.contracts import (
     MAX_EVIDENCE,
     EvidenceChunk,
+    MediaWritingRequest,
     RevisionTarget,
     StructureRevision,
     StructureRevisionRequest,
     StructureSnapshot,
 )
+from app.ai.errors import AiError, AiErrorCode
 from app.ai.retrieval import Utterance, chunk_utterances
 from app.auth import CurrentOwner, DbSession
 from app.csrf import CsrfOwner
 from app.db import new_uuid, session_scope, utcnow
-from app.db.models import ManualDraftCorrection, ManualVersion, MediaTranscription, StoreManual
+from app.db.models import (
+    InterviewSession,
+    ManualDraftCorrection,
+    ManualPhotoAttachment,
+    ManualVersion,
+    MediaTranscription,
+    StoreManual,
+)
 from app.errors import ApiError, ErrorCode
 from app.idempotency import IdempotencyKey, IdempotentResult, run_idempotent
+from app.interview.evidence import media_writing_evidence
 from app.jobs.state import begin_transition
+from app.manual_attachments import keep_videos_for_processing
 from app.manual_content import (
     active_draft,
     load_rows,
@@ -63,12 +81,16 @@ from app.manual_content import (
 )
 from app.manual_drafts import conflict, correction_body, latest_correction, lock_current_draft
 from app.manual_editing import ContentIn, ContentInvalid, prepare_content, replace_content
+from app.manual_media_writing import LEASE_SECONDS as MEDIA_LEASE_SECONDS
+from app.manual_media_writing import PROVIDER_CALLS as MEDIA_PROVIDER_CALLS
+from app.manual_media_writing import evidence_query, gather_media
 from app.store_access import UUID_PATTERN, StoreIdPath, load_owned_store, normalize_uuid
 from app.tasks import StaleTask, TaskContext, TaskHandler, enqueue, register_handler
 
 router = APIRouter()
 
 KIND = "DRAFT_CORRECTION"
+MEDIA_KIND = "DRAFT_MEDIA_WRITING"
 POLL_SECONDS = "2"
 CorrectionIdPath = Annotated[str, Path(alias="correctionId", pattern=UUID_PATTERN)]
 
@@ -94,6 +116,14 @@ class VoiceInput(BaseModel):
     transcription_id: str = Field(alias="transcriptionId", pattern=UUID_PATTERN)
 
 
+class MediaInput(BaseModel):
+    """0.12.0: write the target section from its attached photos/videos."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    method: Literal["MEDIA"]
+
+
 class _Command(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -103,7 +133,7 @@ class _Command(BaseModel):
 
 class CorrectionIn(_Command):
     target: TargetIn
-    input: Annotated[TextInput | VoiceInput, Field(discriminator="method")]
+    input: Annotated[TextInput | VoiceInput | MediaInput, Field(discriminator="method")]
 
 
 class RetryIn(_Command):
@@ -121,9 +151,14 @@ def _accepted(response: Response) -> Response:
     return response
 
 
-def _enqueue(db: Session, correction_id: str, base_revision: int, attempt: int) -> str:
-    return enqueue(db, KIND, correction_id, {"correctionId": correction_id}, input_revision=base_revision,
-                   attempt=attempt)
+def _enqueue(db: Session, correction_id: str, base_revision: int, attempt: int, *, media: bool = False) -> str:
+    return enqueue(db, MEDIA_KIND if media else KIND, correction_id, {"correctionId": correction_id},
+                   input_revision=base_revision, attempt=attempt)
+
+
+def _media_error(message: str, field: str = "target.targetId") -> ApiError:
+    return ApiError(422, ErrorCode.VALIDATION_ERROR, field_errors=[{
+        "field": field, "code": "INVALID_FORMAT", "message": message}])
 
 
 @router.post("/api/stores/{storeId}/manual/draft/corrections", status_code=202)
@@ -134,6 +169,9 @@ def create_manual_draft_correction(
     if (target.kind == "MANUAL") != (target.target_id is None):
         raise _target_error()
     target_id = None if target.target_id is None else normalize_uuid(target.target_id)
+    media = isinstance(body.input, MediaInput)
+    if media and target.kind != "SECTION":
+        raise _media_error("사진·영상으로 작성할 업무를 선택해 주세요.", "target.kind")
 
     def work() -> IdempotentResult:
         store, _manual, draft = lock_current_draft(
@@ -144,7 +182,14 @@ def create_manual_draft_correction(
             if target_id not in {item.id for item in items}:
                 raise manual_not_found()
         transcription_id = None
-        if isinstance(body.input, TextInput):
+        if media:
+            text = None
+            attached = list(db.scalars(select(ManualPhotoAttachment.video_media_id).where(
+                ManualPhotoAttachment.version_id == draft.id, ManualPhotoAttachment.section_id == target_id)))
+            if not attached:  # one entry per photo/video (None for a photo)
+                raise _media_error("사진이나 영상을 먼저 첨부해 주세요.")
+            keep_videos_for_processing(db, [video for video in attached if video])
+        elif isinstance(body.input, TextInput):
             text = body.input.text
         else:
             transcription = db.scalars(select(MediaTranscription).where(
@@ -159,7 +204,8 @@ def create_manual_draft_correction(
         now = utcnow()
         correction_id = new_uuid()
         row = ManualDraftCorrection(
-            id=correction_id, task_id=_enqueue(db, correction_id, draft.revision, 1), version_id=draft.id, base_revision=draft.revision, target_kind=target.kind, target_id=target_id,
+            id=correction_id, task_id=_enqueue(db, correction_id, draft.revision, 1, media=media),
+            version_id=draft.id, base_revision=draft.revision, target_kind=target.kind, target_id=target_id,
             input_method=body.input.method, input_text=text, transcription_id=transcription_id,
             status="RUNNING", attempt=1, requested_by_owner_id=owner.user_id, created_at=now, updated_at=now,
         )
@@ -230,7 +276,7 @@ def retry_manual_draft_correction(
             raise conflict(ErrorCode.REVISION_CONFLICT)
         now = utcnow()
         attempt = row.attempt + 1
-        task_id = _enqueue(db, row.id, row.base_revision, attempt)
+        task_id = _enqueue(db, row.id, row.base_revision, attempt, media=row.input_method == "MEDIA")
         row.status, row.attempt, row.task_id, row.error_code = "RUNNING", attempt, task_id, None
         row.result_revision, row.completed_at, row.updated_at = None, None, now
         db.flush()
@@ -277,6 +323,33 @@ def _execute(ctx: TaskContext) -> StructureRevision | None:
     return get_ai_provider().revise_structure(request)
 
 
+def _media_execute(ctx: TaskContext) -> StructureRevision | None:
+    """DRAFT_MEDIA_WRITING: the target section of the draft at the base revision, written from
+    its attachments (owner view: videos with their posters). None when the correction moved on,
+    like `_execute`; a target section that is gone cannot happen at the base revision."""
+    with session_scope() as db:
+        row = db.get(ManualDraftCorrection, ctx.subject_id)
+        if row is None or row.status != "RUNNING" or row.task_id != ctx.task_id:
+            return None
+        version = db.get(ManualVersion, row.version_id)
+        if version.status != "DRAFT" or version.revision != row.base_revision:
+            return None
+        content = rows_content_body(load_rows(db, version.id), owner=True)
+        section = next((s for s in content["sections"] if s["id"] == row.target_id), None)
+        if section is None:
+            raise AiError(AiErrorCode.INPUT_REJECTED, detail="section_gone")
+        items = list(section["photos"])
+        session_id = db.scalar(select(InterviewSession.id).where(InterviewSession.manual_version_id == version.id))
+        evidence = () if session_id is None else media_writing_evidence(db, session_id, evidence_query(section, items))
+        base = {
+            "intent": None, "current": structure_snapshot(db, version.id),
+            "target": RevisionTarget(kind="SECTION", target_id=row.target_id),
+            "evidence": evidence, "require_manual_level": True,
+        }
+    request = MediaWritingRequest(**base, media=gather_media(items, ctx))
+    return get_ai_provider().write_section_from_media(request)
+
+
 def _locked(db: Session, ctx: TaskContext) -> tuple[ManualDraftCorrection, ManualVersion]:
     """Manual lock first (the order every request uses), then the correction; stale tasks stop."""
     version_id = db.scalar(select(ManualDraftCorrection.version_id).where(ManualDraftCorrection.id == ctx.subject_id))
@@ -301,7 +374,7 @@ def _finish(row: ManualDraftCorrection, now: datetime, *, error: str | None = No
 def correction_content(db: Session, version_id: str, structure: StructureSnapshot) -> ContentIn:
     """The corrected structure as API content: photos stay on their (kept) section IDs and the
     structure photos are untouched; photos of removed sections are unlinked."""
-    current = rows_content_body(load_rows(db, version_id))
+    current = rows_content_body(load_rows(db, version_id), owner=True)  # videos stay videos
     photos = {section["id"]: section["photos"] for section in current["sections"]}
     return ContentIn.model_validate({
         "shifts": [
@@ -359,3 +432,7 @@ def _fail(db: Session, ctx: TaskContext, _error: Exception) -> None:
 HANDLER = TaskHandler(kind=KIND, execute=_execute, apply=_apply, fail=_fail, max_tries=3,
                       lease_seconds=300, backoff_seconds=(2.0, 10.0))
 register_handler(HANDLER)
+MEDIA_HANDLER = TaskHandler(kind=MEDIA_KIND, execute=_media_execute, apply=_apply, fail=_fail, max_tries=3,
+                            lease_seconds=MEDIA_LEASE_SECONDS, backoff_seconds=(2.0, 10.0),
+                            provider_calls=MEDIA_PROVIDER_CALLS)
+register_handler(MEDIA_HANDLER)

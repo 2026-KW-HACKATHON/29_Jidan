@@ -1,4 +1,5 @@
-"""Task handlers of the interview: questions, Jev, intent summaries/corrections, the draft.
+"""Task handlers of the interview: questions, Jev, intent summaries/corrections/media writing,
+the draft.
 
 Every `apply`/`fail` locks the session row first (then the review), and checks with
 `ctx.ensure` that the row still waits for exactly this task (task ID, state and the input
@@ -23,12 +24,15 @@ from app.ai.contracts import (
     GeneratedQuestion,
     IntentSummary,
     IntentSummaryRequest,
+    MediaWritingRequest,
     QuestionRequest,
+    RevisionTarget,
     StructureRevision,
     StructureRevisionRequest,
     SufficiencyJudgement,
     SufficiencyRequest,
 )
+from app.ai.errors import AiError, AiErrorCode
 from app.db import session_scope, utcnow
 from app.db.models import (
     InterviewEvaluation,
@@ -46,11 +50,15 @@ from app.interview.flow import (
     apply_judgement,
     available_shifts,
     fallback_question,
+    intent_brief,
     shift_summary_pending,
     store_context,
     store_of,
     write_question,
 )
+from app.manual_media_writing import LEASE_SECONDS as MEDIA_LEASE_SECONDS
+from app.manual_media_writing import PROVIDER_CALLS as MEDIA_PROVIDER_CALLS
+from app.manual_media_writing import gather_media
 from app.media.references import replace_snapshot_refs
 from app.tasks import TaskContext, TaskDeferred, TaskHandler, register_handler, task_error_code
 
@@ -246,6 +254,34 @@ def _correction_apply(db: Session, ctx: TaskContext, revision: StructureRevision
     _review_ready(review, content)
 
 
+# --- REVIEW_MEDIA_WRITING (0.12.0) -------------------------------------------------------------
+
+
+def _media_writing_execute(ctx: TaskContext) -> StructureRevision:
+    """One review section written from its attached photos/videos. The review's READY content
+    (unchanged while PROCESSING) gives the section and its attachments; the owner's words are
+    the evidence frozen at acceptance. Media are read and decoded outside any transaction."""
+    intent_id, section_id = ctx.payload["intentId"], ctx.payload["sectionId"]
+    with session_scope() as db:
+        review = db.get(InterviewIntentReview, (ctx.subject_id, intent_id))
+        content = review.ready_content if review is not None else None
+        section = next((s for s in (content or {}).get("sections", []) if s["id"] == section_id), None)
+        if section is None:  # cannot be written any more: a public ERROR, not a retry loop
+            raise AiError(AiErrorCode.INPUT_REJECTED, detail="section_gone")
+        items = list(section.get("photos", []))
+        session = db.get(InterviewSession, ctx.subject_id)
+        base = {
+            "intent": intent_brief(db.get(InterviewIntent, intent_id)),
+            "current": snapshot_from_content(content),
+            "target": RevisionTarget(kind="SECTION", target_id=section_id),
+            "evidence": tuple(EvidenceChunk.model_validate(chunk) for chunk in ctx.payload.get("evidence", ())),
+            "external_shifts": tuple(available_shifts(db, ctx.subject_id, intent_id)),
+            "store": store_context(store_of(db, session)),
+        }
+    request = MediaWritingRequest(**base, media=gather_media(items, ctx))
+    return get_ai_provider().write_section_from_media(request)
+
+
 # --- registration -------------------------------------------------------------------------------
 
 HANDLERS = (
@@ -259,6 +295,11 @@ HANDLERS = (
                 fail=_review_fail, **LIMITS),
     TaskHandler(kind="REVIEW_CORRECTION", execute=_correction_execute, apply=_correction_apply,
                 fail=_review_fail, **LIMITS),
+    # The result is applied like a correction's: same locks, revision check, photo re-join and
+    # confirmation restore when nothing changed.
+    TaskHandler(kind="REVIEW_MEDIA_WRITING", execute=_media_writing_execute, apply=_correction_apply,
+                fail=_review_fail, **{**LIMITS, "lease_seconds": MEDIA_LEASE_SECONDS},
+                provider_calls=MEDIA_PROVIDER_CALLS),
     TaskHandler(kind="DRAFT_GENERATION", execute=drafting.execute, apply=drafting.apply,
                 fail=drafting.fail, **LIMITS),
 )

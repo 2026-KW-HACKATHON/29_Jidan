@@ -15,6 +15,7 @@ nothing.
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, time
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
@@ -32,8 +33,9 @@ from app.db.models import (
     ManualVersion,
 )
 from app.errors import ApiError, ErrorCode
+from app.manual_attachments import AttachError, canonical_items, lock_attachable, referenced_ids
 from app.manual_content import content_body, iso, load_rows, order_missing
-from app.media.references import MediaLinkError, lock_photos_for_link, release_unreferenced
+from app.media.references import release_unreferenced
 from app.store_access import UUID_PATTERN
 
 HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
@@ -45,9 +47,14 @@ class _In(BaseModel):
 
 
 class PhotoIn(_In):
+    """API `ManualPhotoAttachment`. `kind`/`posterMediaId` (0.12.0) may be echoed back from a
+    response; the server re-derives both from the file (app.manual_attachments)."""
+
     media_id: str = Field(alias="mediaId", pattern=UUID_PATTERN)
     caption: str | None = Field(max_length=300)
     title: str = Field(min_length=1, max_length=100, pattern=NOT_BLANK)
+    kind: Literal["PHOTO", "VIDEO"] | None = None
+    poster_media_id: str | None = Field(default=None, alias="posterMediaId", pattern=UUID_PATTERN)
 
 
 class ShiftIn(_In):
@@ -135,7 +142,8 @@ def span_ok(start: time, end: time, next_day: bool) -> bool:
 
 @dataclass(frozen=True)
 class PreparedContent:
-    """Validated content in the API shape with lower-case IDs (`body`), ready to write."""
+    """Validated content in the API owner shape with lower-case IDs (`body`), ready to write.
+    `photo_ids`: every file it keeps alive (photos, videos and their posters)."""
 
     body: dict
     photo_ids: list[str]
@@ -145,8 +153,8 @@ def prepare_content(db: Session, version: ManualVersion, store_id: str, content:
                     *, prefix: str = "content") -> PreparedContent:
     """Check the rules the schema cannot express and return the normalized body.
 
-    Raises ContentInvalid. Photos are locked (`lock_photos_for_link`) so a concurrent delete
-    cannot remove a file this edit links.
+    Raises ContentInvalid. Photos and videos are locked (`lock_attachable`) so a concurrent
+    delete cannot remove a file this edit links; videos only go to sections (0.12.0).
     """
     errors: list[dict] = []
     body = _normalized(content)
@@ -198,17 +206,24 @@ def prepare_content(db: Session, version: ManualVersion, store_id: str, content:
 
     if not errors:
         errors.extend(_foreign_ids(db, version.id, body, prefix))
-    photo_ids = list(dict.fromkeys(
+    media_ids = list(dict.fromkeys(
         [p["mediaId"] for p in body["structurePhotos"]]
         + [p["mediaId"] for section in sections for p in section["photos"]]))
+    rows = {}
     if not errors:
         try:
-            lock_photos_for_link(db, store_id, photo_ids)
-        except MediaLinkError:
-            errors.append(_error(f"{prefix}.photos", "같은 매장에 올린 사진만 연결할 수 있습니다."))
+            rows = lock_attachable(db, store_id, media_ids)
+        except AttachError:
+            errors.append(_error(f"{prefix}.photos", "같은 매장에 올린 사진·영상만 연결할 수 있습니다."))
+    if not errors and any(rows[p["mediaId"]].kind == "VIDEO" for p in body["structurePhotos"]):
+        errors.append(_error(f"{prefix}.structurePhotos", "근무 구조에는 사진만 연결할 수 있습니다."))
     if errors:
         raise ContentInvalid(errors)
-    return PreparedContent(body, photo_ids)
+    body["structurePhotos"] = canonical_items(body["structurePhotos"], rows)
+    for section in sections:
+        section["photos"] = canonical_items(section["photos"], rows)
+    every = body["structurePhotos"] + [p for section in sections for p in section["photos"]]
+    return PreparedContent(body, referenced_ids(every))
 
 
 def _normalized(content: ContentIn) -> dict:
@@ -295,7 +310,7 @@ def _foreign_ids(db: Session, version_id: str, body: dict, prefix: str) -> list[
 
 def same_content(db: Session, version: ManualVersion, body: dict) -> bool:
     """True when `body` shows exactly what the draft shows (missing-information order aside)."""
-    current = content_body(db, version.id)
+    current = content_body(db, version.id, owner=True)
     key = lambda items: sorted(items, key=lambda m: m["id"])
     return (
         {k: v for k, v in current.items() if k != "missingInformation"}
@@ -312,8 +327,10 @@ def replace_content(db: Session, version: ManualVersion, prepared: PreparedConte
         return False
     now = now or utcnow()
     body = prepared.body
-    previous_photos = set(db.scalars(
-        select(ManualPhotoAttachment.media_id).where(ManualPhotoAttachment.version_id == version.id)))
+    previous_photos = set()
+    for media_id, video_id in db.execute(select(ManualPhotoAttachment.media_id, ManualPhotoAttachment.video_media_id)
+                                         .where(ManualPhotoAttachment.version_id == version.id)):
+        previous_photos.update(filter(None, (media_id, video_id)))
     # Rows are rewritten under the same IDs: drop the loaded copies first so the identity map
     # does not confuse a new row with the deleted one.
     for row in list(db.identity_map.values()):
@@ -386,9 +403,13 @@ def _insert_rows(db: Session, version_id: str, body: dict) -> None:
 
 
 def _add_photos(db: Session, version_id: str, section_id: str | None, photos: list[dict]) -> None:
+    """A video item is stored as its poster's attachment remembering the video (app.manual_attachments)."""
     for order, photo in enumerate(photos):
+        video = photo.get("kind") == "VIDEO"
         db.add(ManualPhotoAttachment(
-            version_id=version_id, section_id=section_id, media_id=photo["mediaId"], sort_order=order,
+            version_id=version_id, section_id=section_id,
+            media_id=photo["posterMediaId"] if video else photo["mediaId"],
+            video_media_id=photo["mediaId"] if video else None, sort_order=order,
             title=photo["title"], caption=photo["caption"]))
 
 
