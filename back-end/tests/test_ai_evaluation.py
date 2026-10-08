@@ -38,7 +38,7 @@ def test_correct_replay_is_offline_and_not_a_quality_approval(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", forbidden)
     report = evaluate(FIXTURES / "gold.jsonl", FIXTURES / "correct.jsonl")
     assert report["n"] >= 12
-    assert len(report["operations"]) == 6
+    assert len(report["operations"]) == 7
     assert {case["industry"] for case in report["cases"]} == {
         "CAFE", "RESTAURANT", "CONVENIENCE_STORE",
     }
@@ -193,3 +193,14 @@ def test_noncritical_failure_is_reported_without_critical_cli_failure(tmp_path):
     assert report["cases"][0]["gold_status"] == "fail"
     assert report["critical_gold_failure_n"] == 0
     assert report["failed"] is False
+
+
+def test_guidance_semantic_fixtures_detect_grounding_mutants_offline():
+    correct = evaluate(FIXTURES / "guidance-gold.jsonl", FIXTURES / "guidance-correct.jsonl")
+    mutants = evaluate(FIXTURES / "guidance-gold.jsonl", FIXTURES / "guidance-mutants.jsonl")
+    assert correct["n"] == 10 and correct["failed"] is False
+    assert correct["model_quality_verified"] is False
+    assert correct["human_review_pending_n"] == 10
+    assert mutants["failed"] is True
+    assert mutants["structure_failure_n"] == 1
+    assert mutants["critical_gold_failure_n"] == 9
