@@ -18,8 +18,10 @@ READY review/section of this session becomes null (recommendations only, no atta
 that a later correction removes is not rewritten: the client re-reads the review before attaching
 and the photos API checks the reference again (a card never grants an upload).
 
-Not checked here (the card builder's job): that CURRENT is the item the question asks about, and
-that an item keeps its ID across the questions of a session.
+The deterministic builder uses only this session's intent progress and READY review targets.
+It does not turn AI examples into discovered tasks or infer completion from an answer. Broad
+questions point to their single intent with CURRENT on BASE and PROBE alike. A caller can omit
+CURRENT only when it explicitly knows that the question spans multiple checklist intents.
 
 The question generator's examples become one LIST card (`example_card`). Its IDs are UUIDv5 values
 of the session, the intent and the label, so an example that means the same thing keeps its ID
@@ -32,7 +34,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import InterviewIntentReview
+from app.db.models import InterviewIntent, InterviewIntentReview, InterviewSession
+from app.interview.common import session_intents
 
 MAX_CARDS = 5
 MAX_ITEMS = 50
@@ -41,6 +44,10 @@ MAX_TITLE = 200
 MAX_LABEL = 200
 MAX_TEXT = 1000
 EXAMPLE_TITLE = "답변 예시"
+INTENT_LABELS = {
+    "WORK_STRUCTURE": "근무 구조", "COMMON_TASKS": "공통 업무", "SHIFT_TASKS": "근무조별 업무",
+    "RULES": "매장 규칙", "EQUIPMENT": "설비 사용", "EXCEPTIONS": "예외 상황",
+}
 NAMESPACE = uuid.UUID("a3c1e0b4-6f0d-4d7e-9a43-1c58e2b7d901")
 
 PROGRESS_STATUSES = ("PENDING", "CURRENT", "COMPLETED", "NEEDS_DETAIL")
@@ -110,6 +117,9 @@ def _target(db: Session, session_id: str, value: Any, what: str) -> dict[str, An
     if review is None or review.status != "READY" or not review.ready_content:
         raise InvalidGuidance(f"{what}.intentId: no READY review of this session")
     if raw["target"] == "WORK_STRUCTURE":
+        intent = db.get(InterviewIntent, intent_id)
+        if intent is None or intent.stage != "WORK_STRUCTURE":
+            raise InvalidGuidance(f"{what}.target: not a WORK_STRUCTURE stage review")
         if raw["sectionId"] is not None:
             raise InvalidGuidance(f"{what}.sectionId: must be null for WORK_STRUCTURE")
         return {"intentId": intent_id, "target": "WORK_STRUCTURE", "sectionId": None}
@@ -180,6 +190,80 @@ def clean_cards(db: Session, session_id: str, cards: Any) -> tuple[list[dict[str
         else:
             kept.append(card)
     return kept, notes
+
+
+def state_cards(db: Session, session: InterviewSession, intent_id: str, *, focused: bool = True,
+                max_cards: int = MAX_CARDS) -> list[dict[str, Any]]:
+    """Snapshot observed interview progress and available photo targets at question creation.
+
+    Checklist units are the actual question-set intents, not guessed tasks/procedures. IDs
+    depend on the session and semantic target, never question/depth/attempt or status. A question
+    marks CURRENT on its own still-PENDING intent. focused=False is reserved for questions that
+    span multiple checklist intents. Coverage comes exclusively from the stored Jev result.
+    No review/target is fabricated from examples.
+
+    Different READY sections get separate cards. Current review targets come first, then previous
+    intents from nearest to oldest, then later related intents in interview order. Sections keep
+    their review order. The caller reserves slots for LIST examples through max_cards; the
+    builder never creates cards that will be
+    silently cut off. If no READY target exists, the recommendation has a null target.
+    """
+    progress_rows = session_intents(db, session.id)
+    limit = max(0, min(MAX_CARDS, max_cards))
+    if not progress_rows or not limit:
+        return []
+    progress_id = uuid.uuid5(NAMESPACE, f"{session.id}:progress")
+    items = []
+    for progress, intent in progress_rows[:MAX_ITEMS]:
+        status = {"COVERED": "COMPLETED", "NEEDS_DETAIL": "NEEDS_DETAIL"}.get(
+            progress.coverage_status, "PENDING")
+        if (status == "PENDING" and focused and intent.id == intent_id
+                and session.current_intent_id == intent_id):
+            status = "CURRENT"
+        items.append({"id": str(uuid.uuid5(progress_id, intent.id)),
+                      "label": INTENT_LABELS.get(intent.intent_key, intent.intent_key), "status": status})
+    cards = [{"id": str(progress_id), "type": "PROGRESS_CHECKLIST", "title": "인터뷰 진행",
+              "items": items, "footer": None}]
+    reviews = {r.intent_id: r for r in db.scalars(select(InterviewIntentReview).where(
+        InterviewIntentReview.session_id == session.id, InterviewIntentReview.status == "READY",
+    ))}
+    current_index = next((index for index, (_p, intent) in enumerate(progress_rows)
+                          if intent.id == intent_id), len(progress_rows))
+    prioritized = (progress_rows[current_index:current_index + 1]
+                   + list(reversed(progress_rows[:current_index]))
+                   + progress_rows[current_index + 1:])
+    for _progress, intent in prioritized:
+        if len(cards) >= limit:
+            break
+        review = reviews.get(intent.id)
+        if review is None or not review.ready_content:
+            continue
+        if intent.stage == "WORK_STRUCTURE" and review.ready_content.get("shifts"):
+            cards.append(_photo_card(session.id, intent.id, "WORK_STRUCTURE", "근무표",
+                                     {"intentId": intent.id, "target": "WORK_STRUCTURE", "sectionId": None}))
+        for section in review.ready_content.get("sections", []):
+            if len(cards) >= limit:
+                break
+            cards.append(_photo_card(session.id, intent.id, section["id"], section["title"],
+                                     {"intentId": intent.id, "target": "SECTION", "sectionId": section["id"]}))
+    if len(cards) == 1 and len(cards) < limit:
+        intent = next((i for _p, i in progress_rows if i.id == intent_id), None)
+        if intent is not None:
+            label = "근무표" if intent.stage == "WORK_STRUCTURE" else INTENT_LABELS.get(
+                intent.intent_key, intent.intent_key)
+            cards.append(_photo_card(session.id, intent.id,
+                                     "WORK_STRUCTURE" if intent.stage == "WORK_STRUCTURE" else "recommendation",
+                                     label, None))
+    return cards
+
+
+def _photo_card(session_id: str, intent_id: str, semantic_target: str, label: str,
+                target: dict[str, Any] | None) -> dict[str, Any]:
+    card_id = uuid.uuid5(NAMESPACE, f"{session_id}:{intent_id}:photos:{semantic_target}")
+    return {"id": str(card_id), "type": "PHOTO_SUGGESTIONS", "title": "첨부 추천 사진",
+            "items": [{"id": str(uuid.uuid5(card_id, "photo")), "label": label,
+                       "description": "위치나 배치를 확인할 수 있는 사진이 있으면 첨부해 주세요."}],
+            "attachmentTarget": target, "footer": "사진 없이 계속할 수 있어요."}
 
 
 def example_card(session_id: str, intent_id: str, examples: Any) -> dict[str, Any] | None:

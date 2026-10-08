@@ -141,6 +141,7 @@ class ManualSteps:
             open_questions = [q for q in state["questions"] if not q["answered"]]
             _check(len(open_questions) == 1, f"exactly one open question: {len(open_questions)}")
             question = open_questions[0]
+            self.check_question_cards(state, question)
             intent = intents[question["intentId"]]
             asked.setdefault(intent, []).append((question["kind"], question["depth"]))
             body = {"expectedRevision": state["revision"], "questionId": question["id"],
@@ -164,6 +165,50 @@ class ManualSteps:
                 self.failed_evaluation_keeps_its_question(accepted["lastAnsweredQuestion"])
         _check(False, f"the interview asked more than {limit} questions")
         return asked
+
+    def check_question_cards(self, state: dict, question: dict) -> None:
+        """Progress reflects observed coverage; photos refer to real reviews in this session."""
+        cards = question["guidanceCards"]
+        _check(len(cards) <= 5 and len({c["id"] for c in cards}) == len(cards), "bounded, unique card IDs")
+        progress = [c for c in cards if c["type"] == "PROGRESS_CHECKLIST"]
+        _check(len(progress) == 1, "one generated progress checklist")
+        checklist = progress[0]
+        _check(len(checklist["items"]) == len(state["intents"]), "checklist covers the actual interview intents")
+        identity = (checklist["id"], [i["id"] for i in checklist["items"]])
+        previous = self.state.setdefault("guidance_progress", {}).setdefault(state["id"], identity)
+        _check(identity == previous, "progress IDs survive question transitions")
+        current = 0
+        for item, intent in zip(checklist["items"], state["intents"], strict=True):
+            if item["status"] == "CURRENT":
+                current += 1
+                _check(intent["id"] == question["intentId"] and intent["coverage"] == "PENDING",
+                       "CURRENT belongs to the actual pending question intent")
+            else:
+                expected = {"COVERED": "COMPLETED", "NEEDS_DETAIL": "NEEDS_DETAIL"}.get(
+                    intent["coverage"], "CURRENT" if intent["id"] == question["intentId"] else "PENDING")
+                _check(item["status"] == expected, "checklist status comes from observed coverage")
+        pending_target = any(i["id"] == question["intentId"] and i["coverage"] == "PENDING"
+                             for i in state["intents"])
+        _check(current == int(pending_target), "BASE and PROBE mark their actual pending intent CURRENT")
+        targets = set()
+        for card in (c for c in cards if c["type"] == "PHOTO_SUGGESTIONS"):
+            target = card["attachmentTarget"]
+            if target is None:
+                continue
+            identity = (target["intentId"], target["target"], target["sectionId"])
+            _check(identity not in targets, "distinct photo targets use distinct cards")
+            targets.add(identity)
+            intent = next((i for i in state["intents"] if i["id"] == target["intentId"]), None)
+            _check(intent is not None, "photo target belongs to this session")
+            review = self.state["owner"].call("GET", self.manual_url(
+                f"/interviews/{state['id']}/intents/{target['intentId']}/review"), expect=200).json()
+            _check(review["status"] == "READY", "photo target has a real READY review")
+            if target["target"] == "WORK_STRUCTURE":
+                _check(intent["stage"] == "WORK_STRUCTURE" and target["sectionId"] is None,
+                       "work structure photo target uses the WORK_STRUCTURE stage")
+            else:
+                _check(target["sectionId"] in {s["id"] for s in review["content"]["sections"]},
+                       "photo target is an actual section of the READY review")
 
     def failed_evaluation_keeps_its_question(self, snapshot: dict) -> None:
         """A failed evaluation is ERROR with the answered question still shown; the retry keeps it
@@ -279,8 +324,12 @@ class ManualSteps:
                "one BASE question at depth 0")
         _check(question["intentId"] == state["intents"][0]["id"], "the interview starts with the first intent")
         _check(state["lastAnsweredQuestion"] is None, "nothing is evaluated before the first answer")
+        self.check_question_cards(state, question)
+        photo_cards = [c for c in question["guidanceCards"] if c["type"] == "PHOTO_SUGGESTIONS"]
+        _check(len(photo_cards) == 1 and photo_cards[0]["attachmentTarget"] is None,
+               "the first question recommends photos without an attachment target")
         if not self.live:
-            [card] = question["guidanceCards"]
+            [card] = [c for c in question["guidanceCards"] if c["type"] == "LIST"]
             _check(question["guidance"] == ai_scenario.QUESTION_GUIDANCE, "the question shows its guidance")
             _check((card["type"], [(i["label"], i["description"]) for i in card["items"]]) == (
                 "LIST", [(ai_scenario.EXAMPLE_LABEL, ai_scenario.EXAMPLE_DESCRIPTION)]),

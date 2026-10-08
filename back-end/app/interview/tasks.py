@@ -38,7 +38,7 @@ from app.db.models import (
     InterviewTurn,
 )
 from app.interview import drafting
-from app.interview.cards import InvalidGuidance, example_card
+from app.interview.cards import MAX_CARDS, InvalidGuidance, example_card, state_cards
 from app.interview.common import lock_review, lock_session_row
 from app.interview.content import content_from_structure, photo_ids, snapshot_from_content
 from app.interview.evidence import correction_evidence
@@ -97,20 +97,28 @@ def _question_apply(db: Session, ctx: TaskContext, result: GeneratedQuestion) ->
     except InvalidGuidance as error:  # examples are only decoration: the question goes on
         logger.warning("interview examples dropped: session=%s reason=%s", session.id, error)
         card = None
+    cards = ([card] if card else []) + state_cards(
+        db, session, ctx.payload["intentId"],
+        focused=True, max_cards=MAX_CARDS - int(card is not None),
+    )
     write_question(db, session, ctx.payload, result.text, result.meta.config_version,
-                   guidance=result.guidance, cards=[card] if card else [])
+                   guidance=result.guidance, cards=cards)
 
 
 def _question_fail(db: Session, ctx: TaskContext, _error: Exception) -> None:
     session = _failing_session(db, ctx)
-    write_question(db, session, ctx.payload, fallback_question(ctx.payload), FALLBACK_SOURCE)
+    write_question(db, session, ctx.payload, fallback_question(ctx.payload), FALLBACK_SOURCE,
+                   cards=state_cards(db, session, ctx.payload["intentId"],
+                                     focused=True))
 
 
 # --- EVALUATION (Jev) ---------------------------------------------------------------------------
 
 
 def _evaluation_execute(ctx: TaskContext) -> SufficiencyJudgement:
-    return get_ai_provider().judge_sufficiency(SufficiencyRequest.model_validate(ctx.payload["request"]))
+    provider = get_ai_provider()
+    provider.reset_judge_meta()
+    return provider.judge_sufficiency(SufficiencyRequest.model_validate(ctx.payload["request"]))
 
 
 def _evaluation_row(session: InterviewSession, ctx: TaskContext, **values: Any) -> InterviewEvaluation:
