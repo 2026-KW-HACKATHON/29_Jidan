@@ -508,6 +508,7 @@ runtime 이미지에는 `tests/`와 `e2e/`가 들어가지 않는다(`runtime-so
 | `AI_PROVIDER` | `openai`(기본) 또는 `fake`(production 금지) |
 | `OPENAI_API_KEY` | OpenAI 키. 환경 변수로만 주입하며 로그·응답에 남기지 않음 |
 | `OPENAI_MODEL` / `OPENAI_FALLBACK_MODEL` / `OPENAI_TRANSCRIBE_MODEL` | 기본 `gpt-6-luna` / 없음 / `gpt-transcribe` |
+| `OPENAI_SERVICE_TIER` | 기본 `fast`; `auto/default/fast/priority` 허용. Responses 주 모델·fallback에 적용, STT 제외 |
 | `OPENAI_REASONING_EFFORT`, `OPENAI_TIMEOUT_SECONDS`, `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 기본 `low`, 60, 120 |
 | `MEDIA_ROOT` | 미디어 저장 디렉터리 |
 | `TASK_RUNNER_MODE`, `TASK_RUNNER_WORKERS`, `TASK_RUNNER_POLL_SECONDS` | `background`(기본)/`manual`, 양의 정수(기본 2), 유한한 양수 초(기본 2). 잘못된 숫자 설정은 시작 시 거부. 실행기 스레드는 `BACKGROUND_JOBS=off`여도 뜨지 않음 |

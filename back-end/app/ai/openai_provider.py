@@ -37,6 +37,7 @@ MAX_OUTPUT_TOKENS = {
     "compose_draft": 32000,
     "answer_question": 8000,
 }
+SERVICE_TIERS = ("auto", "default", "fast", "priority")
 AUDIO_EXTENSIONS = {"audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/webm": "webm", "audio/wav": "wav"}
 
 
@@ -73,12 +74,16 @@ class OpenAiProvider(AiProvider):
         model: str,
         transcribe_model: str,
         reasoning_effort: str | None = "low",
+        service_tier: str = "fast",
         timeout_seconds: float = 60.0,
         transcribe_timeout_seconds: float = 120.0,
         client: openai.OpenAI | None = None,
     ):
         if not api_key and client is None:
             raise ValueError("OpenAI API key is required")
+        if service_tier not in SERVICE_TIERS:
+            raise ValueError("OPENAI_SERVICE_TIER is not a supported value")
+        self.service_tier = service_tier
         self.model = model
         self.transcribe_model = transcribe_model
         self.reasoning_effort = reasoning_effort
@@ -110,6 +115,7 @@ class OpenAiProvider(AiProvider):
         try:
             response = self._client.responses.create(
                 model=self.model,
+                service_tier=self.service_tier,
                 instructions=instructions,
                 input=[{"role": "user", "content": content}],
                 text={"format": {"type": "json_schema", "name": name, "schema": schema, "strict": True}},
