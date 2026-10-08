@@ -95,7 +95,7 @@ class Thresholds:
 
     @property
     def tag(self) -> str:
-        return f"t={self.aspect:.2f}/{self.not_applicable:.2f}"
+        return f"t={float(self.aspect)!r}/{float(self.not_applicable)!r}"
 
 
 def _threshold(name: str, default: float) -> float:
@@ -194,6 +194,17 @@ class DecisionOutcome:
     not_applicable: bool = False
 
 
+def not_applicable_outcome(na: float, confirmed: float | None, thresholds: Thresholds,
+                           *, probability: float, confirmation_label: str | None = None,
+                           ) -> DecisionOutcome | None:
+    """The same no-work confirmation gate for Decisions and Responses judgements."""
+    if na < thresholds.not_applicable:
+        return None
+    if confirmation_label and (confirmed is None or confirmed < thresholds.not_applicable):
+        return DecisionOutcome(False, probability, (confirmation_label,))
+    return DecisionOutcome(True, probability, (), not_applicable=True)
+
+
 def decide(body: dict[str, Any], labels: tuple[str, ...], raw: Any, thresholds: Thresholds,
            *, confirmation_label: str | None = None) -> DecisionOutcome:
     probabilities = parse_answers(body, raw)
@@ -211,11 +222,10 @@ def decide(body: dict[str, Any], labels: tuple[str, ...], raw: Any, thresholds: 
     else:
         na_held = na
     combined = max(na_held, min(aspect_ps))
-    if na >= thresholds.not_applicable:
-        if confirmed is None or confirmed >= thresholds.not_applicable:
-            return DecisionOutcome(True, combined, (), not_applicable=True)
-        # Said once, not yet confirmed: ask again (the aspects themselves are moot for now).
-        return DecisionOutcome(False, combined, (confirmation_label,))
+    not_applicable = not_applicable_outcome(
+        na, confirmed, thresholds, probability=combined, confirmation_label=confirmation_label)
+    if not_applicable is not None:
+        return not_applicable
     missing = tuple(label for label, p in zip(labels, aspect_ps, strict=True) if p < thresholds.aspect)
     if not missing:
         return DecisionOutcome(True, combined, ())

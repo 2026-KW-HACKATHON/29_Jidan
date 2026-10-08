@@ -9,12 +9,18 @@ import logging
 import uuid
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.ai.fake import FakeOutcome
-from app.db.models import BackgroundTask, InterviewIntentReview, InterviewSession, InterviewTurn
+from app.db.models import (
+    BackgroundTask,
+    InterviewIntentReview,
+    InterviewSession,
+    InterviewSessionIntent,
+    InterviewTurn,
+)
 from app.interview import cards as guidance_cards
 from app.interview.cards import (
     EXAMPLE_TITLE,
@@ -23,11 +29,13 @@ from app.interview.cards import (
     check_guidance,
     clean_cards,
     example_card,
+    state_cards,
 )
 from app.interview.common import GUIDANCE_RESPONSES_ENV
 from app.interview.flow import write_question
 from app.interview.question_set import INTENTS_V1
 from app.tasks import drain
+from tests.interview_factories import raw_section, raw_shift, raw_summary
 from tests.test_interview_api import INSUFFICIENT, SUFFICIENT, build_ctx, code, count, rows
 
 GUIDANCE = "처음 일하는 근무자도 따라 할 수 있게 알려주세요."
@@ -73,7 +81,7 @@ def test_generated_guidance_and_examples_are_stored_and_shown(ctx, fake_ai):
     state = ctx.get(sid)
     [shown] = state["questions"]
     assert shown["guidance"] == GUIDANCE
-    [card] = shown["guidanceCards"]
+    card = shown["guidanceCards"][0]
     assert (card["type"], card["title"], card["footer"]) == ("LIST", EXAMPLE_TITLE, None)
     assert [(item["label"], item["description"]) for item in card["items"]] == [
         ("오전조", "시작 시간과 종료 시간"), ("오후조", None)]
@@ -99,10 +107,11 @@ def test_example_ids_are_stable_across_the_questions_of_an_intent(ctx, fake_ai):
     assert other["id"] != base["id"] and other["items"][0]["id"] != ids["마감"]
 
 
-def test_no_guidance_is_null_and_no_examples_is_an_empty_list(ctx, fake_ai):
+def test_no_guidance_or_examples_still_has_server_state_cards(ctx, fake_ai):
     fake_ai.script("generate_question", question(guidance=None, examples=()))
     [shown] = ctx.get(ctx.started())["questions"]
-    assert (shown["guidance"], shown["guidanceCards"]) == (None, [])
+    assert shown["guidance"] is None
+    assert [c["type"] for c in shown["guidanceCards"]] == ["PROGRESS_CHECKLIST", "PHOTO_SUGGESTIONS"]
 
 
 def test_blank_guidance_and_repeated_or_blank_examples_are_cleaned(ctx, fake_ai):
@@ -139,7 +148,8 @@ def test_a_broken_generator_output_still_falls_back(ctx, fake_ai):
                                                           "examples": [{"label": "x", "description": None}] * 51})] * 3)
     [shown] = ctx.get(ctx.started())["questions"]
     assert shown["text"] == ctx_base_question(0)
-    assert (shown["guidance"], shown["guidanceCards"]) == (None, [])
+    assert shown["guidance"] is None
+    assert [c["type"] for c in shown["guidanceCards"]] == ["PROGRESS_CHECKLIST", "PHOTO_SUGGESTIONS"]
 
 
 def test_probe_fallback_has_no_guidance(ctx, fake_ai):
@@ -147,9 +157,10 @@ def test_probe_fallback_has_no_guidance(ctx, fake_ai):
     fake_ai.script("judge_sufficiency", FakeOutcome.ok(INSUFFICIENT))
     fake_ai.script("generate_question", FakeOutcome.fail("refused"))
     [probe] = ctx.answer_and_run(sid)["questions"]
-    assert (probe["kind"], probe["guidance"], probe["guidanceCards"]) == ("PROBE", None, [])
+    assert (probe["kind"], probe["guidance"]) == ("PROBE", None)
+    assert [c["type"] for c in probe["guidanceCards"]] == ["PROGRESS_CHECKLIST", "PHOTO_SUGGESTIONS"]
     stored = turn(ctx, probe["id"])
-    assert (stored.guidance, stored.guidance_cards) == (None, [])
+    assert (stored.guidance, stored.guidance_cards) == (None, probe["guidanceCards"])
 
 
 def test_questions_without_guidance_columns_read_as_null_and_empty(ctx, fake_ai):
@@ -496,3 +507,242 @@ def test_database_keeps_guidance_on_questions_only(ctx, fake_ai, column, value):
         with pytest.raises((IntegrityError, OperationalError)):
             db.commit()
     assert rows(ctx, InterviewTurn, InterviewTurn.id == answer.id)[0].guidance is None
+
+
+# --- deterministic state cards on the production question path ----------------------------------
+
+
+def card_of(question, kind):
+    return next(c for c in question["guidanceCards"] if c["type"] == kind)
+
+
+def test_state_cards_use_progress_and_keep_semantic_ids_across_questions(ctx, fake_ai):
+    sid = ctx.started()
+    first = ctx.get(sid)["questions"][0]
+    checklist = card_of(first, "PROGRESS_CHECKLIST")
+    assert [i["status"] for i in checklist["items"]] == ["CURRENT"] + ["PENDING"] * 5
+    assert card_of(first, "PHOTO_SUGGESTIONS")["attachmentTarget"] is None
+    fake_ai.script("judge_sufficiency", FakeOutcome.ok({**INSUFFICIENT, "missing_aspects": ["근무 시간"]}))
+    probe = ctx.answer_and_run(sid)["questions"][0]
+    focused = card_of(probe, "PROGRESS_CHECKLIST")
+    assert focused["id"] == checklist["id"]
+    assert [i["id"] for i in focused["items"]] == [i["id"] for i in checklist["items"]]
+    assert [i["status"] for i in focused["items"]] == ["CURRENT"] + ["PENDING"] * 5
+    accepted = ctx.answer(sid).json()
+    assert accepted["lastAnsweredQuestion"] == {**probe, "answered": True}
+    fake_ai.script("judge_sufficiency", FakeOutcome.ok(SUFFICIENT))
+    ctx.run()
+    next_question = ctx.get(sid)["questions"][0]
+    next_checklist = card_of(next_question, "PROGRESS_CHECKLIST")
+    assert next_checklist["id"] == checklist["id"]
+    assert [i["id"] for i in next_checklist["items"]] == [i["id"] for i in checklist["items"]]
+    assert [i["status"] for i in next_checklist["items"]] == ["COMPLETED", "CURRENT"] + ["PENDING"] * 4
+    assert turn(ctx, first["id"]).guidance_cards == first["guidanceCards"]
+    assert turn(ctx, probe["id"]).guidance_cards == probe["guidanceCards"]
+
+
+def test_multi_aspect_probe_still_targets_one_intent_and_depth_limit_is_needs_detail(ctx, fake_ai):
+    sid = ctx.started()
+    first_ids = [i["id"] for i in card_of(ctx.get(sid)["questions"][0], "PROGRESS_CHECKLIST")["items"]]
+    for depth in range(6):
+        fake_ai.script("judge_sufficiency", FakeOutcome.ok(INSUFFICIENT))
+        state = ctx.answer_and_run(sid)
+        checklist = card_of(state["questions"][0], "PROGRESS_CHECKLIST")
+        assert sum(i["status"] == "CURRENT" for i in checklist["items"]) == 1
+        assert [i["id"] for i in checklist["items"]] == first_ids
+        assert checklist["items"][0]["status"] == ("NEEDS_DETAIL" if depth == 5 else "CURRENT")
+    assert state["intents"][0]["coverage"] == "NEEDS_DETAIL"
+
+
+@pytest.mark.parametrize("guidance_enabled", [True, False], ids=["enabled", "disabled"])
+@pytest.mark.parametrize("base_fallback", [False, True], ids=["generated-base", "fallback-base"])
+def test_base_generated_probe_and_fallback_share_current_intent_cards(
+        ctx, fake_ai, monkeypatch, guidance_enabled, base_fallback):
+    monkeypatch.setenv(GUIDANCE_RESPONSES_ENV, str(guidance_enabled).lower())
+    if base_fallback:
+        fake_ai.script("generate_question", FakeOutcome.fail("refused"))
+    sid = ctx.started()
+    base = ctx.get(sid)["questions"][0]
+    base_cards = turn(ctx, base["id"]).guidance_cards
+    fake_ai.script("judge_sufficiency", FakeOutcome.ok(INSUFFICIENT))
+    generated = ctx.answer_and_run(sid)["questions"][0]
+    fake_ai.script("judge_sufficiency", FakeOutcome.ok(INSUFFICIENT))
+    fake_ai.script("generate_question", FakeOutcome.fail("refused"))
+    fallback = ctx.answer_and_run(sid)["questions"][0]
+    assert base["kind"] == "BASE" and generated["kind"] == fallback["kind"] == "PROBE"
+    assert base["intentId"] == generated["intentId"] == fallback["intentId"]
+    assert generated["depth"] == 1 and fallback["depth"] == 2
+    for probe in (generated, fallback):
+        assert INSUFFICIENT["missing_aspects"][0] in probe["text"]
+        assert INSUFFICIENT["missing_aspects"][1] not in probe["text"]
+    for asked in (base, generated, fallback):
+        stored = turn(ctx, asked["id"])
+        assert stored.guidance_cards == base_cards
+        assert [i["status"] for i in card_of({"guidanceCards": stored.guidance_cards},
+                                            "PROGRESS_CHECKLIST")["items"]] == ["CURRENT"] + ["PENDING"] * 5
+        if guidance_enabled:
+            assert asked["guidanceCards"] == stored.guidance_cards
+        else:
+            assert not {"guidance", "guidanceCards"} & set(asked)
+    assert ctx.get(sid)["questions"][0] == fallback
+    accepted = ctx.answer(sid).json()
+    if guidance_enabled:
+        assert accepted["lastAnsweredQuestion"] == {**fallback, "answered": True}
+        assert ctx.get(sid)["lastAnsweredQuestion"] == accepted["lastAnsweredQuestion"]
+    else:
+        assert "lastAnsweredQuestion" not in accepted
+    assert turn(ctx, fallback["id"]).guidance_cards == base_cards
+
+
+@pytest.mark.parametrize("coverage", ["PENDING", "COVERED", "NEEDS_DETAIL"])
+def test_coverage_precedes_current_and_only_explicit_multi_intent_question_omits_it(ctx, fake_ai, coverage):
+    sid = ctx.started()
+    if coverage == "COVERED":
+        ctx.answer_and_run(sid)
+    elif coverage == "NEEDS_DETAIL":
+        for _ in range(6):
+            fake_ai.script("judge_sufficiency", FakeOutcome.ok(INSUFFICIENT))
+            ctx.answer_and_run(sid)
+    with Session(ctx.engine) as db:
+        session = db.get(InterviewSession, sid)
+        progress = db.get(InterviewSessionIntent, (sid, ctx.intents[0]))
+        assert progress.coverage_status == coverage
+        # Even a caller still pointing at this intent cannot overwrite its observed coverage.
+        session.current_intent_id = ctx.intents[0]
+        db.flush()
+        expected = {"PENDING": "CURRENT", "COVERED": "COMPLETED", "NEEDS_DETAIL": "NEEDS_DETAIL"}[coverage]
+        assert state_cards(db, session, ctx.intents[0])[0]["items"][0]["status"] == expected
+        broad = state_cards(db, session, ctx.intents[0], focused=False)[0]
+        assert broad["items"][0]["status"] == ("PENDING" if coverage == "PENDING" else expected)
+        assert not any(i["status"] == "CURRENT" for i in broad["items"])
+        # A task for a different intent cannot highlight another intent as current.
+        other = state_cards(db, session, ctx.intents[1])[0]
+        assert not any(i["status"] == "CURRENT" for i in other["items"])
+        db.rollback()
+
+
+def test_question_card_and_revision_write_roll_back_together(ctx, fake_ai):
+    from app.interview.tasks import _question_apply, _question_execute
+    from app.tasks import TaskContext
+
+    started = ctx.start().json()
+    sid = started["id"]
+    before = ctx.get(sid)
+    with Session(ctx.engine) as db:
+        task = db.get(BackgroundTask, before["processing"]["taskId"])
+        task_ctx = TaskContext(task.id, task.kind, task.subject_id, task.attempt,
+                               task.input_revision, task.payload, 1)
+    result = _question_execute(task_ctx)
+    flushed = []
+
+    def fail_after_question_flush(db, _flush_context):
+        questions = [r for r in db.new if isinstance(r, InterviewTurn) and r.turn_kind == "QUESTION"]
+        if questions:
+            flushed.extend(questions[0].guidance_cards)
+            raise RuntimeError("test failure after the question and cards were written")
+
+    with Session(ctx.engine) as db:
+        event.listen(db, "after_flush", fail_after_question_flush)
+        with pytest.raises(RuntimeError, match="test failure"):
+            _question_apply(db, task_ctx, result)
+        db.rollback()
+    assert [c["type"] for c in flushed] == ["PROGRESS_CHECKLIST", "PHOTO_SUGGESTIONS"]
+    assert count(ctx, InterviewTurn, InterviewTurn.session_id == sid) == 0
+    assert ctx.get(sid) == before
+    assert rows(ctx, BackgroundTask, BackgroundTask.id == task_ctx.task_id)[0].status == "QUEUED"
+    ctx.run()
+    shown = ctx.get(sid)["questions"][0]
+    assert turn(ctx, shown["id"]).guidance_cards == shown["guidanceCards"]
+    assert ctx.get(sid)["revision"] == before["revision"] + 1
+
+
+def test_generated_photos_prioritize_recent_ready_intents_without_overcap(ctx, fake_ai, caplog):
+    def summarize(data):
+        key = data["intent"]["key"]
+        if key == "WORK_STRUCTURE":
+            return raw_summary("오전조는 9시부터 15시까지예요.", shifts=[raw_shift("new-1", "오전조", end="15:00")])
+        entries = [("포스 마감", "정산 버튼을 눌러요."), ("재고 정리", "선반에 놓아요.")] if key == "COMMON_TASKS" else [
+            ("문 열기", "매장 문을 열어요."), ("조명 켜기", "조명을 켜요.")]
+        return raw_summary(" ".join(instruction for _title, instruction in entries), sections=[
+            raw_section(f"new-{2 * index + 1}", title,
+                        category="COMMON_TASK" if key == "COMMON_TASKS" else "SHIFT_TASK",
+                        shift_ref=None if key == "COMMON_TASKS" else data["available_shifts"][0]["id"],
+                        steps=[(f"new-{2 * index + 2}", instruction)])
+            for index, (title, instruction) in enumerate(entries)])
+
+    fake_ai.on("summarize_intent", summarize)
+    sid = ctx.started()
+    ctx.answer_and_run(sid, "오전조는 9시부터 15시까지예요.")
+    earlier = ctx.answer_and_run(sid, "포스 마감은 정산 버튼을 누르고 재고는 선반에 놓아요.")["questions"][0]
+    fake_ai.script("generate_question", question(text=INTENTS_V1[3].base_question))
+    with caplog.at_level(logging.WARNING, logger="app.interview.flow"):
+        shown = ctx.answer_and_run(sid, "오전조는 매장 문을 열고 조명을 켜요.")["questions"][0]
+    assert shown["intentId"] == ctx.intents[3]
+    assert len(shown["guidanceCards"]) == 5
+    assert "more than 5 cards" not in caplog.text
+    photos = [c for c in shown["guidanceCards"] if c["type"] == "PHOTO_SUGGESTIONS"]
+    assert len(photos) == 3
+    assert [c["attachmentTarget"]["intentId"] for c in photos] == [ctx.intents[2], ctx.intents[2], ctx.intents[1]]
+    assert len({(c["attachmentTarget"]["intentId"], c["attachmentTarget"]["sectionId"]) for c in photos}) == 3
+    with Session(ctx.engine) as db:
+        reviews = [db.get(InterviewIntentReview, (sid, intent_id)) for intent_id in ctx.intents[:3]]
+        assert all(r.status == "READY" for r in reviews)
+        assert sum(len(r.ready_content["sections"]) for r in reviews) == 4
+        for card in photos:
+            target = card["attachmentTarget"]
+            review = db.get(InterviewIntentReview, (sid, target["intentId"]))
+            assert review.status == "READY"
+            if target["target"] == "SECTION":
+                section = next(s for s in review.ready_content["sections"] if s["id"] == target["sectionId"])
+                assert card["items"][0]["label"] == section["title"]
+        # Current READY review first, then the previous one; stable section IDs survive ordering.
+        session = db.get(InterviewSession, sid)
+        current_cards = state_cards(db, session, ctx.intents[1], max_cards=4)
+        current_photos = [c for c in current_cards if c["type"] == "PHOTO_SUGGESTIONS"]
+        assert [c["attachmentTarget"]["intentId"] for c in current_photos] == [ctx.intents[1], ctx.intents[1], ctx.intents[0]]
+        earlier_photos = [c for c in earlier["guidanceCards"] if c["type"] == "PHOTO_SUGGESTIONS"]
+        assert current_photos == earlier_photos
+        for budget in (-1, 0, 1, 2, 4, 5, 10):
+            built = state_cards(db, session, ctx.intents[3], max_cards=budget)
+            assert len(built) == max(0, min(5, budget))
+            assert clean_cards(db, sid, built) == (check_cards_of(built), [])
+    assert photos[2] == earlier_photos[0]
+    assert turn(ctx, shown["id"]).guidance_cards == shown["guidanceCards"]
+    assert turn(ctx, earlier["id"]).guidance_cards == earlier["guidanceCards"]
+    assert ctx.get(sid)["questions"][0] == shown
+
+
+def test_wrong_stage_target_is_nulled_without_dropping_valid_other_cards(ctx, fake_ai):
+    sid = ctx.started()
+    ctx.answer_and_run(sid)
+    ctx.answer_and_run(sid)
+    common = ctx.review(sid, ctx.intents[1]).json()
+    section = common["content"]["sections"][0]["id"]
+    bad = _photos({"intentId": ctx.intents[1], "target": "WORK_STRUCTURE", "sectionId": None})
+    good = _photos({"intentId": ctx.intents[1], "target": "SECTION", "sectionId": section})
+    kept, notes = clean(ctx, sid, [bad, good, _card()])
+    assert len(kept) == 3 and kept[0]["attachmentTarget"] is None
+    assert kept[1]["attachmentTarget"] == good["attachmentTarget"]
+    assert len(notes) == 1 and "not a WORK_STRUCTURE stage" in notes[0]
+    with Session(ctx.engine) as db:
+        review = db.get(InterviewIntentReview, (sid, ctx.intents[1]))
+        review.ready_content = {**review.ready_content, "sections": []}
+        db.commit()
+    kept, notes = clean(ctx, sid, [good, _card()])
+    assert kept[0]["attachmentTarget"] is None and len(kept) == 2
+    assert "not a section" in notes[0]
+
+
+@pytest.mark.parametrize("status", ["PROCESSING", "ERROR"])
+def test_builder_does_not_use_retained_content_of_nonready_review(ctx, ready, status):
+    sid, intent_id, _section = ready
+    with Session(ctx.engine) as db:
+        review = db.get(InterviewIntentReview, (sid, intent_id))
+        review.status = status
+        review.processing_kind, review.processing_task_id, review.processing_attempt = (
+            "CORRECTION", str(uuid.uuid4()), 1)
+        review.error_code = "AI_PROCESSING_FAILED" if status == "ERROR" else None
+        db.flush()
+        built = state_cards(db, db.get(InterviewSession, sid), ctx.intents[1])
+        assert [c["attachmentTarget"] for c in built if c["type"] == "PHOTO_SUGGESTIONS"] == [None]
+        db.rollback()

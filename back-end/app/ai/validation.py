@@ -8,6 +8,7 @@ the owner's words given as evidence. A violation raises `AiError(INVALID_OUTPUT)
 (retryable) with a fixed `detail` naming the rule, never the offending text.
 """
 
+import difflib
 import re
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
@@ -221,6 +222,7 @@ class Grounding:
     # content records them: a missing-information entry is only valid for an unknown value
     # (`_materialize_missing`), and a section with steps is not unknown. Logged only.
     dropped_in_kept_sections: int = 0
+    restored_steps: int = 0
 
 
 def _times(shift: RawShift | ShiftItem) -> ShiftTimes:
@@ -231,13 +233,13 @@ def ground_structure(
     raw: RawStructure,
     evidence_ids: Iterable[str],
     *,
-    grounded_steps: Mapping[str, str | None] | None = None,
+    grounded_steps: Mapping[str, str] | None = None,
     grounded_shifts: Mapping[str, ShiftTimes | None] | None = None,
 ) -> tuple[RawStructure, Grounding]:
     """Enforce citations against the request's evidence before `materialize_structure`.
 
-    With no evidence (requests built before grounding) nothing is checked
-    and citations are ignored, so those callers behave exactly as before.
+    With no evidence (requests built before grounding), citations and new items keep their
+    legacy behaviour. Existing instructions still cannot acquire unsupported facts.
 
     With evidence:
     * Every cited ID must be one of the evidence chunk IDs, else INVALID_OUTPUT
@@ -252,18 +254,22 @@ def ground_structure(
       SHIFT missing-information entry, for the same reason. Shift names and section titles are
       labels, not facts, and need no citation.
     * Content that already passed validation is exempt: `grounded_steps` maps existing step IDs
-      to their instruction (None = may be reworded, e.g. a draft polishing reviewed steps) and
+      to their original instruction and
       `grounded_shifts` maps existing shift IDs to their times (None = any). An existing item
-      returned unchanged needs no new citation; a changed one does.
+      returned unchanged needs no new citation; a changed instruction without a citation is
+      restored to its original wording, preserving its ID and factual actions. An ID alone
+      never permits rewording, since polishing can introduce facts too.
     Model-written missing entries come first, so their wording wins over the fixed text here.
     """
     allowed = set(evidence_ids)
-    if not allowed:
+    if not allowed and not grounded_steps:
         return raw, Grounding()
     grounded_steps = grounded_steps or {}
     grounded_shifts = grounded_shifts or {}
 
     def cited(ids: list[str]) -> bool:
+        if not allowed:  # legacy callers have no evidence with which to validate citations
+            return False
         if any(value not in allowed for value in ids):
             raise invalid("unknown_evidence_id")
         return bool(ids)
@@ -275,7 +281,7 @@ def ground_structure(
         times = _times(shift)
         has_citation = cited(shift.evidence_ids)
         exempt = shift.ref in grounded_shifts and grounded_shifts[shift.ref] in (None, times)
-        if times == (None, None, None) or has_citation or exempt:
+        if not allowed or times == (None, None, None) or has_citation or exempt:
             shifts.append(shift)
             continue
         cleared += 1
@@ -286,15 +292,18 @@ def ground_structure(
         )
 
     sections = []
-    dropped = partial = 0
+    dropped = partial = restored = 0
     for section in raw.sections:
         kept = []
         for step in section.steps:
             has_citation = cited(step.evidence_ids)
-            exempt = step.ref in grounded_steps and (
-                grounded_steps[step.ref] is None
-                or clean_text(grounded_steps[step.ref]) == clean_text(step.instruction))
-            if has_citation or exempt:
+            original = grounded_steps.get(step.ref)
+            if original is not None and not has_citation:
+                if clean_text(original) != clean_text(step.instruction):
+                    step = step.model_copy(update={"instruction": original})
+                    restored += 1
+                kept.append(step)
+            elif has_citation or not allowed:
                 kept.append(step)
             else:
                 dropped += 1
@@ -303,13 +312,14 @@ def ground_structure(
                                       description=UNGROUNDED_STEPS))
         elif kept:
             partial += len(section.steps) - len(kept)
-        sections.append(section.model_copy(update={"steps": kept}) if len(kept) != len(section.steps)
+        sections.append(section.model_copy(update={"steps": kept}) if kept != section.steps
                         else section)
 
-    if not cleared and not dropped:
+    if not cleared and not dropped and not restored:
         return raw, Grounding()
     grounded = raw.model_copy(update={"shifts": shifts, "sections": sections, "missing_information": missing})
-    return grounded, Grounding(dropped_steps=dropped, cleared_shifts=cleared, dropped_in_kept_sections=partial)
+    return grounded, Grounding(dropped_steps=dropped, cleared_shifts=cleared,
+                              dropped_in_kept_sections=partial, restored_steps=restored)
 
 
 # --- media writing: existing steps are kept unless a removal is cited -------------------------
@@ -400,32 +410,96 @@ def same_except_gap_wording(left: StructureSnapshot, right: StructureSnapshot) -
 # --- content-free steps (backstop for the writing prompts) --------------------------------------
 #
 # The prompts say that a step is a concrete action and that "do it as the situation requires"
-# or "there are no rules" is not one. These patterns are only a backstop for the clearest cases
-# the model still writes (seen in live runs); they are deliberately narrow: a vague phrase must
-# be followed directly by a handling verb, and the step must be a single short clause, so a step
-# with any concrete action ("먼저 사과하고, 나머지는 상황에 맞게 처리해요") is kept.
+# or "there are no rules" is not one. This is only a backstop for the clearest cases the model
+# still writes (seen in live runs). The whole step must be one clause:
+#   [condition] [topic] <vague handling>       "손님 불만이 생기면 청소는 상황에 맞게 처리해요"
+#   [rule modifier] <topic> <"no rule">         "정해진 순서는 없어요", "규칙은 따로 없어요"
+# A condition or topic is a short bare noun phrase (Hangul words only, no object marker, no word
+# ending in a particle or verb ending except the final topic particle), so a phrase carrying an
+# action, a dependent clause, a quote or a second sentence never matches and is left for owner
+# review. Nouns are not listed: a noun phrase that happens to look like an ending is kept, too.
 
-_VAGUE_HANDLING = re.compile(
-    r"(상황에\s*맞게|상황을?\s*봐\s*서|상황에\s*따라|그때그때|알아서|적당히|눈치껏|상식적으로|"
-    r"융통성\s*있게|유연하게|센스\s*있게|자연스럽게)\s*(잘\s*)?"
-    r"(처리|대응|판단|행동|해요|해\s*주세요|하세요|하면\s*돼요|하면\s*됩니다)")
-_NO_RULE = re.compile(
-    r"(정해\s*(둔|놓은|진)|정한|따로\s*있는)\s*[^.!?]{0,30}?(없어요|없습니다|없음|없다)|해당\s*(사항\s*)?없")
-_CLAUSE_JOIN = re.compile(r"[,;·]|고\s|한\s*(뒤|후|다음)|하면서")
+_VAGUE_TAIL = re.compile(
+    r"(?:(?:상황에\s*맞게|상황을?\s*봐\s*서|상황에\s*따라|그때그때|알아서|적당히|눈치껏|상식적으로|"
+    r"융통성\s*있게|유연하게|센스\s*있게|자연스럽게)\s*)+(?:잘\s*)?"
+    r"(?:(?:처리|대응|판단|행동)(?:해요|하세요|해\s*주세요|하면\s*돼요|하면\s*됩니다|합니다)?|"
+    r"해요|해\s*주세요|하세요|하면\s*돼요|하면\s*됩니다)")
+_VAGUE = re.compile(rf"(?P<head>.*?)\s*{_VAGUE_TAIL.pattern}")
+_CONDITION = re.compile(r"(?P<cond>.+?)\s*(?:생기면|발생하면|생겼을\s*때|나면|났을\s*때)(?:\s+(?P<topic>.+))?")
+_NO_RULE = re.compile(r"(?P<head>.*?)\s*(?:(?:따로|별도로|특별히|딱히)\s*)*(?:없어요|없습니다|없음|없다)")
+_NOT_APPLICABLE = re.compile(r"해당\s*(?:사항\s*)?(?:없어요|없습니다|없음|없다)")
+_RULE_MODIFIER = re.compile(r"(?:점주가\s*)?(?:(?:따로|별도로|특별히)\s*)?"
+                            r"(?:정해\s*(?:둔|놓은|진)|정한|따로\s*있는|특별한|별다른|별도의)\s*")
+_RULE_NOUN = re.compile(r"(?:규칙|방법|기준|절차|순서|규정|원칙|방침|수칙|지침|내용|사항)$")
+_BOUND_NOUNS = frozenset({"건", "게", "거", "것"})  # "정한 게 없어요"
+_TOPIC_PARTICLES = ("은", "는", "이", "가", "도")
+# Final syllables of particles and verb endings (a closed class); a word ending in one is not a
+# bare noun here. Also frequency/manner words, which would carry a fact ("매일 청소는 ...").
+_NOT_NOUN_END = frozenset("고면며뒤후때는은을를에게로와과랑하해한할된진던니다요이가")
+_NOT_NOUN_ENDINGS = ("에서", "해서", "아서", "어서", "면서", "부터", "까지", "처럼", "보다", "하지", "않지")
+_FACT_WORDS = frozenset({"매일", "매주", "매달", "매번", "항상", "자주", "가끔", "먼저", "바로", "미리", "꼭",
+                         "즉시", "빨리", "직접", "혼자", "모두", "전부", "함께"})
 MAX_CONTENTLESS_CHARS = 80
 VAGUE_STEPS = "구체적인 처리 방법을 아직 정하지 않았어요. 점주 확인이 필요해요."
 NO_RULE_STEPS = "점주가 따로 정한 내용이 없다고 했어요."
 
 
+def _bare_noun_phrase(words: list[str]) -> bool:
+    if not 1 <= len(words) <= 4:
+        return False
+    for word in words:
+        if not re.fullmatch(r"[가-힣]+", word) or "을" in word or "를" in word or word in _FACT_WORDS:
+            return False
+        if word not in _BOUND_NOUNS and (word[-1] in _NOT_NOUN_END or word.endswith(_NOT_NOUN_ENDINGS)):
+            return False
+    return True
+
+
+def _topic(text: str) -> list[str] | None:
+    """The bare noun phrase of "<noun phrase>은/는/이/가/도" (or ending in 건/게/거/것), else None."""
+    words = text.split()
+    if not words:
+        return None
+    last = words[-1]
+    if last not in _BOUND_NOUNS:
+        if len(last) < 2 or not last.endswith(_TOPIC_PARTICLES):
+            return None
+        words[-1] = last[:-1]
+    return words if _bare_noun_phrase(words) else None
+
+
+def _condition(text: str) -> bool:
+    """"<noun phrase>(이나|나|또는 <noun phrase>)…(이|가)": the problem a vague clause is about."""
+    text = re.sub(r"(?<=[가-힣])[이가]$", "", text.strip())
+    parts = re.split(r"(?<=[가-힣])(?:이나|나)\s+|\s+또는\s+", text)
+    return all(_bare_noun_phrase(part.split()) for part in parts)
+
+
 def contentless_kind(instruction: str) -> str | None:
     """"vague" ("상황에 맞게 처리해요"), "no_rule" ("따로 정해 둔 규칙은 없어요") or None."""
     text = clean_text(instruction)
-    if len(text) > MAX_CONTENTLESS_CHARS or _CLAUSE_JOIN.search(text):
+    if len(text) > MAX_CONTENTLESS_CHARS:
         return None
-    if _NO_RULE.search(text):
+    text = re.sub(r"[.!?]$", "", text).strip()
+    if _NOT_APPLICABLE.fullmatch(text):
         return "no_rule"
-    if _VAGUE_HANDLING.search(text):
-        return "vague"
+    match = _NO_RULE.fullmatch(text)
+    if match:
+        head = match["head"]
+        modifier = _RULE_MODIFIER.match(head)
+        topic = _topic(head[modifier.end():] if modifier else head)
+        if topic and (modifier or _RULE_NOUN.search(topic[-1])):
+            return "no_rule"
+    match = _VAGUE.fullmatch(text)
+    if match:
+        head = match["head"].strip()
+        condition = _CONDITION.fullmatch(head)
+        if condition:
+            if not _condition(condition["cond"]):
+                return None
+            head = (condition["topic"] or "").strip()
+        if not head or _topic(head):
+            return "vague"
     return None
 
 
@@ -487,6 +561,26 @@ def drop_contentless_steps(
         return raw, Contentless()
     cleaned = raw.model_copy(update={"sections": sections, "missing_information": missing})
     return cleaned, Contentless(vague_steps=vague, no_rule_steps=no_rule, removed_sections=removed)
+
+
+def _letters(text: str) -> str:
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", text)
+
+
+def repeats_removed_text(original: str, rewritten: str, addition: str) -> bool:
+    """Whether `addition` mostly repeats words a rewrite removed from `original`.
+
+    The removed text is what `rewritten` deleted or replaced (letters only); a repeat is at least
+    half of the addition's letters in common runs of two or more. A miss keeps a duplicate of
+    the owner's own words and a false hit retries the output; neither adds a fact."""
+    before, after, added = _letters(original), _letters(rewritten), _letters(addition)
+    if not added:
+        return False
+    removed = "|".join(before[i1:i2] for tag, i1, i2, _j1, _j2 in
+                       difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
+                       if tag in ("delete", "replace"))
+    blocks = difflib.SequenceMatcher(None, removed, added, autojunk=False).get_matching_blocks()
+    return sum(block.size for block in blocks if block.size >= 2) * 2 >= len(added)
 
 
 def empty_structure() -> RawStructure:

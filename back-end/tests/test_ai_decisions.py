@@ -223,7 +223,7 @@ def test_fake_defaults_to_decisions_and_answers_sufficient(fake_ai):
     call = fake_ai.calls_for("judge_sufficiency")[-1]
     assert call.extra["backend"] == "decisions" and call.data["dialogue"][0]["answer"] == ANSWER
     assert result.meta.config_version == (
-        f"fake:fake-llm:{PROMPT_VERSION}:decisions:aspects-{ASPECTS_VERSION}:t=0.70/0.80")
+        f"fake:fake-llm:{PROMPT_VERSION}:decisions:aspects-{ASPECTS_VERSION}:t=0.7/0.8")
 
 
 def test_fake_scripts_decisions_through_the_real_validation(fake_ai):
@@ -248,12 +248,12 @@ def test_fake_keeps_the_structured_output_format(fake_ai):
         {"sufficient": False, "probability": 0.2, "missing_aspects": ["설거지의 작업 순서"]}))
     result = fake_ai.judge_sufficiency(request())
     assert result.missing_aspects == ("설거지의 작업 순서",)
-    assert result.meta.config_version == f"fake:fake-llm:{PROMPT_VERSION}:responses"
+    assert result.meta.config_version == f"fake:fake-llm:{PROMPT_VERSION}:responses:t=0.7/0.8"
     assert "backend" not in fake_ai.calls_for("judge_sufficiency")[-1].extra
     fake_ai.on("judge_sufficiency", lambda _data: {"sufficient": True, "probability": 0.6, "missing_aspects": []})
     assert fake_ai.judge_sufficiency(request()).probability == 0.6
     responses_only = FakeAiProvider(judge_backend="responses")
-    assert responses_only.judge_sufficiency(request()).meta.config_version.endswith(":responses")
+    assert responses_only.judge_sufficiency(request()).meta.config_version.endswith(":responses:t=0.7/0.8")
     with pytest.raises(ValueError):
         FakeAiProvider(judge_backend="other")
 
@@ -333,7 +333,7 @@ def test_openai_responses_backend_keeps_the_structured_output_judgement():
             "text": json.dumps({"sufficient": True, "probability": 0.9, "missing_aspects": []})}]}]})
     result = openai_provider(transport, judge_backend="responses").judge_sufficiency(request())
     assert result.sufficient and transport.requests[0].url.path == "/v1/responses"
-    assert result.meta.config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:responses:effort=low"
+    assert result.meta.config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:responses:t=0.7/0.8:effort=low"
     with pytest.raises(ValueError):
         openai_provider(transport, judge_backend="other")
 
@@ -463,4 +463,4 @@ def test_a_backend_without_decisions_judges_on_the_responses_path():
 
     result = CompleteOnly().judge_sufficiency(request())
     assert result.missing_aspects == ("설거지의 작업 순서",)
-    assert result.meta.config_version.endswith(":responses")
+    assert result.meta.config_version.endswith(":responses:t=0.7/0.8")

@@ -184,6 +184,35 @@ def render(record: dict) -> str:
     notes = observations(record)
     lines += ["", "## 자동 관찰 포인트", ""] + ([f"- {n}" for n in notes] or ["- 없음"])
 
+    if record.get("voice_enabled"):
+        voice = record.get("voice") or {}
+        transcript = voice.get("transcription") or {}
+        answer = voice.get("answer") or {}
+        persisted = record.get("persistence") or {}
+        lines += ["", "## 음성 원문·저장 검증", "",
+                  ("자동 행동 anchor·숫자 수량 검사는 의미 정확성을 증명하지 않는다. "
+                   "원음·실제 전사·원문 대화·검토·최종 초안을 대조하는 독립 의미 검토는 PENDING이다."), "",
+                  f"- 녹음: {cell(voice.get('audioSource'))} · `{cell(voice.get('audioFile'))}`",
+                  f"- 오디오 SHA256: `{voice.get('audioSha256', '')}` · {voice.get('audioBytes', 0)} bytes",
+                  f"- 세션: `{voice.get('sessionId', '')}` · 질문: `{(voice.get('question') or {}).get('id', '')}`",
+                  (f"- 미디어: `{(voice.get('media') or {}).get('id', '')}` · "
+                   f"전사: `{transcript.get('id', '')}` ({transcript.get('status', '미실행')})"),
+                  f"- 저장 답변: `{answer.get('id', '')}` · inputMethod `{answer.get('inputMethod', '')}`", "",
+                  "발화 스크립트(전사 결과가 아님):", "", f"> {cell(voice.get('speechText'))}", "",
+                  "실제 API 전사:", "", f"> {cell(transcript.get('text'))}", "",
+                  "API 재조회 답변:", "", f"> {cell(answer.get('content'))}", "",
+                  "독립 DB/API 검증 결과:", ""]
+        for name in ("voiceAnswer", "reviews", "voiceReviewAnchors", "voiceDraftAnchors"):
+            lines.append(f"- {name}: {cell(persisted.get(name) or '미완료')}")
+        draft_db = persisted.get("draft") or {}
+        lines += [(f"- 초안: `{draft_db.get('versionId', '')}` · DB/API 일치 {draft_db.get('apiMatchesDb', False)} · "
+                   f"근무조 {draft_db.get('shiftRows', 0)}행 / 섹션 {draft_db.get('sectionRows', 0)}행 / "
+                   f"단계 {draft_db.get('stepRows', 0)}행"), "",
+                  ("동일 이름의 JSON sidecar에 실제 전사·답변·review·초안·commit 검증 및 "
+                   "생성 입력의 원문 근거 ID/문장을 보존한다. sourceDialogue는 전체 API 대화 원문이며 "
+                   f"COMPLETED 상태의 전체 DB 대조는 {record.get('sourceDialogueComplete', False)}다. "
+                   "fake 모드의 오디오는 무음 fixture다."), ""]
+
     lines += ["", "## 인텐트별 질문·답변·판단", ""]
     turns = record.get("turns") or []
     reviews = record.get("reviews") or {}
@@ -205,7 +234,8 @@ def render(record: dict) -> str:
             asked_ms = _last_ok(asked)
             judged_ms = _last_ok(judged)
             lines.append(
-                f"| {turn['depth']} | {turn['kind']} | {cell(question)} | {cell(turn.get('answer', '-'))} | "
+                f"| {turn['depth']} | {turn['kind']} | {cell(question)} | "
+                f"{('[VOICE] ' if turn.get('inputMethod') == 'VOICE' else '')}{cell(turn.get('answer', '-'))} | "
                 f"{cell(judgement_text(_last_ok(judged)))}{_attempts(judged)} | "
                 f"{(asked_ms or {}).get('ms', '-')}ms{_attempts(asked)} | {(judged_ms or {}).get('ms', '-')}ms |")
         reached = max(t["depth"] for t in items)

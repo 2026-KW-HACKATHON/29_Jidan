@@ -49,7 +49,7 @@ from app.db.models import (
     Store,
     StoreManual,
 )
-from app.interview.cards import InvalidGuidance, check_guidance, clean_cards
+from app.interview.cards import INTENT_LABELS, InvalidGuidance, check_guidance, clean_cards
 from app.interview.common import reviews_in_order, session_intents
 from app.interview.evidence import summary_evidence
 from app.tasks import enqueue
@@ -58,10 +58,6 @@ logger = logging.getLogger(__name__)
 
 MAX_DEPTH = 5
 INDUSTRY_LABELS = {"CAFE": "카페", "RESTAURANT": "음식점", "CONVENIENCE_STORE": "편의점", "OTHER": "매장"}
-INTENT_LABELS = {
-    "WORK_STRUCTURE": "근무 구조", "COMMON_TASKS": "공통 업무", "SHIFT_TASKS": "근무조별 업무",
-    "RULES": "매장 규칙", "EQUIPMENT": "설비 사용", "EXCEPTIONS": "예외 상황",
-}
 
 
 def store_of(db: Session, session: InterviewSession) -> Store:

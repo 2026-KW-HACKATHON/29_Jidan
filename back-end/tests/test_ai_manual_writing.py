@@ -9,8 +9,10 @@ W4  Correction evidence is frozen at acceptance; draft corrections are grounded 
     instruction; steps dropped from a section that kept others are counted in the log.
 """
 
+import json
 import logging
 import uuid
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import select
@@ -41,6 +43,7 @@ from app.ai.validation import (
     drop_contentless_steps,
     ground_structure,
 )
+from app.db import utcnow
 from app.db.models import BackgroundTask, ManualDraftCorrection
 from app.manual_corrections import instruction_evidence
 from app.media.storage import LocalMediaStorage, set_media_storage
@@ -49,7 +52,7 @@ from tests.api_contract import login
 from tests.factories import NOW, make_store, make_user
 from tests.manual_factories import make_ready_draft, sample_content
 from tests.test_interview_api import build_ctx
-from tests.test_manual_corrections import Ctx, correct, draft, snapshot
+from tests.test_manual_corrections import Ctx, correct, draft, retry, snapshot
 
 RULES = IntentBrief(key="RULES", stage="COMPLEMENTS", base_question="매장 규칙이 있나요?",
                     coverage_criteria="규칙의 내용")
@@ -177,9 +180,100 @@ def test_model_written_missing_entry_wins_and_concrete_steps_stay(fake):
     ("오후조와 야간조는 별도 업무가 없어요.", None),
     ("제빙기 안에는 손을 넣지 말고 꼭 스쿱을 사용해요.", None),
     ("상황에 맞게 처리해요. " * 10, None),  # long text is never judged by a pattern
+    ("상황에 맞게 처리해요. 먼저 전원을 꺼요.", None),
+    ("전원을 끈 다음 상황에 맞게 처리해요.", None),
+    ("전원을 껐다가 상황에 맞게 처리해요.", None),
+    ("환불한 뒤에는 상황에 맞게 처리해요.", None),
+    ("영수증을 확인하면 상황에 맞게 처리해요.", None),
+    ("정해진 규칙은 없지만 점주에게 전화해요.", None),
+    ("정해진 규칙은 없어요. 점주에게 전화해요.", None),
+    ("해당 없음이라고 표시한 뒤 점주에게 연락해요.", None),
+    ('"상황에 맞게 처리해요"라는 안내를 읽어요.', None),
+    ("점주가 상황에 맞게 처리하라고 하면 전화해요.", None),
+    ("정해진 규칙은 없을 때 영수증을 확인해요.", None),
+    ("", None), (" \n ", None),
+    ("상황에 맞게 처리해요!", "vague"),
+    ("정한 규칙이 없습니다.", "no_rule"),
+    ("해당 사항 없음.", "no_rule"),
+    ("정한 게 없어요.", "no_rule"),
+    ("따로 정해 놓은 청소 규칙은 없어요.", "no_rule"),
+    ("상황에 맞게 처리", "vague"),
+    ("정해진 규칙은 따로 없어요.", "no_rule"),
+    ("별도로 정해진 규칙은 없어요.", "no_rule"),
+    ("정해진 방법은 없어요.", "no_rule"),
+    ("점주가 따로 정한 규칙은 없어요.", "no_rule"),
+    ("상황에 맞게 알아서 처리해요.", "vague"),
+    ("그때그때 알아서 처리해요.", "vague"),
+    ("고장이 나면 상황에 맞게 처리해요.", "vague"),
+    ("정해진 규칙은 따로 없어요. 점주에게 전화해요.", None),
+    ("별도로 정해진 규칙은 없어요. 영수증을 확인해요.", None),
+    ("정해진 방법은 없어요. 전원을 꺼요.", None),
+    ("점주가 따로 정한 규칙은 없지만 점주에게 전화해요.", None),
+    ("상황에 맞게 알아서 처리해요. 전원을 꺼요.", None),
+    ("영수증을 확인하고 그때그때 알아서 처리해요.", None),
+    ("고장이 나면 전원을 끄고 상황에 맞게 처리해요.", None),
+    # A topic/subject noun phrase before a no-content predicate, nouns outside any list.
+    ("정해진 순서는 없어요.", "no_rule"),
+    ("정해진 복장은 없어요.", "no_rule"),
+    ("정한 시간은 따로 없어요.", "no_rule"),
+    ("특별한 규칙은 없어요.", "no_rule"),
+    ("규칙은 따로 없어요.", "no_rule"),
+    ("복장 규정은 따로 없어요.", "no_rule"),
+    ("손님 불만은 상황에 맞게 처리해요.", "vague"),
+    ("청소는 상황에 맞게 해요.", "vague"),
+    ("포스기 고장이 나면 알아서 처리해요.", "vague"),
+    ("손님 불만이나 기계 문제가 생기면 청소는 상황에 맞게 처리해요.", "vague"),
+    # The phrase carries an action, a fact or a dependent clause: kept.
+    ("청소 도구는 따로 없어요.", None),  # a fact about the store, not a missing rule
+    ("따로 없어요.", None),
+    ("컵은 씻고 나머지는 알아서 해요.", None),
+    ("청소는 직원이 알아서 해요.", None),
+    ("매일 청소는 알아서 해요.", None),
+    ("청소는 매일 알아서 해요.", None),
+    ("주문은 키오스크로 받고 결제는 알아서 해요.", None),
+    ("환불은 영수증 확인 후 상황에 맞게 처리해요.", None),
+    ("매장에서는 알아서 해요.", None),
+    ("컵을씻는건 알아서 해요.", None),
+    ("손님이 오면 알아서 해요.", None),
+    ("주문이 밀리면 알아서 처리해요.", None),
+    ("2층 청소는 알아서 해요.", None),
+    ("'청소'는 알아서 해요.", None),
+    ("정해진 순서는 없어요. 영수증을 확인해요.", None),
+    ("청소는 상황에 맞게 하고 마감 전에 점주에게 사진을 보내요.", None),
 ])
 def test_contentless_patterns_are_narrow(text, kind):
     assert contentless_kind(text) == kind
+
+
+@pytest.mark.parametrize("instruction", [
+    "상황에 맞게 처리해요. 먼저 전원을 꺼요.",
+    "전원을 껐다가 상황에 맞게 처리해요.",
+    "영수증을 확인하면 상황에 맞게 처리해요.",
+    "정해진 규칙은 없어요. 점주에게 전화해요.",
+    '"상황에 맞게 처리해요"라는 안내를 읽어요.',
+])
+def test_mixed_and_referenced_actions_survive_summary_verbatim(fake, instruction):
+    output = summary([section("new-1", [step("new-2", instruction), step("new-3", "알아서 해요.")])])
+    result = summarize(fake, output, intent=EXCEPTIONS, text=instruction)
+    assert [s.instruction for s in result.structure.sections[0].steps] == [instruction]
+    assert result.structure.missing_information == ()
+
+
+def test_step_id_without_reviewed_instruction_cannot_exempt_new_facts():
+    raw = RawStructure.model_validate(summary([section(S1, [step(T1, "모든 주문을 반값에 판매해요.", ids=())])])["structure"])
+    grounded, counts = ground_structure(raw, ["e#1"], grounded_steps=dict.fromkeys([T1]))
+    assert grounded.sections[0].steps == []
+    assert counts.dropped_steps == 1
+
+
+def test_surrounding_whitespace_keeps_existing_instruction_exempt():
+    current = StructureSnapshot(sections=(SectionItem(id=S1, category="COMMON_TASK", title="응대",
+        steps=(StepItem(id=T1, instruction="손님께 인사해요."),)),))
+    raw = structure_to_raw(current)
+    raw["sections"][0]["steps"][0]["instruction"] = "  손님께 인사해요.  "
+    grounded, counts = ground_structure(RawStructure.model_validate(raw), ["e#1"],
+                                       grounded_steps={T1: "손님께 인사해요."})
+    assert counts.restored_steps == 0 and len(grounded.sections[0].steps) == 1
 
 
 def test_reviewed_section_is_kept_empty_with_a_missing_entry_in_a_draft(fake):
@@ -341,7 +435,7 @@ def test_instruction_evidence_is_stable_sentence_chunks():
     assert instruction_evidence(cid, "야간조는 6시에 끝나요. 명찰을 달아요.") == chunks
 
 
-def test_draft_correction_cites_the_instruction_and_drops_uncited_new_steps(api, db_engine, fake_ai):
+def test_draft_correction_cites_the_instruction_and_fails_on_uncited_new_steps(api, db_engine, fake_ai):
     with Session(db_engine) as db:
         owner = make_user(db, "OWNER")
         store = make_store(db, owner=owner, approval_status="APPROVED", approved_at=NOW)
@@ -354,26 +448,46 @@ def test_draft_correction_cites_the_instruction_and_drops_uncited_new_steps(api,
     raw = structure_to_raw(snapshot(ctx))
     for item in raw["sections"][0]["steps"]:
         item["evidence_ids"] = []  # existing, unchanged: no citation needed
-    raw["sections"][0]["steps"].append({"ref": "new-1", "instruction": "명찰을 달아요.", "checklist_item": False,
-                                        "evidence_ids": []})  # not cited: removed
+    uncited = {"ref": "new-1", "instruction": "명찰을 달아요.", "checklist_item": False, "evidence_ids": []}
     raw["sections"][0]["steps"].append({"ref": "new-2", "instruction": "앞치마를 입어요.", "checklist_item": False,
                                         "evidence_ids": ["PLACEHOLDER"]})
-    before = [s["instruction"] for s in draft(ctx)["content"]["sections"][0]["steps"]]
+    before = draft(ctx)
+    cited_only = False
 
     def respond(data):
         [chunk] = data["evidence"]
-        raw["sections"][0]["steps"][-1]["evidence_ids"] = [chunk["id"]]
-        return {"outcome": "APPLIED", "summary": None, "structure": raw}
+        output = json.loads(json.dumps(raw))
+        output["sections"][0]["steps"][-1]["evidence_ids"] = [chunk["id"]]
+        if not cited_only:  # an uncited new step would be dropped: the whole output is retried
+            output["sections"][0]["steps"].insert(-1, uncited)
+        return {"outcome": "APPLIED", "summary": None, "structure": output}
 
     fake_ai.on("revise_structure", respond)
     response = correct(ctx, text="앞치마를 입어요.")
     assert response.status_code == 202, response.text
-    drain()
-    [call] = fake_ai.calls_for("revise_structure")
     correction_id = response.json()["id"]
-    assert [(c["id"], c["intent_key"], c["text"]) for c in call.data["evidence"]] == [
+    for minutes in (0, 5, 10):
+        drain(now=utcnow() + timedelta(minutes=minutes))
+    calls = fake_ai.calls_for("revise_structure")
+    assert len(calls) == 3  # every automatic attempt failed; none wrote anything
+    assert [(c["id"], c["intent_key"], c["text"]) for c in calls[0].data["evidence"]] == [
         (f"{correction_id}#1", "DRAFT_CORRECTION", "앞치마를 입어요.")]
     with Session(db_engine) as db:
-        assert db.get(ManualDraftCorrection, correction_id).status == "SUCCEEDED"
-    after = [s["instruction"] for s in draft(ctx)["content"]["sections"][0]["steps"]]
-    assert after == [*before, "앞치마를 입어요."]
+        row = db.get(ManualDraftCorrection, correction_id)
+        assert (row.status, row.error_code, row.result_revision) == ("ERROR", "AI_PROCESSING_FAILED", None)
+    failed = draft(ctx)
+    assert failed["latestCorrection"]["status"] == "ERROR"
+    assert {k: v for k, v in failed.items() if k != "latestCorrection"} == {
+        k: v for k, v in before.items() if k != "latestCorrection"}  # content, revision, photos
+
+    cited_only = True
+    retried = retry(ctx, correction_id, revision=before["revision"])
+    assert retried.status_code == 202, retried.text
+    drain()
+    with Session(db_engine) as db:
+        row = db.get(ManualDraftCorrection, correction_id)
+        assert (row.status, row.result_revision) == ("SUCCEEDED", before["revision"] + 1)
+    after = draft(ctx)
+    assert [s["instruction"] for s in after["content"]["sections"][0]["steps"]] == [
+        *[s["instruction"] for s in before["content"]["sections"][0]["steps"]], "앞치마를 입어요."]
+    assert after["content"]["sections"][1:] == before["content"]["sections"][1:]

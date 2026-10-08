@@ -105,6 +105,14 @@ JUDGE_SCHEMA = _object({
         _string("부족한 정보 한 가지: 업무 하나의 측면 하나를 '<대상>의 <측면>' 형식으로 (200자 이내)"),
         "부족한 측면 (최대 5개, 중요한 것부터, 한 항목에 여러 측면을 묶지 않음, 충분하면 빈 배열)",
     ),
+    "not_applicable_probability": {
+        "type": ["number", "null"],
+        "description": "not_applicable_rule이 있으면 그 명제가 참일 확률 0~1, 없으면 null",
+    },
+    "not_applicable_confirmed_probability": {
+        "type": ["number", "null"],
+        "description": "not_applicable_confirmation_rule이 있으면 재확인 명제가 참일 확률 0~1, 없으면 null",
+    },
 })
 
 QUESTION_SCHEMA = _object({
@@ -208,6 +216,10 @@ class RawJudgement(_Raw):
     missing_aspects: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
         max_length=MAX_ASPECTS,
     )
+    # Older captures remain replayable for intents without a confirmation protocol. The
+    # provider requires both probabilities for confirmation intents, including old captures.
+    not_applicable_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    not_applicable_confirmed_probability: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class RawExample(_Raw):

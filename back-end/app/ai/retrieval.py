@@ -111,8 +111,19 @@ def bm25_scores(documents: Sequence[str], query: str) -> list[float]:
     return scores
 
 
-def _cost(chunk: EvidenceChunk) -> int:
-    return len(chunk.text) + len(chunk.question or "")
+def _cost(chunks: Sequence[EvidenceChunk], chosen: Sequence[int]) -> int:
+    # The final output keeps only the earliest selected chunk's question per turn. Ranking
+    # may select a later chunk first, so recompute from chronological order on each addition.
+    seen: set[str] = set()
+    total = 0
+    for index in sorted(chosen):
+        chunk = chunks[index]
+        turn = chunk.id.rsplit("#", 1)[0]
+        total += len(chunk.text)
+        if turn not in seen:
+            total += len(chunk.question or "")
+        seen.add(turn)
+    return total
 
 
 def retrieve(chunks: Sequence[EvidenceChunk], query: str, *, required_intent: str | None = None,
@@ -130,15 +141,12 @@ def retrieve(chunks: Sequence[EvidenceChunk], query: str, *, required_intent: st
     others = sorted((i for i, c in enumerate(chunks)
                      if c.intent_key != required_intent and scores[i] > 0), key=rank)[:top_k]
     chosen: list[int] = []
-    used = 0
     for index in [*required, *others]:
         if len(chosen) >= MAX_EVIDENCE:
             break
-        cost = _cost(chunks[index])
-        if used + cost > budget_chars:
+        if _cost(chunks, [*chosen, index]) > budget_chars:
             continue  # does not fit; a smaller, lower-ranked chunk still may
         chosen.append(index)
-        used += cost
 
     result: list[EvidenceChunk] = []
     seen_turns: set[str] = set()

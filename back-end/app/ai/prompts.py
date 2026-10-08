@@ -17,7 +17,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-08.6"  # Section writing from attached photos/video frames/transcripts (media as evidence).
+PROMPT_VERSION = "2026-10-08.8"  # Integrate strict owner grounding with section media writing.
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.
@@ -104,6 +104,14 @@ INSTRUCTIONS: dict[str, str] = {
     측면과 2)로 채워지지 않는 기본 내용은 그대로 남긴다.
 - probability는 "이 인텐트의 정보가 충분할 확률"(0~1)이다. 판단에 대한 확신이 아니다. sufficient=true이면
   0.5 이상, sufficient=false이면 0.5 미만으로 쓴다.
+- not_applicable_rule이 있으면 그 명제가 dialogue의 실제 답변으로 참인지 판단하여
+  not_applicable_probability에 0~1 확률을 쓴다. 일부 업무가 없다는 답·모르겠음·무응답은 해당 없음이 아니다.
+  근무조를 나누지 않는 매장도 직원이 일하면 근무 자체가 없는 매장이 아니다. 직원 근무가 있다고 번복한
+  답이 있으면 해당 없음이 아니다. 규칙이 없으면 null이다.
+- not_applicable_confirmation_rule이 있으면 그 명제 그대로 판단하여 not_applicable_confirmed_probability에
+  0~1 확률을 쓴다. 먼저 근무 자체가 없다고 한 답, 그 뒤 실제 재확인 질문, 그 질문에 대한 점주의 명확한
+  재확인 답이 모두 있어야 참이다. 질문 깊이·횟수나 단어 반복만으로 재확인되었다고 보지 않는다.
+  번복·모르겠음·답을 미룬 경우는 재확인되지 않았다. 규칙이 없으면 null이다.
 """,
     "generate_question": _COMMON + """
 [작업: 질문 문구 생성]
@@ -191,18 +199,20 @@ current 내용에 점주의 정정 지시(instruction)를 반영한다. 정정 �
 모든 인텐트 검토(reviews)를 합쳐 하나의 매뉴얼 구조를 만든다.
 - 입력에 있는 모든 근무조·섹션은 같은 id(ref)로 정확히 한 번씩 포함한다. 삭제하거나 합치지 않는다.
   표현을 다듬거나 순서를 근무 흐름에 맞게 정리할 수 있다. 새 섹션이 꼭 필요하면 new-1 같은 ref로 추가한다.
-- 검토(reviews)와 evidence에 없는 사실을 추가하지 않는다. 검토의 단계를 다듬기만 했다면 evidence_ids는 빈 배열이어도
-  되지만, 새로 만든 단계는 evidence를 인용한다. 미확정 값은 그대로 미확정으로 유지하고 missing_information을 넣는다.
+- 검토(reviews)와 evidence에 없는 사실을 추가하지 않는다. 검토의 단계 문장을 그대로 유지할 때만 evidence_ids가
+  빈 배열이어도 된다. 표현을 다듬거나 내용을 바꾸거나 새로 만든 단계는 모두 evidence를 인용한다.
+  인용할 조각을 찾지 못하면 원래 문장을 그대로 유지한다. 미확정 값은 그대로 미확정으로 유지하고 missing_information을 넣는다.
 - 검토의 내용은 점주가 확인·정정까지 마친 결과다. 검토의 근무조 시간과 단계의 사실은 evidence와 달라도 검토를
-  따른다(evidence의 이전 답변으로 되돌리지 않는다). evidence는 검토에 없는 내용을 보탤 때만 쓴다.
+  따른다(evidence의 이전 답변으로 되돌리지 않는다). evidence는 검토의 사실을 유지하며 문장을 바꾸거나 새 내용을 보탤 때 쓴다.
 - 근무조가 하나도 없거나 섹션이 하나도 없으면 MANUAL 대상(shifts/sections) 미확정 항목을 넣는다.
 - 구조가 비어 있는 검토(점주가 해당 없다고 한 인텐트)는 요약만 있다. 그 요약이나 evidence의 "없어요"를 근거로
   섹션·단계를 새로 만들지 않는다.
 - 검토의 섹션에 해당 없음("따로 정한 규칙은 없어요")이나 내용 없는 지시("상황에 맞게 처리해요")만 있으면 그 섹션도
   삭제하지 말고 같은 id로 두되 steps를 빈 배열로 하고, 그 섹션에 missing_information(SECTION·steps)을 넣는다.
 - 검토의 단계가 위 단계 작성 규칙에 맞지 않으면(완료 기준이 덧붙은 문장, 모든 단계가 체크리스트) 같은 사실 범위
-  안에서 바로잡는다. checklist_item은 규칙대로 고친다. 문장을 둘로 나눌 때 새 단계(new-N)는 그 사실의 evidence를
-  인용해야 하며, 인용할 조각을 찾지 못하면 나누지 말고 원래 단계를 그대로 둔다.
+  안에서 바로잡는다. checklist_item은 규칙대로 고친다. 문장을 둘로 나눌 때 기존 id를 쓰는 단계와 새 단계(new-N)
+  모두 각 문장 사실의 evidence를 인용해야 한다. 한쪽이라도 인용할 조각을 찾지 못하면 나누지 말고 원래 단계만
+  그대로 둔다. 원래 복합 문장을 남겨 둔 채 그 일부를 새 단계로 중복 추가하지 않는다.
 """,
     "write_section_from_media": _COMMON + _GROUNDING + _WRITING + """
 [작업: 사진·영상으로 섹션 작성]

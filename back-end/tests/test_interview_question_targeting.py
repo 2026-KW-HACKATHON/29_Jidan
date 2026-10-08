@@ -230,7 +230,7 @@ def test_jev_survives_a_primary_outage_on_a_fallback_model_without_decisions():
     assert paths == [("primary", "/v1/decisions"), ("fallback", "/v1/responses")]
     assert not result.sufficient and result.missing_aspects == ("공통 업무의 작업 순서",)
     assert result.meta.model == "gpt-other"
-    assert result.meta.config_version == f"openai:gpt-other:{PROMPT_VERSION}:responses:effort=low"
+    assert result.meta.config_version == f"openai:gpt-other:{PROMPT_VERSION}:responses:t=0.7/0.8:effort=low"
 
 
 # --- Q6b: failed evaluation rows record the per-operation config version -------------------------
@@ -242,7 +242,7 @@ def test_judge_meta_names_the_configured_backend_and_effort():
     assert ":decisions:aspects-" in fake.judge_meta().config_version
     responses = _openai(lambda _r: httpx.Response(500), "gpt-6-luna", judge_backend="responses",
                         reasoning_effort="high")
-    assert responses.judge_meta().config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:responses:effort=high"
+    assert responses.judge_meta().config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:responses:t=0.7/0.8:effort=high"
     wrapped = FallbackAiProvider(fake, FakeAiProvider(judge_backend="responses"))
     assert wrapped.judge_meta() == fake.judge_meta()
 
