@@ -9,9 +9,10 @@ MANUAL_VIDEO uploads, in the order the model should see them).
 Request side (review media writing, draft correction MEDIA), inside the request transaction:
 `lock_media_for_writing` locks and checks the files, `hold_media` keeps them while the task waits
 or runs: a snapshot reference (the existing retention/deletion protection: a referenced file is
-neither purged nor deletable, 409 MEDIA_IN_USE) and, for videos, `hold_video_bytes` (media-A;
-video bytes are otherwise purged at `expires_at` whatever references them). When the task ends
-(applied, or failed for good) `release_media` drops the reference; the files then fall back to
+neither purged nor deletable, 409 MEDIA_IN_USE) and, for videos, `hold_video_bytes`. Each task
+attempt uses its task ID as holder ID, so stale work cannot release a successor's files.
+When the task ends (applied, failed for good, or cancelled) `release_media` drops the reference;
+the files then fall back to
 the normal rule for unattached uploads and are purged after a fresh 24 h grace. A retry holds
 them again.
 
@@ -59,7 +60,7 @@ from app.tasks import TaskContext
 
 logger = logging.getLogger("jidan.media_writing")
 
-MEDIA_HOLDER = "MEDIA_WRITING"  # snapshot-ref holder of a review request (session + intent)
+MEDIA_HOLDER = "MEDIA_WRITING"  # review task ID + intent; legacy jobs used session ID + intent
 MAX_MEDIA_IDS = 10  # files per request (openapi ManualMediaWritingRequest.mediaIds)
 MAX_VIDEOS = 2  # videos per request: each is decoded and transcribed in the task
 # Sequential provider calls of one media-writing execute: a transcription per video and the

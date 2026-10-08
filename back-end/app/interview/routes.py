@@ -564,12 +564,12 @@ def retry_manual_intent_review(store_id: StoreIdPath, session_id: SessionIdPath,
         if review.revision != body.expectedRevision:
             raise revision_conflict()
         failed = db.get(BackgroundTask, review.processing_task_id)
-        if review.processing_kind == "MEDIA_WRITING":  # hold the files again while it runs
-            rows = relock_for_retry(db, store.id, failed.payload["mediaIds"])
-            hold_media(db, MEDIA_HOLDER, session.id, rows, intent_id=review.intent_id)
         attempt = review.processing_attempt + 1
         task_id = enqueue(db, "REVIEW_" + review.processing_kind, session.id, failed.payload,
                           input_revision=review.revision + 1, attempt=attempt)
+        if review.processing_kind == "MEDIA_WRITING":  # each attempt owns its own references
+            rows = relock_for_retry(db, store.id, failed.payload["mediaIds"])
+            hold_media(db, MEDIA_HOLDER, task_id, rows, intent_id=review.intent_id)
         review.status, review.error_code = "PROCESSING", None
         review.revision += 1
         review.processing_task_id, review.processing_attempt = task_id, attempt
@@ -613,7 +613,7 @@ def write_manual_interview_section_from_media(store_id: StoreIdPath, session_id:
             input_revision=review.revision + 1, attempt=1,
         )
         release_media(db, MEDIA_HOLDER, session.id, intent_id=intent.id)  # an earlier request's leftovers
-        hold_media(db, MEDIA_HOLDER, session.id, rows, intent_id=intent.id)
+        hold_media(db, MEDIA_HOLDER, task_id, rows, intent_id=intent.id)
         review.confirmed_at = review.confirmed_by_owner_id = None
         review.status, review.error_code = "PROCESSING", None
         review.revision += 1

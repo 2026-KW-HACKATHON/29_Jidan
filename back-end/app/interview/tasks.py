@@ -292,12 +292,25 @@ def _media_writing_apply(db: Session, ctx: TaskContext, revision: StructureRevis
     """Applied like a correction (locks, revision check, photo re-join, confirmation restore on
     NO_CHANGE); the files it read are released (app.manual_media_writing)."""
     _correction_apply(db, ctx, revision)
+    release_media(db, MEDIA_HOLDER, ctx.task_id, intent_id=ctx.payload["intentId"])
+    # Compatibility with jobs accepted before references were scoped to a task ID.
     release_media(db, MEDIA_HOLDER, ctx.subject_id, intent_id=ctx.payload["intentId"])
 
 
 def _media_writing_fail(db: Session, ctx: TaskContext, error: Exception) -> None:
     _review_fail(db, ctx, error)
+    release_media(db, MEDIA_HOLDER, ctx.task_id, intent_id=ctx.payload["intentId"])
     release_media(db, MEDIA_HOLDER, ctx.subject_id, intent_id=ctx.payload["intentId"])
+
+
+def _media_writing_cancel(db: Session, ctx: TaskContext) -> None:
+    """Called after the stale apply/fail savepoint rolls back; preserve a successor's hold."""
+    lock_session_row(db, ctx.subject_id)
+    review = lock_review(db, ctx.subject_id, ctx.payload["intentId"])
+    release_media(db, MEDIA_HOLDER, ctx.task_id, intent_id=ctx.payload["intentId"])
+    if (review is None or review.status != "PROCESSING"
+            or review.processing_task_id == ctx.task_id):
+        release_media(db, MEDIA_HOLDER, ctx.subject_id, intent_id=ctx.payload["intentId"])
 
 
 # --- registration -------------------------------------------------------------------------------
@@ -314,7 +327,8 @@ HANDLERS = (
     TaskHandler(kind="REVIEW_CORRECTION", execute=_correction_execute, apply=_correction_apply,
                 fail=_review_fail, **LIMITS),
     TaskHandler(kind="REVIEW_MEDIA_WRITING", execute=_media_writing_execute, apply=_media_writing_apply,
-                fail=_media_writing_fail, **{**LIMITS, "lease_seconds": MEDIA_LEASE_SECONDS},
+                fail=_media_writing_fail, cancel=_media_writing_cancel,
+                **{**LIMITS, "lease_seconds": MEDIA_LEASE_SECONDS},
                 provider_calls=MEDIA_PROVIDER_CALLS),
     TaskHandler(kind="DRAFT_GENERATION", execute=drafting.execute, apply=drafting.apply,
                 fail=drafting.fail, **LIMITS),

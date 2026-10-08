@@ -380,6 +380,7 @@ def test_retention_keeps_held_files_and_purges_them_after_release(flow):
     purge_media_content(now=later)  # the upload's own 24 h have not passed for either yet
     purge_media_content(now=utcnow() + timedelta(hours=25))  # the photo is held by reference
     assert media(flow, still).content_deleted_at is None
+    assert media(flow, clip).content_deleted_at is None
     flow.run()
     assert held(flow) == set()
     purge_media_content(now=utcnow() + timedelta(hours=49))  # released: the fresh grace is over

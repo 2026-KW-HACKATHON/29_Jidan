@@ -6,10 +6,9 @@ Policy (openapi uploadManualMedia, docs/erd/qa.md):
 * recordings: 24 h after their transcription ends (READY or ERROR), never while it RUNS;
 * worker question photos 7 days, worker recordings 24 h; a photo is kept past that only while a
   question using it is still RUNNING (an answered or failed question keeps its text, not the photo);
-* owner videos (VIDEO, MANUAL_VIDEO): AI input only, never shown to anyone. Their bytes go at
-  `expires_at` even while referenced: 24 h after upload, and `hold_video_bytes` (called when a
-  video is attached or a media-writing task is queued or finishes) moves that to 24 h after the
-  call. Videos are AI input only: the manual and workers never show them or a frame of them;
+* owner videos (VIDEO, MANUAL_VIDEO): AI input only, never shown to anyone. A media-writing
+  snapshot reference protects their bytes while the task waits or runs. After the last
+  reference is released, they get the same fresh 24 h grace as an unattached photo;
 * deleted (tombstoned) media: at once.
 Metadata rows stay (tombstone, transcription text, answers); only `content_deleted_at` is set.
 The DB mark commits before the file is removed, so a crash leaves at most an orphan file, which
@@ -44,7 +43,7 @@ INTERVAL_SECONDS = 300
 def hold_video_bytes(media: ManualMedia, now: datetime | None = None) -> None:
     """Keep a video's bytes for `VIDEO_HOLD_TTL` from now (never shortens the current hold).
     Call it with the row locked, in the transaction that attaches the video or queues/finishes
-    the task that digests it; after that the original goes."""
+    the task that digests it. Snapshot references additionally protect queued/running tasks."""
     now = now or utcnow()
     if media.kind == "VIDEO" and media.expires_at < now + VIDEO_HOLD_TTL:
         media.expires_at = now + VIDEO_HOLD_TTL
@@ -52,9 +51,9 @@ def hold_video_bytes(media: ManualMedia, now: datetime | None = None) -> None:
 
 def _in_use(db, row) -> timedelta | None:
     """How long to wait before looking at a still-needed row again, None when purgeable.
-    A VIDEO is never "in use": only its hold (`expires_at`) keeps it."""
+    Photos and videos remain needed while a snapshot or attachment references them."""
     if isinstance(row, ManualMedia):
-        if row.kind == "IMAGE" and manual_media_in_use(db, row.id):
+        if row.kind in ("IMAGE", "VIDEO") and manual_media_in_use(db, row.id):
             return RECHECK_IN_USE
         if row.kind == "AUDIO" and transcription_running(db, manual_media_id=row.id):
             return RECHECK_RUNNING
@@ -130,4 +129,3 @@ def sweep_orphan_files(*, min_age_seconds: float = ORPHAN_MIN_AGE_SECONDS) -> in
 def run_retention() -> None:
     purge_media_content()
     sweep_orphan_files()
-

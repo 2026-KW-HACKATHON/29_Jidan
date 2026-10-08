@@ -32,7 +32,7 @@ Media writing (OpenAPI 0.12.0). `input = {method: MEDIA, mediaIds}` with a SECTI
 that section from the given photos/videos (AI input only, never attached) instead of an
 instruction: same row, locks, polling, retries and outcomes, no input text, task kind
 DRAFT_MEDIA_WRITING whose payload carries the media IDs (a retry copies it). The files are held
-while the task waits or runs (snapshot refs DRAFT_CORRECTION/<correction>, app.manual_media_writing)
+while the task waits or runs (snapshot refs DRAFT_CORRECTION/<task ID>, app.manual_media_writing)
 and released when it ends; the owner's words of the draft's interview are the evidence.
 """
 
@@ -238,7 +238,7 @@ def create_manual_draft_correction(
         db.add(row)
         db.flush()
         if media_rows:
-            hold_media(db, MEDIA_HOLDER, correction_id, media_rows)
+            hold_media(db, MEDIA_HOLDER, row.task_id, media_rows)
         return IdempotentResult(202, correction_body(row))
 
     key_body = body.model_dump(by_alias=True, mode="json")
@@ -309,8 +309,9 @@ def retry_manual_draft_correction(
         media_ids = None
         if row.input_method == "MEDIA":  # same files, held again while the retry runs
             media_ids = db.get(BackgroundTask, row.task_id).payload["mediaIds"]
-            hold_media(db, MEDIA_HOLDER, row.id, relock_for_retry(db, store.id, media_ids))
         task_id = _enqueue(db, row.id, row.base_revision, attempt, media_ids=media_ids)
+        if media_ids is not None:
+            hold_media(db, MEDIA_HOLDER, task_id, relock_for_retry(db, store.id, media_ids))
         row.status, row.attempt, row.task_id, row.error_code = "RUNNING", attempt, task_id, None
         row.result_revision, row.completed_at, row.updated_at = None, None, now
         db.flush()
@@ -382,12 +383,27 @@ def _media_execute(ctx: TaskContext) -> StructureRevision | None:
 
 def _media_apply(db: Session, ctx: TaskContext, result: StructureRevision | None) -> None:
     _apply(db, ctx, result)
+    release_media(db, MEDIA_HOLDER, ctx.task_id)
     release_media(db, MEDIA_HOLDER, ctx.subject_id)
 
 
 def _media_fail(db: Session, ctx: TaskContext, error: Exception) -> None:
     _fail(db, ctx, error)
+    release_media(db, MEDIA_HOLDER, ctx.task_id)
     release_media(db, MEDIA_HOLDER, ctx.subject_id)
+
+
+def _media_cancel(db: Session, ctx: TaskContext) -> None:
+    version_id = db.scalar(select(ManualDraftCorrection.version_id).where(ManualDraftCorrection.id == ctx.subject_id))
+    if version_id is not None:
+        manual_id = db.scalar(select(ManualVersion.manual_id).where(ManualVersion.id == version_id))
+        db.scalars(select(StoreManual).where(StoreManual.id == manual_id).with_for_update()).first()
+    row = db.scalars(select(ManualDraftCorrection).where(ManualDraftCorrection.id == ctx.subject_id)
+                     .with_for_update().execution_options(populate_existing=True)).first()
+    release_media(db, MEDIA_HOLDER, ctx.task_id)
+    # Legacy holders used the correction ID. A running successor still owns those files.
+    if row is None or row.status != "RUNNING" or row.task_id == ctx.task_id:
+        release_media(db, MEDIA_HOLDER, ctx.subject_id)
 
 
 def _locked(db: Session, ctx: TaskContext) -> tuple[ManualDraftCorrection, ManualVersion]:
@@ -473,6 +489,7 @@ HANDLER = TaskHandler(kind=KIND, execute=_execute, apply=_apply, fail=_fail, max
                       lease_seconds=300, backoff_seconds=(2.0, 10.0))
 register_handler(HANDLER)
 MEDIA_HANDLER = TaskHandler(kind=MEDIA_KIND, execute=_media_execute, apply=_media_apply, fail=_media_fail,
+                            cancel=_media_cancel,
                             max_tries=3, lease_seconds=MEDIA_LEASE_SECONDS, backoff_seconds=(2.0, 10.0),
                             provider_calls=MEDIA_PROVIDER_CALLS)
 register_handler(MEDIA_HANDLER)
