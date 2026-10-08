@@ -16,7 +16,7 @@ export function OwnerPending({ receipt }: { receipt: OwnerReceipt }) {
   return <MobileLayout className="owner-pending" header={<header className="owner-home-bar"><h1><Brand /></h1><button aria-label="알림" onClick={() => setMessage('notifications')}><img src={bell} alt="" /></button></header>}
     footer={<nav className="owner-bottom-nav" aria-label="주 메뉴"><div>{[
       ['홈', home], ['매뉴얼', book], ['공고 관리', brief],
-    ].map(([label, icon], index) => <button key={label} aria-current={index === 0 ? 'page' : undefined} onClick={() => { if (index) setMessage('approval') }}><img src={icon} alt="" /><span>{label}</span></button>)}</div><span className="owner-home-indicator" aria-hidden="true" /></nav>}>
+    ].map(([label, icon], index) => <button key={label} aria-current={index === 0 ? 'page' : undefined} onClick={() => { if (index) setMessage('approval') }}><img src={icon} alt="" /><span>{label}</span></button>)}</div></nav>}>
     <div className="owner-pending-content">
       <div className="owner-intro"><h2>안녕하세요, {receipt.ownerName} 점주님</h2><p>매장 등록 신청을 확인하고 있어요.</p></div>
       <section className="owner-managed" aria-label="관리 매장"><p>관리 매장</p><div className="owner-managed-title"><h3>{receipt.storeName}</h3><span>승인 대기 중</span></div><div className="owner-managed-actions"><Button intent="secondary" onClick={() => setMessage('approval')}>매장 관리</Button><Button intent="secondary" onClick={() => setMessage('approval')}>공고 등록</Button></div></section>
