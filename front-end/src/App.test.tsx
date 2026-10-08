@@ -38,3 +38,18 @@ it('서버 이동 지시가 승인 대기이면 일반 점주 홈 대신 승인 
  window.history.replaceState(null,'','/home')
  render(<App authService={{read:async()=>({kind:'authenticated',session:{displayName:'김',accountType:'OWNER',nextAction:'OWNER_APPROVAL_PENDING',stores:[{storeId:'store',storeName:'내 매장',approvalStatus:'PENDING',permissions:['READ_STORE_STATUS']}]}}),startGoogle:vi.fn()}}/>);await screen.findByText('승인 대기 중');expect(screen.getByRole('heading',{name:'내 매장'})).toBeInTheDocument()
 })
+
+it('홈 쿼리 전환은 인증 화면을 재생성하거나 세션을 다시 조회하지 않는다', async () => {
+ window.history.replaceState(null,'','/home');mockHome('김지수')
+ const read=vi.fn().mockResolvedValue({kind:'authenticated',session:{displayName:'김지수',accountType:'WORKER'}})
+ render(<App authService={{read,startGoogle:vi.fn()}}/>)
+ expect(screen.getByRole('status')).toHaveTextContent('로그인 정보를 확인')
+ expect(screen.queryByRole('button',{name:'Google 계정으로 시작하기'})).not.toBeInTheDocument()
+ await screen.findByRole('heading',{name:'안녕하세요, 김지수님'})
+ act(()=>{window.history.pushState(null,'','/home?view=home');window.dispatchEvent(new PopStateEvent('popstate'))})
+ expect(screen.queryByRole('button',{name:'Google 계정으로 시작하기'})).not.toBeInTheDocument()
+ expect(screen.getByRole('heading',{name:'안녕하세요, 김지수님'})).toBeInTheDocument()
+ expect(read).toHaveBeenCalledOnce()
+ act(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})))
+ await waitFor(()=>expect(read).toHaveBeenCalledTimes(2))
+})

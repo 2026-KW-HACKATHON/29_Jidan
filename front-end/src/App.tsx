@@ -42,7 +42,7 @@ export default function App({ authService }: { authService?: AuthService } = {})
   if (location.path === '/status') return <HealthScreen />
   if (!authPaths.includes(location.path)) return <MobileLayout header={<AppBar title="페이지를 찾을 수 없어요" onBack={() => navigate('/')} />}><Button onClick={() => navigate('/')}>처음으로</Button></MobileLayout>
 
-  return <AuthFlow key={`${location.path}${location.search}:${revision}`} service={authService} path={location.path as AuthPath} search={location.search} navigate={navigate}
+  return <AuthFlow key={`${location.path}:${revision}`} service={authService} path={location.path as AuthPath} search={location.search} navigate={navigate}
     renderHome={session => session.nextAction === 'OWNER_APPROVAL_PENDING' && session.stores?.[0] ? <OwnerPending receipt={{id:session.stores[0].storeId,ownerName:session.displayName,storeName:session.stores[0].storeName,status:'PENDING'}} /> : <Workspace session={session} search={location.search} navigate={navigate} />}
     renderRegistration={(role, onRegistered) => role === 'owner' ? <OwnerRegistration onRegistered={() => { onRegistered(); navigate('/home') }} onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} /> : <WorkerRegistration onRegistered={onRegistered} onBack={() => navigate('/signup')} onExpired={() => navigate('/login?error=signup_expired', true)} onHome={() => navigate('/home')} />} />
 }
