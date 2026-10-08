@@ -91,12 +91,13 @@ API·백엔드 동작을 바꾸는 태스크는 [백엔드 작업 규칙](../AGE
 
 ### A02 기존 사진 카드 계약과 전달 흐름 확인
 
-- [ ] 기존 계약 안에서 사진 추천을 전달할 경로와 시점을 확인한다.
+- [x] 기존 계약 안에서 사진 추천을 전달할 경로와 시점을 확인한다.
 - **선행:** A01.
 - **파일:** `back-end/openapi.yaml`과 승인 계약 snapshot은 읽기 기준, `back-end/docs/manual-interview-design.md`, `back-end/docs/tests/manual-guidance.test.mjs`, `manual-photo-guidance.test.mjs`, `manual-question-snapshot.test.mjs`, 이 계획.
 - **작업:** `guidanceCards`의 PHOTO_SUGGESTIONS와 attachmentTarget으로 추천 내용·intentId·SECTION/sectionId를 매핑한다. LIST API item에는 AI의 `status:null`을 보내지 않는다. 사진 추천 AI를 요약 뒤 별도로 호출하는 것과 기존 질문 응답에 결과를 전달하는 것을 구분한다. API 스키마·버전·승인 snapshot을 변경하지 않고 기존 계약에 대한 구현 검증을 보강한다.
 - **완료·검증:** 카드 표현·대상·총 개수 제한과 답변 스냅샷 불변성을 확인한다. 현재 공개 전달 위치는 `ManualInterviewQuestion.guidanceCards`이고 review 응답에는 해당 필드가 없음을 기록한다. 다음 질문이 있는 경우와 질문 없는 마지막 인텐트·READY_TO_GENERATE·이어하기를 각각 대조해 전달 경로를 확정한다. 사용자 승인 범위에 따라 후자는 추천 카드 없이 기존 수동 사진 첨부를 사용한다. 늦은 결과·공간 부족도 전달을 보장하지 않는다. 임의 질문·새 필드·phase 변경 없이 기존 카드와 상태를 보존하는 것을 검증한다.
 - **커밋:** `test(interview): 기존 사진 카드 계약과 전달 흐름 검증`.
+- **실행 근거:** 2026-10-08 `npm run check --prefix back-end/docs` 466개 통과, 실패·skip 0. OpenAPI lint 유효(기존 경고 14개, 무시 항목 2개), 명세·승인 snapshot 불변. 독립 state_and_http 에이전트가 실제 테스트와 계약을 대조해 차단 누락 없음으로 확인했다. 이 단계는 schema 검사이며 실제 최종 수동 사진 첨부·DB 귀속·동시성·스냅샷 불변성은 B11/D06/E의 HTTP 검사로 남는다.
 
 ### A03 실제 HTTP 인터뷰 테스트 준비
 
