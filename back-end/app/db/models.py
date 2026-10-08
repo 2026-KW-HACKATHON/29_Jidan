@@ -748,15 +748,11 @@ class ManualMedia(Base):
 
     API purpose MANUAL_PHOTO <-> IMAGE, INTERVIEW_AUDIO <-> AUDIO, MANUAL_VIDEO <-> VIDEO (0043).
     `object_key` locates the bytes in app.media storage and is never returned by the API.
-    A video's `poster_media_id` is the IMAGE row the server derived from it at upload (the
-    representative frame workers see instead of the video; app.manual_attachments).
+    A video is AI input only (section media writing, 0.12.0): it is never attached or shown.
     """
 
     __tablename__ = "manual_media"
-    __table_args__ = (
-        *_media_columns_args("manual_media", MANUAL_MEDIA_KINDS, MANUAL_MEDIA_SHAPE),
-        CheckConstraint("poster_media_id IS NULL OR kind = 'VIDEO'", name="poster_for_video"),
-    )
+    __table_args__ = _media_columns_args("manual_media", MANUAL_MEDIA_KINDS, MANUAL_MEDIA_SHAPE)
 
     id: Mapped[str] = _id()
     store_id: Mapped[str] = mapped_column(ForeignKey("stores.id"))
@@ -770,7 +766,6 @@ class ManualMedia(Base):
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     content_deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
-    poster_media_id: Mapped[str | None] = mapped_column(ForeignKey("manual_media.id"), unique=True)
 
 
 class QaMedia(Base):
@@ -852,7 +847,7 @@ SPEAKERS = ("AI", "OWNER")
 TURN_KINDS = ("QUESTION", "ANSWER", "CORRECTION")
 QUESTION_KINDS = ("BASE", "PROBE")
 INPUT_METHODS = ("TEXT", "VOICE")
-# A draft correction may also be written from the target section's photos/videos (0043): no text.
+# A draft correction may also write the target section from photos/videos (0043): no text.
 CORRECTION_INPUT_METHODS = (*INPUT_METHODS, "MEDIA")
 EVALUATION_STATUSES = ("SUCCEEDED", "FAILED")
 # app.tasks.task_error_code(): upper-cased app.ai.errors.AiErrorCode values plus the runner's own.
@@ -866,7 +861,10 @@ CORRECTION_ERRORS = (
     "AI_PROCESSING_FAILED", "CORRECTION_CLARIFICATION_REQUIRED", "MANUAL_REFERENCE_CONFLICT",
     "MANUAL_VERSION_CONFLICT", "REVISION_CONFLICT",
 )
-SNAPSHOT_HOLDERS = ("INTENT_REVIEW", "REVIEW_CONFIRMATION", "DRAFT_GENERATION", "DRAFT_CORRECTION")
+# MEDIA_WRITING (0043): the photos/videos a review media-writing task reads, held while it waits
+# or runs (holder: the session, holder_intent_id the intent). Draft media writing holds its media
+# as DRAFT_CORRECTION (holder: the correction).
+SNAPSHOT_HOLDERS = ("INTENT_REVIEW", "REVIEW_CONFIRMATION", "DRAFT_GENERATION", "DRAFT_CORRECTION", "MEDIA_WRITING")
 # A processing triple is either fully set (a task is running or failed) or fully empty.
 # `processing_attempt IS NOT NULL` is spelled out: `NULL >= 1` is UNKNOWN, which a CHECK lets
 # through (migration 0041).
@@ -998,9 +996,6 @@ class ManualStep(Base):
 class ManualPhotoAttachment(Base):
     """A photo shown in a version: structure photo (section_id NULL) or a section photo.
 
-    A section video is an attachment of its poster image (`media_id`) that remembers the video
-    (`video_media_id`), so every reader path (workers, Q&A, photo bytes) only ever sees images.
-
     `scope_id` (section, else version) gives the nullable section_id a real UNIQUE meaning:
     order and media are unique within each attachment list.
     """
@@ -1015,9 +1010,7 @@ class ManualPhotoAttachment(Base):
         ),
         CheckConstraint("sort_order >= 0", name="sort_order"),
         CheckConstraint(not_blank("title"), name="title_not_blank"),
-        CheckConstraint("video_media_id IS NULL OR section_id IS NOT NULL", name="video_on_section"),
         Index("ix_manual_photo_attachments_media_id", "media_id"),
-        Index("ix_manual_photo_attachments_video_media_id", "video_media_id"),
     )
 
     id: Mapped[str] = _id()
@@ -1030,8 +1023,6 @@ class ManualPhotoAttachment(Base):
     scope_id: Mapped[str] = mapped_column(
         CHAR(36), Computed("COALESCE(section_id, version_id)", persisted=True),
     )
-    # A video attachment (0043): `media_id` is its poster image (what readers see), this the video.
-    video_media_id: Mapped[str | None] = mapped_column(ForeignKey("manual_media.id"))
 
 
 class ManualMediaSnapshotRef(Base):
@@ -1444,7 +1435,8 @@ class ManualIssueAcknowledgement(Base):
 class ManualDraftCorrection(Base):
     """Voice/text correction of a generated draft (API ManualDraftCorrection). The input text
     is a snapshot, so retries survive audio purge. One RUNNING correction per draft.
-    MEDIA (0043) writes the target section from its photos/videos instead and has no text."""
+    MEDIA (0043) writes the target section from photos/videos instead (their IDs are in the
+    task payload) and has no text."""
 
     __tablename__ = "manual_draft_corrections"
     __table_args__ = (
@@ -1476,7 +1468,7 @@ class ManualDraftCorrection(Base):
     target_kind: Mapped[str] = mapped_column(cs_string(8))
     target_id: Mapped[str | None] = mapped_column(CHAR(36))
     input_method: Mapped[str] = mapped_column(cs_string(8))
-    input_text: Mapped[str | None] = mapped_column(Text)  # NULL: MEDIA (the section's photos/videos)
+    input_text: Mapped[str | None] = mapped_column(Text)  # NULL: MEDIA (photos/videos)
     transcription_id: Mapped[str | None] = mapped_column(
         ForeignKey("media_transcriptions.id", name="fk_manual_draft_corrections_transcription_id"),
     )

@@ -470,7 +470,8 @@ def test_0043_keeps_rows_and_refuses_to_downgrade_over_new_values(engine):
         connection.commit()
         connection.execute(insert, {"id": "new", "kind": "REVIEW_MEDIA_WRITING"})
         connection.commit()
-        assert "poster_media_id" in {c["name"] for c in inspect(connection).get_columns("manual_media")}
+        assert {c["name"] for c in inspect(connection).get_columns("manual_draft_corrections")
+                if c["name"] == "input_text" and c["nullable"]} == {"input_text"}
         with pytest.raises(RuntimeError, match="background_tasks"):
             command.downgrade(config, "0042")
         connection.rollback()
@@ -478,7 +479,8 @@ def test_0043_keeps_rows_and_refuses_to_downgrade_over_new_values(engine):
         connection.commit()
         command.downgrade(config, "0042")
         connection.commit()
-        assert "video_media_id" not in {c["name"] for c in inspect(connection).get_columns("manual_photo_attachments")}
+        assert {c["name"] for c in inspect(connection).get_columns("manual_draft_corrections")
+                if c["name"] == "input_text" and c["nullable"]} == set()
         assert connection.execute(text("SELECT id, kind FROM background_tasks")).all() == [("old", "DRAFT_CORRECTION")]
         command.upgrade(config, "head")
         connection.commit()

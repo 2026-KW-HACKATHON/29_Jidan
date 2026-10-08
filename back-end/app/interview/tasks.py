@@ -56,10 +56,9 @@ from app.interview.flow import (
     store_of,
     write_question,
 )
-from app.manual_attachments import keep_videos_for_processing, video_ids
 from app.manual_media_writing import LEASE_SECONDS as MEDIA_LEASE_SECONDS
+from app.manual_media_writing import MEDIA_HOLDER, gather_media, release_media
 from app.manual_media_writing import PROVIDER_CALLS as MEDIA_PROVIDER_CALLS
-from app.manual_media_writing import gather_media
 from app.media.references import replace_snapshot_refs
 from app.tasks import TaskContext, TaskDeferred, TaskHandler, register_handler, task_error_code
 
@@ -259,17 +258,15 @@ def _correction_apply(db: Session, ctx: TaskContext, revision: StructureRevision
 
 
 def _media_writing_execute(ctx: TaskContext) -> StructureRevision:
-    """One review section written from its attached photos/videos. The review's READY content
-    (unchanged while PROCESSING) gives the section and its attachments; the owner's words are
-    the evidence frozen at acceptance. Media are read and decoded outside any transaction."""
+    """One review section written from the request's photos/videos (0.12.0). The review's READY
+    content (unchanged while PROCESSING) gives the section; the owner's words are the evidence
+    frozen at acceptance; the files are read and decoded outside any transaction."""
     intent_id, section_id = ctx.payload["intentId"], ctx.payload["sectionId"]
     with session_scope() as db:
         review = db.get(InterviewIntentReview, (ctx.subject_id, intent_id))
         content = review.ready_content if review is not None else None
-        section = next((s for s in (content or {}).get("sections", []) if s["id"] == section_id), None)
-        if section is None:  # cannot be written any more: a public ERROR, not a retry loop
-            raise AiError(AiErrorCode.INPUT_REJECTED, detail="section_gone")
-        items = list(section.get("photos", []))
+        if not any(s["id"] == section_id for s in (content or {}).get("sections", [])):
+            raise AiError(AiErrorCode.INPUT_REJECTED, detail="section_gone")  # a public ERROR at once
         session = db.get(InterviewSession, ctx.subject_id)
         base = {
             "intent": intent_brief(db.get(InterviewIntent, intent_id)),
@@ -279,26 +276,20 @@ def _media_writing_execute(ctx: TaskContext) -> StructureRevision:
             "external_shifts": tuple(available_shifts(db, ctx.subject_id, intent_id)),
             "store": store_context(store_of(db, session)),
         }
-    request = MediaWritingRequest(**base, media=gather_media(items, ctx))
+    request = MediaWritingRequest(**base, media=gather_media(ctx.payload["mediaIds"], ctx))
     return get_ai_provider().write_section_from_media(request)
 
 
-def _section_videos(db: Session, ctx: TaskContext) -> list[str]:
-    review = db.get(InterviewIntentReview, (ctx.subject_id, ctx.payload["intentId"]))
-    for section in ((review.ready_content if review else None) or {}).get("sections", []):
-        if section["id"] == ctx.payload["sectionId"]:
-            return video_ids(section.get("photos", []))
-    return []
-
-
 def _media_writing_apply(db: Session, ctx: TaskContext, revision: StructureRevision) -> None:
+    """Applied like a correction (locks, revision check, photo re-join, confirmation restore on
+    NO_CHANGE); the files it read are released (app.manual_media_writing)."""
     _correction_apply(db, ctx, revision)
-    keep_videos_for_processing(db, _section_videos(db, ctx))  # the finished task's hold (retention)
+    release_media(db, MEDIA_HOLDER, ctx.subject_id, intent_id=ctx.payload["intentId"])
 
 
 def _media_writing_fail(db: Session, ctx: TaskContext, error: Exception) -> None:
     _review_fail(db, ctx, error)
-    keep_videos_for_processing(db, _section_videos(db, ctx))  # a review retry may need them
+    release_media(db, MEDIA_HOLDER, ctx.subject_id, intent_id=ctx.payload["intentId"])
 
 
 # --- registration -------------------------------------------------------------------------------
@@ -314,8 +305,6 @@ HANDLERS = (
                 fail=_review_fail, **LIMITS),
     TaskHandler(kind="REVIEW_CORRECTION", execute=_correction_execute, apply=_correction_apply,
                 fail=_review_fail, **LIMITS),
-    # The result is applied like a correction's: same locks, revision check, photo re-join and
-    # confirmation restore when nothing changed.
     TaskHandler(kind="REVIEW_MEDIA_WRITING", execute=_media_writing_execute, apply=_media_writing_apply,
                 fail=_media_writing_fail, **{**LIMITS, "lease_seconds": MEDIA_LEASE_SECONDS},
                 provider_calls=MEDIA_PROVIDER_CALLS),
