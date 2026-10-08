@@ -101,6 +101,8 @@ def test_production_app_has_no_sandbox_routes(environment):
 
 
 def test_actual_factory_serves_page_and_real_profile_routes(environment, monkeypatch):
+    # This test shares one SQLite connection; background sweepers are unrelated to routing.
+    monkeypatch.setenv("BACKGROUND_JOBS", "off")
     from app.main import app
 
     engine = migrated_sqlite_engine()
