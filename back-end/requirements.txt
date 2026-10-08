@@ -12,6 +12,8 @@ anyio==4.15.1
     #   httpx2
     #   openai
     #   starlette
+av==19.0.1
+    # via -r back-end/requirements.in
 certifi==2026.7.22
     # via
     #   httpcore

@@ -7,4 +7,5 @@ httpx
 google-auth[requests]
 openai
 pillow
+av
 python-multipart
