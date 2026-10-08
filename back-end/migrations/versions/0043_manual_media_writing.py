@@ -96,6 +96,35 @@ def _sqlite_rebuild(table: str, edits: list[tuple[str, str]]) -> None:
         bind.exec_driver_sql(index)
 
 
+def _sqlite_checks(upgrade: bool) -> None:
+    """Defer NO ACTION foreign keys while parent tables are replaced in this transaction.
+
+    Unlike foreign_keys=OFF, defer_foreign_keys can be changed inside Alembic's transaction.
+    Validate the restored graph before clearing deferral (SQLite's DROP bookkeeping can
+    otherwise still reject COMMIT even after the original parent rows have been restored).
+    No referenced table here uses ON DELETE CASCADE/SET NULL.
+    """
+    bind = op.get_bind()
+    # Python sqlite3's legacy transaction mode does not begin a real transaction for DDL,
+    # even inside SQLAlchemy's logical one. Begin before CREATE so failed rebuilds roll back
+    # temporary tables as well as copied data, on both migration and test connections.
+    if not bind.connection.driver_connection.in_transaction:
+        bind.exec_driver_sql("BEGIN")
+    previous = bind.exec_driver_sql("PRAGMA defer_foreign_keys").scalar()
+    enforced = bind.exec_driver_sql("PRAGMA foreign_keys").scalar()
+    if enforced and bind.exec_driver_sql("PRAGMA foreign_key_check").first() is not None:
+        raise RuntimeError("0043: existing foreign key violations; repair before migrating")
+    bind.exec_driver_sql("PRAGMA defer_foreign_keys = ON")
+    try:
+        for table, edits in _sqlite_edits(upgrade=upgrade).items():
+            _sqlite_rebuild(table, edits)
+        if enforced and bind.exec_driver_sql("PRAGMA foreign_key_check").first() is not None:
+            raise RuntimeError("0043: foreign key violation after rebuilding tables")
+    finally:
+        bind.exec_driver_sql("PRAGMA defer_foreign_keys = OFF")
+        bind.exec_driver_sql(f"PRAGMA defer_foreign_keys = {int(previous)}")
+
+
 def _check(name: str, sql: str) -> str:
     return f"CONSTRAINT {name} CHECK ({sql})"
 
@@ -208,8 +237,7 @@ def upgrade() -> None:
     if _is_mysql():
         _mysql_upgrade()
         return
-    for table, edits in _sqlite_edits(upgrade=True).items():
-        _sqlite_rebuild(table, edits)
+    _sqlite_checks(upgrade=True)
 
 
 def downgrade() -> None:
@@ -217,5 +245,4 @@ def downgrade() -> None:
     if _is_mysql():
         _mysql_downgrade()
         return
-    for table, edits in _sqlite_edits(upgrade=False).items():
-        _sqlite_rebuild(table, edits)
+    _sqlite_checks(upgrade=False)
