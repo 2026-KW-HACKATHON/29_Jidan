@@ -47,21 +47,25 @@ def verify():
                 raise RuntimeError("Nginx did not become ready")
             for host, status in (("dev-jidan.leehyowon14.dev", 200), ("jidan.leehyowon14.dev", 502)):
                 assert request(host, "/api/auth/google/callback?code=CALLBACK_SECRET&state=STATE_SECRET") == status
-            def upload(path, size):
+            def upload(host, path, size):
                 req = urllib.request.Request(
                     f"http://127.0.0.1:{port}{path}", data=b"\0" * size, method="POST",
-                    headers={"Host": "dev-jidan.leehyowon14.dev", "Content-Type": "application/octet-stream"})
+                    headers={"Host": host, "Content-Type": "application/octet-stream"})
                 try:
-                    with urllib.request.urlopen(req, timeout=10) as response:
+                    with urllib.request.urlopen(req, timeout=30) as response:
                         return response.status
                 except urllib.error.HTTPError as exc:
                     return exc.code
-            # Media uploads may carry a 20 MiB recording; every other request keeps the 10 MiB cap.
-            big = 20 * 1024 * 1024 + 64 * 1024
-            assert upload("/api/stores/s/manual/media", big) == 200
-            assert upload("/api/stores/s/manual/qa/media", big) == 200
-            assert upload("/api/stores/s/manual/media", 22 * 1024 * 1024) == 413
-            assert upload("/api/stores/s/manual/transcriptions", 11 * 1024 * 1024) == 413
+            # Both configurations allow owner video framing but keep Q&A/other caps.
+            # Production has no upstream here: 502 proves that Nginx accepted the body.
+            for host, accepted in (("dev-jidan.leehyowon14.dev", 200), ("jidan.leehyowon14.dev", 502)):
+                big_audio = 20 * 1024 * 1024 + 64 * 1024
+                big_video = 100 * 1024 * 1024 + 64 * 1024
+                assert upload(host, "/api/stores/s/manual/media", big_video) == accepted
+                assert upload(host, "/api/stores/s/manual/media", 102 * 1024 * 1024) == 413
+                assert upload(host, "/api/stores/s/manual/qa/media", big_audio) == accepted
+                assert upload(host, "/api/stores/s/manual/qa/media", 22 * 1024 * 1024) == 413
+                assert upload(host, "/api/stores/s/manual/transcriptions", 11 * 1024 * 1024) == 413
             logs = docker("logs", container)
             assert "LOG_CONTROL" in logs, "control access log missing; privacy check would be vacuous"
             assert "CALLBACK_SECRET" not in logs and "STATE_SECRET" not in logs, "callback query leaked"
