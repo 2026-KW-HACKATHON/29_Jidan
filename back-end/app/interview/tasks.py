@@ -35,17 +35,20 @@ from app.db.models import (
     InterviewTurn,
 )
 from app.interview import drafting
+from app.interview.cards import normalize_question_cards
 from app.interview.common import lock_review, lock_session_row
 from app.interview.content import content_from_structure, photo_ids, snapshot_from_content
 from app.interview.flow import (
     apply_judgement,
     available_shifts,
     fallback_question,
+    question_card_history,
     shift_summary_pending,
     store_context,
     store_of,
     write_question,
 )
+from app.interview.photos import suggest_current_question_photos
 from app.media.references import replace_snapshot_refs
 from app.tasks import TaskContext, TaskDeferred, TaskHandler, register_handler, task_error_code
 
@@ -79,12 +82,19 @@ def _set_error(session: InterviewSession) -> None:
 
 
 def _question_execute(ctx: TaskContext) -> GeneratedQuestion:
-    return get_ai_provider().generate_question(QuestionRequest.model_validate(ctx.payload["request"]))
+    request_data = dict(ctx.payload["request"])
+    with session_scope() as db:
+        request_data["previous_cards"] = question_card_history(
+            db, ctx.subject_id, ctx.payload["intentId"], ctx.payload["depth"])
+    return get_ai_provider().generate_question(QuestionRequest.model_validate(request_data))
 
 
 def _question_apply(db: Session, ctx: TaskContext, result: GeneratedQuestion) -> None:
     session = _waiting_session(db, ctx)
-    write_question(db, session, ctx.payload, result.text, result.meta.config_version)
+    history = question_card_history(db, session.id, ctx.payload["intentId"], ctx.payload["depth"])
+    cards = normalize_question_cards(result.guidance_cards, history)
+    write_question(db, session, ctx.payload, result.text, result.meta.config_version,
+                   guidance=result.guidance, guidance_cards=cards)
 
 
 def _question_fail(db: Session, ctx: TaskContext, _error: Exception) -> None:
@@ -116,7 +126,8 @@ def _evaluation_apply(db: Session, ctx: TaskContext, judgement: SufficiencyJudge
     db.add(_evaluation_row(
         session, ctx, evaluation_config_version=judgement.meta.config_version[:200],
         provider=judgement.meta.provider[:32], status="SUCCEEDED",
-        needs_follow_up=judgement.needs_follow_up, probability=judgement.probability, applied_at=now,
+        needs_follow_up=judgement.needs_follow_up, probability=judgement.probability,
+        missing_aspects=list(judgement.missing_aspects), applied_at=now,
     ))
     db.flush()  # the (session, intent, applied_depth) UNIQUE rejects a second applied result
     apply_judgement(db, session, judgement.sufficient, judgement.missing_aspects, now)
@@ -225,13 +236,13 @@ def _correction_apply(db: Session, ctx: TaskContext, revision: StructureRevision
 
 HANDLERS = (
     TaskHandler(kind="INITIAL_QUESTION", execute=_question_execute, apply=_question_apply,
-                fail=_question_fail, **LIMITS),
+                fail=_question_fail, after_success=suggest_current_question_photos, **LIMITS),
     TaskHandler(kind="FOLLOWUP_GENERATION", execute=_question_execute, apply=_question_apply,
                 fail=_question_fail, **LIMITS),
     TaskHandler(kind="EVALUATION", execute=_evaluation_execute, apply=_evaluation_apply,
                 fail=_evaluation_fail, **LIMITS),
     TaskHandler(kind="REVIEW_UNDERSTANDING", execute=_understanding_execute, apply=_understanding_apply,
-                fail=_review_fail, **LIMITS),
+                fail=_review_fail, after_success=suggest_current_question_photos, **LIMITS),
     TaskHandler(kind="REVIEW_CORRECTION", execute=_correction_execute, apply=_correction_apply,
                 fail=_review_fail, **LIMITS),
     TaskHandler(kind="DRAFT_GENERATION", execute=drafting.execute, apply=drafting.apply,

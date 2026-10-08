@@ -34,3 +34,13 @@ test('조건부 스냅샷 제약 보완 후에도 세션·처리 객체의 알 �
   assert.equal(validate({...s,processing:{...s.processing,provider:'internal'}}),false);
   assert.equal(validate({...s,lastAnsweredQuestion:{...snapshot,provider:'internal'}}),false);
 });
+
+test('요약 뒤 추천은 마지막 답변 스냅샷을 새 전달 경로로 사용할 수 없음',()=>{
+  const photo=spec.components.schemas.ManualGuidancePhotos.examples[1];
+  const changed={...snapshot,guidanceCards:[photo]};
+  const terminal=Object.values(states).map(x=>x.value).filter(x=>['READY_TO_GENERATE','GENERATING','COMPLETED'].includes(x.phase));
+  assert.ok(terminal.length>0);
+  for(const value of terminal)assert.equal(validate({...value,lastAnsweredQuestion:changed}),false);
+  // EVALUATION 중 내용 불변은 schema가 아닌 서버 저장/재조회 회귀검사(B11)의 책임이다.
+  assert.match(spec.components.schemas.ManualInterviewSession.properties.lastAnsweredQuestion.description,/불변 스냅샷/);
+});

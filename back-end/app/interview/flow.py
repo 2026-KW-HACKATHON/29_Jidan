@@ -18,6 +18,7 @@ revisions are recorded as `contextReviews`). A later correction only affects tas
 after it (docs/erd/manual.md 실행 제약).
 """
 
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -30,12 +31,14 @@ from app.ai.contracts import (
     DialogueTurn,
     IntentBrief,
     IntentSummaryRequest,
+    QuestionEvaluation,
     QuestionRequest,
     ShiftItem,
     StoreContext,
     SufficiencyRequest,
 )
 from app.db.models import (
+    InterviewEvaluation,
     InterviewIntent,
     InterviewIntentReview,
     InterviewProbeBatch,
@@ -147,10 +150,47 @@ def _set_processing(session: InterviewSession, kind: str | None, task_id: str | 
 # --- question generation --------------------------------------------------------------------
 
 
+def question_card_history(db: Session, session_id: str, intent_id: str, before_depth: int) -> list[dict]:
+    """Saved same-intent question cards, newest first, used only as ID authority.
+
+    Do not fill a current card with older items: those snapshots can contain
+    omitted or corrected work and are not independent evidence of current facts.
+    """
+    answered_questions = select(InterviewTurn.reply_to_question_turn_id).where(
+        InterviewTurn.session_id == session_id, InterviewTurn.intent_id == intent_id,
+        InterviewTurn.turn_kind == "ANSWER",
+    )
+    turns = db.scalars(select(InterviewTurn).where(
+        InterviewTurn.session_id == session_id, InterviewTurn.intent_id == intent_id,
+        InterviewTurn.turn_kind == "QUESTION",
+        InterviewTurn.depth < before_depth, InterviewTurn.id.in_(answered_questions),
+    ).order_by(InterviewTurn.turn_no.desc()))
+    return [deepcopy(card) for turn in turns for card in turn.guidance_cards or []
+            if card["type"] in {"LIST", "PROGRESS_CHECKLIST"}]
+
+
+def question_context(db: Session, session_id: str, intent_id: str) -> dict[str, Any]:
+    """Snapshot the evaluation; immutable answered card history is read at execution.
+
+    Existing session/intent/depth task fields fix its boundary without copying
+    potentially large historical cards into the task payload.
+    """
+    evaluation = db.scalars(select(InterviewEvaluation).where(
+        InterviewEvaluation.session_id == session_id, InterviewEvaluation.intent_id == intent_id,
+        InterviewEvaluation.applied_at.is_not(None),
+    ).order_by(InterviewEvaluation.depth.desc())).first()
+    judgement = None
+    if evaluation is not None and evaluation.missing_aspects is not None:
+        judgement = QuestionEvaluation(sufficient=not evaluation.needs_follow_up,
+                                       probability=evaluation.probability,
+                                       missing_aspects=tuple(evaluation.missing_aspects))
+    return {"previous_cards": (), "evaluation": judgement}
+
+
 def enqueue_base_question(db: Session, session: InterviewSession, intent: InterviewIntent, store: Store) -> None:
     notes, used = context_from_reviews(db, session.id, intent.id)
     request = QuestionRequest(kind="BASE", intent=intent_brief(intent), depth=0, context=tuple(notes),
-                              store=store_context(store))
+                              store=store_context(store), **question_context(db, session.id, intent.id))
     payload = {"intentId": intent.id, "depth": 0, "batchId": None, "contextReviews": used,
                "request": request.model_dump(mode="json")}
     task_id = enqueue(db, "INITIAL_QUESTION", session.id, payload, input_revision=session.revision, attempt=1)
@@ -168,7 +208,7 @@ def enqueue_probe(db: Session, session: InterviewSession, progress: InterviewSes
     request = QuestionRequest(
         kind="PROBE", intent=intent_brief(intent), depth=depth,
         dialogue=tuple(dialogue_of(db, session.id, intent.id)), missing_aspects=aspects,
-        context=tuple(notes), store=store_context(store),
+        context=tuple(notes), store=store_context(store), **question_context(db, session.id, intent.id),
     )
     payload = {"intentId": intent.id, "depth": depth, "batchId": batch.id, "contextReviews": used,
                "request": request.model_dump(mode="json")}
@@ -178,12 +218,13 @@ def enqueue_probe(db: Session, session: InterviewSession, progress: InterviewSes
 
 
 def write_question(db: Session, session: InterviewSession, payload: dict[str, Any], text: str,
-                   source: str) -> InterviewTurn:
+                   source: str, *, guidance: str | None = None, guidance_cards: list[dict] | None = None) -> InterviewTurn:
     batch_id = payload["batchId"]
     turn = InterviewTurn(
         session_id=session.id, turn_no=next_turn_no(db, session.id), speaker="AI", turn_kind="QUESTION",
         question_kind="PROBE" if batch_id else "BASE", intent_id=payload["intentId"],
-        depth=payload["depth"], probe_batch_id=batch_id, content=text,
+        depth=payload["depth"], probe_batch_id=batch_id, content=text, guidance=guidance,
+        guidance_cards=guidance_cards or [],
     )
     db.add(turn)
     if batch_id:
@@ -247,7 +288,7 @@ def finish_intent(db: Session, session: InterviewSession, progress: InterviewSes
         # Internal only: what Jev still missed at depth 5 (owner-facing issue text in the draft).
         progress.coverage_status, progress.coverage_note = "NEEDS_DETAIL", "\n".join(aspects) or None
     db.flush()
-    enqueue_understanding(db, session, intent, store, needs_detail=not covered)
+    enqueue_understanding(db, session, intent, store, needs_detail=not covered, missing_aspects=aspects)
     advance(db, session, intent, store)
 
 
@@ -266,13 +307,14 @@ def advance(db: Session, session: InterviewSession, finished: InterviewIntent, s
 
 
 def enqueue_understanding(db: Session, session: InterviewSession, intent: InterviewIntent, store: Store,
-                          *, needs_detail: bool) -> InterviewIntentReview:
+                          *, needs_detail: bool, missing_aspects: tuple[str, ...] = ()) -> InterviewIntentReview:
     """The finished intent's review, created PROCESSING with its summary task (same tx).
 
     Summary failures stay on the review (ERROR + review retries); question progress goes on."""
     request = IntentSummaryRequest(
         intent=intent_brief(intent), dialogue=tuple(dialogue_of(db, session.id, intent.id)),
-        needs_detail=needs_detail, available_shifts=tuple(available_shifts(db, session.id, intent.id)),
+        needs_detail=needs_detail, missing_aspects=missing_aspects,
+        available_shifts=tuple(available_shifts(db, session.id, intent.id)),
         store=store_context(store),
     )
     review = InterviewIntentReview(session_id=session.id, intent_id=intent.id, revision=1, status="PROCESSING")

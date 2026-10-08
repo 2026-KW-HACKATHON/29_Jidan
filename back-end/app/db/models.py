@@ -1274,6 +1274,8 @@ class InterviewTurn(Base):
     reply_to_question_turn_id: Mapped[str | None] = mapped_column(ForeignKey("interview_turns.id"))
     input_method: Mapped[str | None] = mapped_column(cs_string(8))
     content: Mapped[str] = mapped_column(Text)  # submitted text or the READY transcript text
+    guidance: Mapped[str | None] = mapped_column(Text)
+    guidance_cards: Mapped[Any | None] = mapped_column(JSON, nullable=True)
     transcription_id: Mapped[str | None] = mapped_column(ForeignKey("media_transcriptions.id"))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     base_question_intent_id: Mapped[str | None] = mapped_column(
@@ -1346,6 +1348,7 @@ class InterviewEvaluation(Base):
     provider: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(cs_string(16))
     needs_follow_up: Mapped[bool | None] = mapped_column(Boolean)
+    missing_aspects: Mapped[Any | None] = mapped_column(JSON, nullable=True)
     probability: Mapped[float | None] = mapped_column(Float)
     error_code: Mapped[str | None] = mapped_column(cs_string(32))
     task_id: Mapped[str | None] = mapped_column(CHAR(36))

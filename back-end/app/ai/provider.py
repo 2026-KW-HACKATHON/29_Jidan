@@ -30,6 +30,10 @@ from app.ai.contracts import (
     ImageInput,
     IntentSummary,
     IntentSummaryRequest,
+    PhotoSuggestion,
+    PhotoSuggestionItem,
+    PhotoSuggestions,
+    PhotoSuggestionsRequest,
     QaAnswer,
     QaRequest,
     QuestionRequest,
@@ -52,9 +56,11 @@ from app.ai.schemas import (
     RawQuestion,
     RawRevision,
     RawSummary,
+    parse_question,
 )
 from app.ai.validation import (
     build_citations,
+    check_draft_facts,
     check_revision_scope,
     dangling_shift_references,
     invalid,
@@ -131,7 +137,8 @@ class AiProvider(ABC):
             candidates = self._complete(operation, INSTRUCTIONS[operation], data_message(payload), images)
             for candidate in candidates:
                 try:
-                    return parser.model_validate(json.loads(candidate))
+                    return (parse_question(json.loads(candidate)) if operation == "generate_question"
+                            else parser.model_validate(json.loads(candidate)))
                 except (ValueError, ValidationError):
                     continue  # malformed or schema-violating item: try the next one
             raise invalid("unparseable_output")
@@ -171,7 +178,32 @@ class AiProvider(ABC):
         text = clean_text(raw.question)
         if not text:
             raise invalid("blank_question")
-        return GeneratedQuestion(text=text, meta=self.meta())
+        return GeneratedQuestion(
+            text=text, guidance=(clean_text(raw.guidance) or None) if raw.guidance else None,
+            guidance_cards=tuple(card.model_dump() for card in raw.guidanceCards), meta=self.meta(),
+        )
+
+    def suggest_review_photos(self, request: PhotoSuggestionsRequest) -> PhotoSuggestions:
+        raw = self._structured("suggest_review_photos", request.model_dump(mode="json"))
+        suggestions = []
+        section_ids = {section.id for section in request.structure.sections}
+        for suggestion in raw.suggestions:
+            if suggestion.sectionId not in section_ids:
+                raise invalid("unknown_photo_section")
+            title = clean_text(suggestion.title)
+            footer = clean_text(suggestion.footer) if suggestion.footer is not None else None
+            if not title or footer == "":
+                raise invalid("blank_photo_suggestion")
+            items = []
+            for item in suggestion.items:
+                label = clean_text(item.label)
+                description = clean_text(item.description) if item.description is not None else None
+                if not label or description == "":
+                    raise invalid("blank_photo_suggestion")
+                items.append(PhotoSuggestionItem(label=label, description=description))
+            suggestions.append(PhotoSuggestion(section_id=suggestion.sectionId, title=title,
+                                               items=tuple(items), footer=footer))
+        return PhotoSuggestions(suggestions=tuple(suggestions), meta=self.meta())
 
     def summarize_intent(self, request: IntentSummaryRequest) -> IntentSummary:
         raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json"))
@@ -248,6 +280,7 @@ class AiProvider(ABC):
             s.id for s in structure.sections
         }:
             raise invalid("draft_dropped_reviewed_item")
+        check_draft_facts((review.structure for review in request.reviews), structure)
         return DraftComposition(structure=structure, meta=self.meta())
 
     def answer_question(self, request: QaRequest) -> QaAnswer:
@@ -329,6 +362,9 @@ class FallbackAiProvider(AiProvider):
 
     def generate_question(self, request):
         return self._delegate("generate_question", request)
+
+    def suggest_review_photos(self, request):
+        return self._delegate("suggest_review_photos", request)
 
     def summarize_intent(self, request):
         return self._delegate("summarize_intent", request)

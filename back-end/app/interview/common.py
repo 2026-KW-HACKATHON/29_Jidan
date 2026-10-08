@@ -16,6 +16,7 @@ Phase projection (API `phase`, docs/manual-interview-design.md):
     COLLECTING                     IN_PROGRESS, no processing, the current unanswered question
 """
 
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -222,11 +223,37 @@ def intent_body(progress: InterviewSessionIntent, intent: InterviewIntent) -> di
     }
 
 
-def question_body(turn: InterviewTurn, *, answered: bool = False) -> dict:
-    return {
+def question_body(turn: InterviewTurn, *, answered: bool = False,
+                  include_guidance: bool | None = None) -> dict:
+    from app.interview.settings import guidance_responses_enabled
+
+    body = {
         "id": turn.id, "intentId": turn.intent_id, "kind": turn.question_kind, "depth": turn.depth,
         "batchId": turn.probe_batch_id, "text": turn.content, "answered": answered,
     }
+    if include_guidance is None:
+        include_guidance = guidance_responses_enabled()
+    if include_guidance:
+        cards = deepcopy(turn.guidance_cards or [])
+        for card in cards:
+            if card["type"] == "LIST":
+                for item in card["items"]:
+                    item.pop("status", None)
+        body.update(guidance=turn.guidance, guidanceCards=cards)
+    return body
+
+
+def answered_question_body(question: InterviewTurn, answer: InterviewTurn) -> dict:
+    """Restore the accepted projection, independent of later rollout settings.
+
+    The linked question is immutable. The answer retains only the optional public
+    guidance fields copied at acceptance. Legacy answers without those fields use
+    the contract's optional-field omission; never infer an earlier rollout setting.
+    """
+    body = question_body(question, answered=True, include_guidance=False)
+    if answer.guidance_cards is not None:
+        body.update(guidance=answer.guidance, guidanceCards=deepcopy(answer.guidance_cards))
+    return body
 
 
 def session_body(db: Session, session: InterviewSession) -> dict:
@@ -234,6 +261,14 @@ def session_body(db: Session, session: InterviewSession) -> dict:
     manual = db.get(StoreManual, version.manual_id)
     question_set = db.get(InterviewQuestionSet, session.question_set_id)
     question = current_question(db, session)
+    snapshot = None
+    if session.processing_kind == "EVALUATION" and session.status in {"IN_PROGRESS", "ERROR"}:
+        answered = latest_question(db, session.id, session.current_intent_id)
+        if answered is not None:
+            answer = db.scalar(select(InterviewTurn).where(
+                InterviewTurn.reply_to_question_turn_id == answered.id))
+            if answer is not None:
+                snapshot = answered_question_body(answered, answer)
     error = None
     if session.status == "ERROR":
         message = DRAFT_FAILED_MESSAGE if session.processing_kind == "DRAFT_GENERATION" else SESSION_FAILED_MESSAGE
@@ -249,6 +284,7 @@ def session_body(db: Session, session: InterviewSession) -> dict:
         "intents": [intent_body(progress, intent) for progress, intent in session_intents(db, session.id)],
         "currentIntentId": session.current_intent_id,
         "questions": [question_body(question)] if question is not None else [],
+        "lastAnsweredQuestion": snapshot,
         "processing": processing_body(session.processing_kind, session.processing_task_id,
                                       session.processing_attempt),
         "error": error,

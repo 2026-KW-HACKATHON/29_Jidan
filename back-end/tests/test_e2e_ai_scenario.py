@@ -7,6 +7,7 @@ from app.ai.contracts import (
     DialogueTurn,
     IntentBrief,
     IntentSummaryRequest,
+    PhotoSuggestionsRequest,
     QaRequest,
     SectionItem,
     StepItem,
@@ -132,3 +133,30 @@ def test_build_from_env(monkeypatch):
     monkeypatch.setenv("E2E_AI", "other")
     with pytest.raises(ValueError):
         ai_scenario.build_from_env()
+
+
+def test_photo_operation_defaults_to_fake_without_spending_live_budget(tmp_path):
+    provider, live, counter = routed(tmp_path, ops=ai_scenario.DEFAULT_LIVE_OPS)
+    request = PhotoSuggestionsRequest(summary="포스 마감 위치", structure=manual(POS))
+    assert provider.suggest_review_photos(request).suggestions == ()
+    assert len(provider.fake.calls_for("suggest_review_photos")) == 1
+    assert live.calls == []
+    assert "suggest_review_photos" not in ai_scenario.DEFAULT_LIVE_OPS
+    assert json.loads(counter.read_text()) == {"limit": 2, "calls": {}, "refused": 0}
+
+
+def test_explicit_live_photo_operation_routes_and_obeys_shared_call_budget(tmp_path):
+    provider, live, counter = routed(tmp_path, limit=1, ops=("suggest_review_photos",))
+    request = PhotoSuggestionsRequest(summary="포스 마감 위치", structure=manual(POS))
+    result = provider.suggest_review_photos(request)
+    assert result.suggestions == () and result.meta.provider == "openai"
+    assert provider.fake.calls_for("suggest_review_photos") == []
+    assert [call.operation for call in live.calls] == ["suggest_review_photos"]
+    assert live.calls[0].data == request.model_dump(mode="json")
+    with pytest.raises(AiError) as refused:
+        provider.suggest_review_photos(request)
+    assert refused.value.code == AiErrorCode.NOT_CONFIGURED and not refused.value.retryable
+    assert len(live.calls) == 1
+    assert json.loads(counter.read_text()) == {
+        "limit": 1, "calls": {"suggest_review_photos": 1}, "refused": 1,
+    }

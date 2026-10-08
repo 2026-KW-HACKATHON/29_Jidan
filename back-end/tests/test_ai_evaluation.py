@@ -38,7 +38,7 @@ def test_correct_replay_is_offline_and_not_a_quality_approval(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", forbidden)
     report = evaluate(FIXTURES / "gold.jsonl", FIXTURES / "correct.jsonl")
     assert report["n"] >= 12
-    assert len(report["operations"]) == 6
+    assert len(report["operations"]) == 7
     assert {case["industry"] for case in report["cases"]} == {
         "CAFE", "RESTAURANT", "CONVENIENCE_STORE",
     }
@@ -193,3 +193,55 @@ def test_noncritical_failure_is_reported_without_critical_cli_failure(tmp_path):
     assert report["cases"][0]["gold_status"] == "fail"
     assert report["critical_gold_failure_n"] == 0
     assert report["failed"] is False
+
+
+def test_guidance_semantic_fixtures_detect_grounding_mutants_offline():
+    correct = evaluate(FIXTURES / "guidance-gold.jsonl", FIXTURES / "guidance-correct.jsonl")
+    mutants = evaluate(FIXTURES / "guidance-gold.jsonl", FIXTURES / "guidance-mutants.jsonl")
+    assert correct["n"] == 10 and correct["failed"] is False
+    assert correct["model_quality_verified"] is False
+    assert correct["human_review_pending_n"] == 10
+    assert mutants["failed"] is True
+    indexed = {case["case_id"]: case for case in mutants["cases"]}
+    expected_mutants = {
+        "cards-examples-only", "cards-two-real-tasks", "cards-partial-detail",
+        "cards-list-question-no-current", "photos-unrelated", "photos-unnecessary",
+        "photos-distorted-section", "summary-depth-limit", "summary-no-shifts",
+        "revision-rename-preserves-id",
+    }
+    assert set(indexed) == expected_mutants
+    # An invented photo section now fails production reference validation before gold.
+    # The remaining nine still require their specific meaning failure; a generic parser
+    # failure would hide a broken oracle (especially the rename identity case below).
+    distorted = indexed["photos-distorted-section"]
+    assert distorted["structure"] == "fail"
+    assert distorted["structure_error_code"] == "invalid_output"
+    assert distorted["gold_status"] == "skipped_structure_failure"
+    assert distorted["critical_gold_failures"] == []
+    for case_id in expected_mutants - {"photos-distorted-section"}:
+        case = indexed[case_id]
+        assert case["structure"] == "pass", case_id
+        assert case["gold_status"] == "fail", case_id
+        assert case["critical_gold_failures"] == ["grounded-meaning"], case_id
+    assert mutants["structure_failure_n"] == 1
+    assert mutants["critical_gold_failure_n"] == 9
+    assert mutants["structure_failure_n"] + mutants["critical_gold_failure_n"] == len(expected_mutants)
+
+
+def test_rename_identity_mutant_fails_the_existing_id_gold_check():
+    case_id = "revision-rename-preserves-id"
+    gold = next(case for case in rows("guidance-gold.jsonl") if case["id"] == case_id)
+    check = gold["expected"]["checks"][0]
+    original_id = gold["request"]["current"]["sections"][0]["id"]
+    assert check["id"] == "grounded-meaning"
+    assert check["kind"] == "equals" and check["path"] == "structure.sections.0.id"
+    assert check["value"] == original_id
+    mutant = next(case for case in rows("guidance-mutants.jsonl") if case["case_id"] == case_id)
+    assert json.loads(mutant["raw_output"])["structure"]["sections"][0]["ref"] == "new-1"
+    report = evaluate(FIXTURES / "guidance-gold.jsonl", FIXTURES / "guidance-mutants.jsonl")
+    result = next(case for case in report["cases"] if case["case_id"] == case_id)
+    # A new-item ref is structurally valid. Replacing the renamed item's ID violates
+    # this instruction's meaning, caught by gold, not by a deletion-command grammar.
+    assert result["structure"] == "pass"
+    assert result["gold_status"] == "fail"
+    assert result["critical_gold_failures"] == [check["id"]]
