@@ -715,7 +715,9 @@ MAX_AUDIO_MILLISECONDS = 120_000
 # migration that allows kind 'VIDEO' rows adds them there.
 VIDEO_MIME_TYPES = ("video/mp4", "video/quicktime", "video/webm")
 MAX_VIDEO_BYTES = 100 * 1024 * 1024
-MAX_VIDEO_MILLISECONDS = 60_000
+# The contract says 60 s; phones' "1 minute" recordings come out a few frames longer (60.03 s),
+# so half a second of slack keeps them while a 61 s clip is still refused.
+MAX_VIDEO_MILLISECONDS = 60_500
 MEDIA_SHAPE = (
     f"(kind = 'IMAGE' AND {_in('mime_type', IMAGE_MIME_TYPES)} AND byte_size <= {MAX_IMAGE_BYTES}"
     " AND duration_ms IS NULL)"

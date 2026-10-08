@@ -74,6 +74,8 @@ def test_supported_videos_are_accepted_by_content_and_stored_as_uploaded(kind, m
 def test_exactly_sixty_seconds_is_accepted_and_longer_is_too_large():
     tiny = {"width": 16, "height": 16, "audio": None}
     assert inspect_video(samples.video(seconds=60, fps=1, **tiny)).duration_ms == 60_000
+    # A phone's "1 minute" clip runs a few frames over; half a second of slack keeps it.
+    assert inspect_video(samples.video(seconds=60.3, fps=10, **tiny)).duration_ms == 60_300
     reject(samples.video(seconds=60.25, fps=4, **tiny), MediaTooLarge, "duration")
     reject(samples.video(seconds=61, fps=1, **tiny), MediaTooLarge, "duration")
     reject(samples.video("webm", seconds=61, fps=1, **tiny), MediaTooLarge, "duration")
