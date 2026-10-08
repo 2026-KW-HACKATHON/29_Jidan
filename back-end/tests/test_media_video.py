@@ -211,7 +211,7 @@ def test_sample_times_are_evenly_spaced_and_capped(duration_ms, expected):
     assert len(sample_times(duration_ms)) <= MAX_VIDEO_FRAMES
 
 
-@pytest.mark.parametrize("kind", ["mp4", "mov", "webm", "webm-vp8", "mp4-hevc"])
+@pytest.mark.parametrize("kind", ["mp4", "mov", "webm", "webm-vp8", "webm-av1", "mp4-hevc", "mov-hevc"])
 def test_digest_samples_frames_poster_and_sound(kind):
     data = samples.video(kind, seconds=5, fps=4)
     digest = digest_video(data)

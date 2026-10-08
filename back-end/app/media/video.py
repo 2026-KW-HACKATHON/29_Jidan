@@ -298,13 +298,26 @@ def _jpeg(image: Image.Image) -> bytes:
     return output.getvalue()
 
 
-def _pick_nearest(container, stream, start: Fraction, targets: list[int], *,
-                  keyframes_only: bool) -> tuple[dict[int, object], int]:
-    """One decoding pass: for each target time the decoded frame closest to it, as
-    ({t_ms: frame}, largest distance to its target in ms). Frames stay decoded (at most
-    len(targets)); pictures are made at the end."""
-    container.seek(0)
-    stream.codec_context.skip_frame = "NONKEY" if keyframes_only else "DEFAULT"
+def _pick_nearest(data: bytes, mime_type: str, start: Fraction, targets: list[int], *,
+                  keyframes_only: bool) -> tuple[list[tuple[int, Image.Image]], int]:
+    """One decoding pass over a freshly opened container (some decoders, e.g. libdav1d, apply
+    `skip_frame` only when they are opened, so a pass never reuses another pass's decoder).
+    For each target time the decoded frame closest to it: ([(t_ms, picture)], largest
+    distance to its target in ms). At most len(targets) frames stay decoded meanwhile."""
+    with _open(data, mime_type) as container:
+        stream = container.streams.video[0]
+        _configure(stream)
+        stream.codec_context.skip_frame = "NONKEY" if keyframes_only else "DEFAULT"
+        best = _nearest_frames(container, stream, start, targets)
+        chosen: dict[int, object] = {}
+        for item in best:
+            if item is not None:
+                chosen.setdefault(item[1], item[2])
+        worst = max((item[0] for item in best if item is not None), default=0)
+        return [(t_ms, _image(frame)) for t_ms, frame in sorted(chosen.items())], worst
+
+
+def _nearest_frames(container, stream, start: Fraction, targets: list[int]):
     best: list[tuple[int, int, object] | None] = [None] * len(targets)  # (distance, t_ms, frame)
     for frame in container.decode(stream):
         if frame.pts is None or frame.time_base is None:
@@ -317,26 +330,22 @@ def _pick_nearest(container, stream, start: Fraction, targets: list[int], *,
                 best[index] = (distance, t_ms, frame)
         if t_ms > targets[-1] and all(best):
             break  # every later frame is farther from every target
-    chosen: dict[int, object] = {}
-    for item in best:
-        if item is not None:
-            chosen.setdefault(item[1], item[2])
-    worst = max((item[0] for item in best if item is not None), default=0)
-    return chosen, worst
+    return best
 
 
-def _sample_frames(container, stream, start: Fraction, duration_ms: int) -> list[tuple[int, Image.Image]]:
+def _sample_frames(data: bytes, mime_type: str, start: Fraction,
+                   duration_ms: int) -> list[tuple[int, Image.Image]]:
     """Keyframes first (cheap: phones write one every 1-2 s). When a keyframe is more than a
     quarter of a sample interval away from its target (long GOP: screen recordings, short clips
     with one keyframe at 0 s) or two targets share one, every frame is decoded instead."""
     targets = sample_times(duration_ms)
     tolerance = duration_ms / len(targets) / 4
-    chosen, worst = _pick_nearest(container, stream, start, targets, keyframes_only=True)
+    chosen, worst = _pick_nearest(data, mime_type, start, targets, keyframes_only=True)
     if len(chosen) < len(targets) or worst > tolerance:
-        chosen, _worst = _pick_nearest(container, stream, start, targets, keyframes_only=False)
+        chosen, _worst = _pick_nearest(data, mime_type, start, targets, keyframes_only=False)
     if not chosen:
         raise MediaInvalid("video_undecodable")
-    return [(t_ms, _image(frame)) for t_ms, frame in sorted(chosen.items())]
+    return chosen
 
 
 def _frame_scores(image: Image.Image) -> tuple[float, float, float]:
@@ -403,9 +412,9 @@ def digest_video(data: bytes) -> VideoDigest:
     with _digest_slots:
         try:
             with _open(data, mime_type) as container:
-                stream, timeline = _checked_stream(container, data, mime_type)
-                duration_ms = _milliseconds(timeline.duration)
-                sampled = _sample_frames(container, stream, timeline.start, duration_ms)
+                _stream, timeline = _checked_stream(container, data, mime_type)
+            duration_ms = _milliseconds(timeline.duration)
+            sampled = _sample_frames(data, mime_type, timeline.start, duration_ms)
             audio = _audio_wav(data, mime_type, timeline.duration)
         except av.FFmpegError:
             raise MediaInvalid("video_decode") from None
