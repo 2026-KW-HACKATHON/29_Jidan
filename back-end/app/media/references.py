@@ -55,8 +55,6 @@ def manual_media_in_use(db: Session, media_id: str) -> bool:
     return (
         _any(db, InterviewTurnPhoto.turn_id, InterviewTurnPhoto.media_id == media_id)
         or _any(db, ManualPhotoAttachment.id, ManualPhotoAttachment.media_id == media_id)
-        # media-B (0043): a section video's attachment row points at its poster and the video.
-        or _any(db, ManualPhotoAttachment.id, ManualPhotoAttachment.video_media_id == media_id)
         or _any(db, ManualMediaSnapshotRef.id, ManualMediaSnapshotRef.media_id == media_id)
     )
 

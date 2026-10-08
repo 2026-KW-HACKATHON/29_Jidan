@@ -40,7 +40,6 @@ from app.db.models import InterviewSession, ManualDraftCorrection, ManualVersion
 from app.errors import ApiError, ErrorCode
 from app.idempotency import IdempotencyKey, IdempotentResult, run_idempotent
 from app.jobs.state import begin_transition
-from app.manual_attachments import AttachError, lock_attachable
 from app.manual_content import (
     active_draft,
     content_body,
@@ -59,6 +58,7 @@ from app.manual_editing import (
     replace_content,
     validation_error,
 )
+from app.media.references import MediaLinkError, lock_photos_for_link
 from app.notification_events import manual_published
 from app.store_access import UUID_PATTERN, StoreIdPath, load_owned_store, normalize_uuid
 
@@ -163,7 +163,7 @@ def draft_body(db: Session, store_id: str, draft: ManualVersion) -> dict:
         "revision": draft.revision, "status": "DRAFT", "generationStatus": draft.generation_status,
         "interviewSessionId": db.scalar(
             select(InterviewSession.id).where(InterviewSession.manual_version_id == draft.id)),
-        "content": content_body(db, draft.id, owner=True) if ready else None,
+        "content": content_body(db, draft.id) if ready else None,
         "issues": issue_bodies(db, draft) if ready else [],
         "updatedAt": iso(draft.updated_at),
         "latestCorrection": None if latest is None else correction_body(latest),
@@ -321,12 +321,12 @@ def publish_draft(db: Session, owner: MemberPrincipal, store: Store, manual: Sto
     open_ids = {issue_id for issue_id in issues if issue_id not in acked}
     if not open_ids <= set(acknowledged_ids):
         raise ApiError(409, ErrorCode.MANUAL_REVIEW_REQUIRED, "확인하지 않은 부족 항목이 있습니다. 모두 확인해 주세요.")
-    content = content_body(db, draft.id, owner=True)
+    content = content_body(db, draft.id)
     photo_ids = [p["mediaId"] for p in content["structurePhotos"]] + [
         p["mediaId"] for section in content["sections"] for p in section["photos"]]
     try:
-        lock_attachable(db, store.id, photo_ids)
-    except AttachError:
+        lock_photos_for_link(db, store.id, photo_ids)
+    except MediaLinkError:
         raise ApiError(422, ErrorCode.VALIDATION_ERROR, field_errors=[{
             "field": "content.photos", "code": "INVALID_FORMAT",
             "message": "삭제되었거나 다른 매장의 사진이 연결되어 있습니다. 초안을 수정해 주세요."}]) from None
@@ -346,7 +346,7 @@ def publish_draft(db: Session, owner: MemberPrincipal, store: Store, manual: Sto
 def published_body(db: Session, store_id: str, version: ManualVersion) -> dict:
     return {
         "versionId": version.id, "storeId": store_id, "versionNumber": version.revision_no,
-        "status": "PUBLISHED", "ownerConfirmed": True, "content": content_body(db, version.id),  # published: posters only
+        "status": "PUBLISHED", "ownerConfirmed": True, "content": content_body(db, version.id),
         "publishedAt": iso(version.published_at),
     }
 

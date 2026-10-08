@@ -1,8 +1,8 @@
 {
   "approvedRemoteSha": "5fd6896955ca9133c5b8967485438dd86eceefc4",
   "localVersion": "0.12.0",
-  "policy": "Preserve all remote response declarations; user approved 25 additions, 2026-10-07; 0.12.0 (2026-10-08, media writing): one new operation writeManualInterviewSectionFromMedia and optional/enum-extending schema changes only (MANUAL_VIDEO, kind/posterMediaId, MEDIA_WRITING, draft correction input MEDIA); no existing response, request or success shape removed",
-  "schemasHash": "4403f28520b4b472cf5f7b299111798d85dfdb071d5ff8c941e5ab96480efcab",
+  "policy": "Preserve all remote response declarations; user approved 25 additions, 2026-10-07; 0.12.0 (2026-10-08, media writing): one new operation writeManualInterviewSectionFromMedia and enum-extending schema changes only (MANUAL_VIDEO, MEDIA_WRITING, mediaIds request bodies, draft correction input MEDIA); no existing response, request or success shape removed",
+  "schemasHash": "f18df310f80c69cf8f54def56d91a87abd5dded6373a3dfd32c42cd6ed65c5cd",
   "operations": [
     {
       "operationId": "startGoogleLogin",

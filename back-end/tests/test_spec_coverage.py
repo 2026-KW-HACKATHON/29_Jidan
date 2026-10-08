@@ -74,7 +74,7 @@ def test_report_groups_gaps_by_area():
 
 def test_every_spec_operation_belongs_to_an_area():
     operations = spec_coverage.spec_operations()
-    assert len(operations) == 102
+    assert len(operations) == 103  # 0.12.0 adds review media-writing
     assert all(spec_coverage.area_of(op) != "other" for op in operations.values())
 
 

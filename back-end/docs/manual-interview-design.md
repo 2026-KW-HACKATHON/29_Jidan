@@ -210,22 +210,22 @@ lastAnsweredQuestion은 EVALUATION 처리 중 또는 해당 평가의 ERROR에�
 
 ## 사진·영상 기반 작성 (0.12.0)
 
-검토(인텐트 요약)·초안의 **섹션에 첨부한 사진·영상**을 AI가 보고 그 섹션의 단계를 작성하거나 보강한다. 인터뷰 질문 흐름은 그대로다. 사진·영상에서 읽은 내용은 점주 발화와 같은 근거로 쓰되 단계별 인용 검증은 유지한다. 인용 가능한 ID에 미디어 ID(`media:<id>`, 영상 프레임 `media:<id>@<ms>`, 영상 음성 `media:<id>#transcript`)가 추가될 뿐이며 근거 없는 새 단계는 버리고, 기존 단계는 근거 없이 지우지 않는다. 대상 섹션 밖은 바꾸지 않고 검토 요약 문장도 다시 쓰지 않는다.
+점주가 올린 사진·영상에서 **AI가 정보를 읽어** 검토(인텐트 요약)·초안의 한 섹션 단계를 작성하거나 보강한다. 사용자 결정(2026-10-08): "사진 나오는 건 빼라. 정보만 나오면 된다." 사진·영상은 AI 입력일 뿐이며 검토·초안·게시본·근무자 화면에는 **텍스트 단계만** 남는다. 파일을 섹션에 첨부하거나 대표 사진을 만들지 않고, 기존 사진 첨부 계약(`photos`, `structurePhotos`, `photoIds`)은 바뀌지 않는다. 인터뷰 질문 흐름도 그대로다.
+
+사진·영상에서 읽은 내용은 점주 발화와 같은 근거로 쓰되 단계별 인용 검증은 유지한다. 인용 가능한 ID에 미디어 ID(`media:<id>`, 영상 프레임 `media:<id>@<ms>`, 영상 음성 `media:<id>#transcript`)가 추가될 뿐이며 근거 없는 새 단계는 버리고 기존 단계는 근거 없이 지우지 않는다. 대상 섹션 밖과 검토 요약 문장은 바꾸지 않는다. 단계별 출처 표시는 두지 않는다(근거 ID 미저장).
 
 | 메서드·경로 | 역할 |
 | --- | --- |
-| `POST M/media` purpose `MANUAL_VIDEO` | MP4(H.264/HEVC)·MOV·WebM, 100 MiB·60초 이하. 업로드 때 대표 프레임을 사진으로 저장하고 `posterMediaId`를 반환 |
-| `PUT R/photos` | SECTION 대상에 영상 mediaId도 연결. 응답 항목은 `kind: VIDEO`, `posterMediaId` 추가 |
-| `PUT M/draft/content` | 섹션 `photos`에 영상 연결(근무 구조 사진은 사진만) |
-| `POST R/media-writing` | `{expectedRevision, sectionId}` → 202, 검토 PROCESSING(`processing.kind=MEDIA_WRITING`). 실패는 검토 ERROR, 기존 `R/retries`로 재시도 |
-| `POST M/draft/corrections` `input.method=MEDIA` | 초안 섹션 작성. 기존 초안 정정(0.10.0) 리소스·잠금·조회·재시도를 그대로 쓰며 `target.kind=SECTION`만 허용 |
+| `POST M/media` purpose `MANUAL_VIDEO` | MP4(H.264/HEVC)·MOV·WebM, 100 MiB·60초 이하. 사진·음성과 같은 검사·오류 규칙 |
+| `POST R/media-writing` | `{expectedRevision, sectionId, mediaIds[1..10]}` → 202, 검토 PROCESSING(`processing.kind=MEDIA_WRITING`). 실패는 검토 ERROR, 기존 `R/retries`로 재시도 |
+| `POST M/draft/corrections` `input={method: MEDIA, mediaIds}` | 초안 섹션 작성. 기존 초안 정정(0.10.0) 리소스·잠금·조회·재시도를 그대로 쓰며 `target.kind=SECTION`만 허용 |
 
-초안 쪽은 새 endpoint 대신 정정 리소스를 확장했다. 초안당 RUNNING 하나, 처리 중 편집·게시 409, 결과 적용 시 versionId·baseRevision·작업 ID 재검사, 재시도 규칙이 모두 같아 프론트는 하나의 비동기 패턴만 다룬다. 검토 쪽은 정정이 섹션 단위가 아니어서 별도 operation을 두었지만 처리 상태·재시도·잠금·revision 규칙은 정정과 같다. 결과 화면의 확인·수정·재시도는 기존 confirmations·corrections·retries를 쓴다. 섹션에 사진·영상이 없거나 섹션이 이 검토에 없으면 422 VALIDATION_ERROR(sectionId)이며 새 오류 코드는 없다.
+`mediaIds`는 같은 매장의 MANUAL_PHOTO·MANUAL_VIDEO이며 배열 순서대로 AI에 보여 준다(영상은 프레임 시간순 → 전사). 영상은 요청당 2개까지(작업 lease: 전사 2회 + 작성 1회, 900초). 다른 매장·삭제·정리된 파일은 404, 음성 파일·영상 3개 이상·중복 ID는 422, 섹션이 이 검토에 없으면 422(sectionId)이며 새 오류 코드는 없다.
 
-**영상은 AI 입력용**이다. 서버는 업로드 때 뽑은 대표 프레임을 별도 사진으로 저장하고, 근무자 화면(게시본 목록·상세)·초안 미리보기·게시 응답에는 그 사진만 `mediaId`로 내보낸다. 점주용 검토·초안 응답만 영상 항목을 `mediaId=영상, kind=VIDEO, posterMediaId`로 보여 준다. 사진 항목 모양은 0.11.0과 같아 기존 사진 전용 클라이언트는 영향이 없다. 요청의 `kind`·`posterMediaId`는 생략할 수 있고 보내도 서버가 파일로 다시 정한다(조회 응답 왕복 편집 허용). 대표 프레임 ID를 단독 사진으로 연결하거나 영상 바이트를 조회할 수는 없다.
+초안 쪽은 새 endpoint 대신 정정 리소스를 확장했다. 초안당 RUNNING 하나, 처리 중 편집·게시 409, 결과 적용 시 versionId·baseRevision·작업 ID 재검사, 재시도 규칙이 모두 같아 프론트는 하나의 비동기 패턴만 다룬다. 검토 쪽은 정정이 섹션 단위가 아니어서 별도 operation을 두었지만 처리 상태·재시도·잠금·revision 규칙은 정정과 같다. 결과 화면의 확인·수정·재시도는 기존 confirmations·corrections·retries를 쓴다.
 
-작업 실행: 섹션의 사진(긴 변 2048px JPEG로 축소)·제목·설명, 영상은 프레임 샘플과 음성 전사(실패하면 프레임만)로 바꿔 넣는다. 작업당 영상 2개까지 해석하고 나머지·원본이 정리된 영상은 대표 프레임 사진을 쓴다. 이미지 16장·32 MiB, 항목 20개 상한을 넘는 것은 표시 순서대로 뺀다. 작업 lease는 전사 2회 + 작성 1회 기준 900초다. 영상 원본은 작성 접수 때 보관을 연장하고 그 뒤 보관 정리 대상이며, 정리돼도 연결과 대표 프레임은 남는다.
+작업 실행: 사진은 긴 변 2048px JPEG로 줄이고, 영상은 프레임 샘플과 음성 전사(실패하면 프레임만)로 바꿔 넣는다. 이미지 16장·32 MiB, 항목 20개 상한을 넘는 것은 요청 순서대로 뺀다. 제목·설명은 없다(첨부 메타데이터가 아니므로). 사진·영상에서 읽을 것이 하나도 없으면 재시도 불가 실패다.
 
-삭제: 연결된 영상과 그 대표 프레임은 삭제할 수 없다(409 MEDIA_IN_USE). 목록에서 빼면 사진만 빠지고 작성한 업무 단계는 그대로 남는다. 연결이 모두 풀린 영상을 삭제하면 대표 프레임도 함께 정리된다. DB 변경은 migration 0043(`manual_media.poster_media_id`·VIDEO, `manual_photo_attachments.video_media_id`, 정정 입력 MEDIA, 작업 종류 REVIEW_MEDIA_WRITING·DRAFT_MEDIA_WRITING, 검토 처리 MEDIA_WRITING)이다.
+보관: 작업이 대기·실행 중인 동안 파일을 snapshot 참조로 잡아 두고(영상은 바이트 보관 연장도 함께) 삭제 요청은 409 MEDIA_IN_USE다. 작업이 끝나면(성공 또는 최종 실패) 참조를 풀어 미첨부 파일 규칙대로 24시간 뒤 정리하며, 재시도는 남아 있는 파일을 다시 잡는다. DB 변경은 migration 0043(`manual_media` VIDEO 형식, snapshot 참조 종류 MEDIA_WRITING, 정정 입력 MEDIA, 작업 종류 REVIEW_MEDIA_WRITING·DRAFT_MEDIA_WRITING, 검토 처리 MEDIA_WRITING)이며 새 열은 없다.
 
-Figma 근거: [섹션 사진 첨부](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-2979)·[777-3041](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3041)·[777-3009](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3009) "사진은 연결된 업무 내용과 함께 표시돼요", [가져오기](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3360) 카메라·앨범·파일, [삭제](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3464) "사진만 삭제돼요. 작성한 업무 내용은 그대로 유지돼요.", [근무자 미리보기](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3203)·[777-3228](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3228), [업무 상세](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2865) "위치 사진 2장". 영상 업로드·AI 자동 작성 화면은 Figma에 없어 기존 사진 첨부 흐름을 최소로 확장했다. 단계별 출처 배지(사진·영상에서 확인)는 사용자 결정 대기로 계약에 넣지 않았다.
+Figma 근거: [섹션 사진 첨부](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-2979)·[777-3041](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3041)·[777-3009](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3009)와 [가져오기](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3360)(카메라·앨범·파일)는 파일을 고르는 흐름의 근거다. [삭제](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3464) "사진만 삭제돼요. 작성한 업무 내용은 그대로 유지돼요."에 따라 파일이 정리돼도 작성한 단계는 남는다. 영상 업로드·AI 자동 작성 화면은 Figma에 없어 계약은 최소로 추가했다.

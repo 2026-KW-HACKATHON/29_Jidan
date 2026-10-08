@@ -11,8 +11,7 @@
     POST .../intents/{intentId}/review/confirmations    confirm (never a progress gate)  200
     POST .../intents/{intentId}/review/corrections      correct the summary              202
     POST .../intents/{intentId}/review/retries          resume a failed summary task     202
-    PUT  .../intents/{intentId}/review/photos           replace one photo/video list     200
-    POST .../intents/{intentId}/review/media-writing    write a section from its media   202
+    PUT  .../intents/{intentId}/review/photos           replace one photo list           200
 
 Every request re-checks the ACTIVE OWNER session, store ownership and APPROVED status. Writes
 need CSRF/Origin and an Idempotency-Key (`run_idempotent`: the handler starts on a fresh
@@ -68,7 +67,7 @@ from app.interview.common import (
     turn_body,
 )
 from app.interview.content import photo_ids, snapshot_from_content
-from app.interview.evidence import correction_evidence, media_writing_evidence
+from app.interview.evidence import correction_evidence
 from app.interview.flow import (
     enqueue_base_question,
     enqueue_evaluation,
@@ -76,16 +75,8 @@ from app.interview.flow import (
 )
 from app.interview.question_set import CURRENT_QUESTION_SET_ID
 from app.jobs.state import begin_transition
-from app.manual_attachments import (
-    AttachError,
-    canonical_items,
-    keep_videos_for_processing,
-    lock_attachable,
-    video_ids,
-)
 from app.manual_content import active_draft, store_manual
 from app.manual_drafts import ensure_no_running_correction
-from app.manual_media_writing import evidence_query
 from app.media.references import (
     MediaLinkError,
     add_snapshot_refs,
@@ -179,14 +170,6 @@ class PhotoAttachment(_Body):
     mediaId: Uuid
     caption: Annotated[str | None, Field(max_length=300, strict=True)]
     title: Annotated[str, Field(min_length=1, max_length=100, pattern=r"\S", strict=True)]
-    # 0.12.0: may be echoed back from a response; the server re-derives both from the file.
-    kind: Literal["PHOTO", "VIDEO"] | None = None
-    posterMediaId: Uuid | None = None
-
-
-class MediaWritingBody(_Body):
-    expectedRevision: Revision
-    sectionId: Uuid
 
 
 class PhotoUpdate(_Body):
@@ -572,7 +555,6 @@ def replace_manual_interview_review_photos(store_id: StoreIdPath, session_id: Se
     photos = [{"mediaId": normalize_uuid(p.mediaId), "caption": p.caption, "title": p.title} for p in body.photos]
 
     def work() -> IdempotentResult:
-        nonlocal photos
         store, session = lock_session(db, owner.user_id, store_id, session_id)
         _progress, intent, review = _changeable_review(db, session, intent_id, body.expectedRevision)
         content = dict(review.ready_content)
@@ -585,15 +567,7 @@ def replace_manual_interview_review_photos(store_id: StoreIdPath, session_id: Se
             if not matches:
                 raise _validation("sectionId", "이 요약에 있는 업무를 선택해 주세요.")
             current = matches[0].get("photos", [])
-        # Videos (0.12.0) go to sections only; the stored item names the video and its poster.
-        try:
-            rows = lock_attachable(db, store.id, [p["mediaId"] for p in photos],
-                                   videos=body.target == "SECTION")
-        except AttachError as error:
-            if error.reason == "not_image":
-                raise _validation("photos", "사진 또는 업무 영상만 연결할 수 있습니다.") from None
-            raise not_found() from None
-        photos = canonical_items(photos, rows)
+        _lock_photos(db, store.id, [p["mediaId"] for p in photos], "photos")
         if current == photos:  # same names, captions and order: nothing changes
             return IdempotentResult(200, review_body(review))
         if body.target == "WORK_STRUCTURE":
@@ -612,45 +586,3 @@ def replace_manual_interview_review_photos(store_id: StoreIdPath, session_id: Se
                "photos": photos}
     return _idempotent(db, owner, key, store_id, _review_path(store_id, session_id, intent_id, "photos"),
                        request, work, method="PUT")
-
-
-@router.post(R + "/media-writing", status_code=202)
-def write_manual_interview_section_from_media(store_id: StoreIdPath, session_id: SessionIdPath,
-                                              intent_id: IntentIdPath, body: MediaWritingBody,
-                                              owner: CsrfOwner, db: DbSession, key: IdempotencyKey) -> Response:
-    """Write one review section's steps from its attached photos/videos (0.12.0): the same
-    PROCESSING/READY/ERROR cycle, locks and retries as a correction, without a correction turn."""
-    section_id = normalize_uuid(body.sectionId)
-
-    def work() -> IdempotentResult:
-        _store, session = lock_session(db, owner.user_id, store_id, session_id)
-        _progress, intent, review = _changeable_review(db, session, intent_id, body.expectedRevision)
-        section = next((s for s in review.ready_content["sections"] if s["id"] == section_id), None)
-        if section is None:
-            raise _validation("sectionId", "이 요약에 있는 업무를 선택해 주세요.")
-        items = section.get("photos", [])
-        if not items:
-            raise _validation("sectionId", "사진이나 영상을 먼저 첨부해 주세요.")
-        previous = None
-        if review.confirmed_at is not None:
-            previous = {"at": review.confirmed_at.isoformat(), "by": review.confirmed_by_owner_id}
-        # The owner's words about the section are retrieved now and frozen with the request, so
-        # every attempt and review retry cites the same chunks (like a correction's evidence).
-        evidence = media_writing_evidence(db, session.id, evidence_query(section, items),
-                                          intent_key=intent.intent_key)
-        task_id = enqueue(
-            db, "REVIEW_MEDIA_WRITING", session.id,
-            {"intentId": intent.id, "sectionId": section_id, "previousConfirmation": previous,
-             "evidence": [chunk.model_dump(mode="json") for chunk in evidence]},
-            input_revision=review.revision + 1, attempt=1,
-        )
-        keep_videos_for_processing(db, video_ids(items))
-        review.confirmed_at = review.confirmed_by_owner_id = None
-        review.status, review.error_code = "PROCESSING", None
-        review.revision += 1
-        review.processing_kind, review.processing_task_id, review.processing_attempt = "MEDIA_WRITING", task_id, 1
-        db.flush()
-        return IdempotentResult(202, review_body(review))
-
-    return _idempotent(db, owner, key, store_id, _review_path(store_id, session_id, intent_id, "media-writing"),
-                       {"expectedRevision": body.expectedRevision, "sectionId": section_id}, work)

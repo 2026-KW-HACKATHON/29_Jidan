@@ -45,7 +45,6 @@ EXCEPTIONS = {
     # latest commit under REPEATABLE READ.
     ("interview_turn_photos", "media_id"): "media reference check (FOR SHARE)",
     ("manual_photo_attachments", "media_id"): "media reference check (FOR SHARE)",
-    ("manual_photo_attachments", "video_media_id"): "media reference check (FOR SHARE), section videos",
     ("manual_media_snapshot_refs", "media_id"): "media reference check (FOR SHARE)",
     ("manual_qa_photos", "media_id"): "media reference check (FOR SHARE)",
     # app.jobs.state.withdraw_confirmation: the effects of one request, a prefix of the
