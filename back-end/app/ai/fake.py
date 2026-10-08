@@ -273,6 +273,7 @@ class FakeAiProvider(AiProvider):
         self.auto_cite = auto_cite  # see _auto_cite
         self._sleep = sleep
         self._lock = threading.Lock()
+        self._judgement = threading.local()
         self._queues: dict[str, deque[FakeOutcome]] = {op: deque() for op in OPERATIONS}
         self._handlers: dict[str, Callable[[Any], Any]] = dict(DEFAULTS)
         self.calls: list[FakeCall] = []
@@ -303,6 +304,12 @@ class FakeAiProvider(AiProvider):
         return [call for call in self.calls if call.operation == operation]
 
     def _next(self, operation: str) -> FakeOutcome | None:
+        reservation = getattr(self._judgement, "reservation", None)
+        if operation == "judge_sufficiency" and reservation is not None:
+            if reservation["consumed"]:
+                raise RuntimeError("judgement outcome already consumed")
+            reservation["consumed"] = True
+            return reservation["outcome"]
         with self._lock:
             queue = self._queues[operation]
             return queue.popleft() if queue else None
@@ -321,12 +328,43 @@ class FakeAiProvider(AiProvider):
             return self._resolve(operation, outcome.then, argument, default)
         return outcome
 
-    def _judge_backend(self, request: SufficiencyRequest) -> str:
-        if self.judge_backend == "responses":
-            return "responses"
+    def judge_sufficiency(self, request: SufficiencyRequest):
+        # Reserve the outcome before choosing its transport. The call owns this outcome even
+        # while another worker consumes a differently shaped response from the same queue.
         with self._lock:
             queue = self._queues["judge_sufficiency"]
-            head = queue[0] if queue else None
+            outcome = queue.popleft() if queue else None
+            backend = self._backend_for(outcome)
+        reservation = {"outcome": outcome, "backend": backend, "consumed": False}
+        previous = getattr(self._judgement, "reservation", None)
+        self._judgement.reservation = reservation
+        self._judgement.backend = backend
+        try:
+            return super().judge_sufficiency(request)
+        finally:
+            self._judgement.reservation = previous
+            # A failure before reaching the transport must not discard an unused script.
+            if outcome is not None and not reservation["consumed"]:
+                with self._lock:
+                    self._queues["judge_sufficiency"].appendleft(outcome)
+
+    def judge_meta(self):
+        backend = getattr(self._judgement, "backend", None)
+        if backend is None:
+            with self._lock:
+                queue = self._queues["judge_sufficiency"]
+                backend = self._backend_for(queue[0] if queue else None)
+        return self.meta("judge_sufficiency", backend=backend)
+
+    def reset_judge_meta(self):
+        self._judgement.backend = None
+
+    def _judge_backend(self, request: SufficiencyRequest) -> str:
+        return self._judgement.reservation["backend"]
+
+    def _backend_for(self, head: FakeOutcome | None) -> str:
+        if self.judge_backend == "responses":
+            return "responses"
         while head is not None and head.kind == "delay":
             head = head.then
         if head is not None and head.kind in ("ok", "raw", "candidates"):
@@ -363,6 +401,11 @@ class FakeAiProvider(AiProvider):
             result = result.value
         if isinstance(result, BaseModel):
             result = result.model_dump(mode="json")
+        if operation == "judge_sufficiency" and isinstance(result, dict):
+            # Legacy scripts assume staff work. Explicit confirmation probabilities are never
+            # changed; raw/candidates remain exact so tests can exercise missing protocol data.
+            result = {"not_applicable_probability": 0.0,
+                      "not_applicable_confirmed_probability": 0.0, **result}
         if operation in GROUNDED_OPERATIONS and self.auto_cite:
             result = _auto_cite(data, json.loads(json.dumps(result)) if isinstance(result, dict) else result)
         return [result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)]

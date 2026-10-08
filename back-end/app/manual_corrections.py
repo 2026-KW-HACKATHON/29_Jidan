@@ -14,8 +14,9 @@ task and attempt and the draft is still the same version at the base revision.
 Grounding (app.ai.validation.ground_structure). The only new facts a correction may add are
 the owner's instruction, so its sentences are the evidence (`<correctionId>#<n>`, rebuilt from
 the stored text, identical on every attempt): the draft's existing steps and shift times pass
-when returned unchanged, anything changed or added must cite the instruction, and an uncited
-step is removed (a section left empty becomes "steps unknown") like in interview writing.
+when returned unchanged, and anything changed or added must cite the instruction. An uncited
+change or addition fails the whole output as invalid (retried, then AI_PROCESSING_FAILED)
+rather than being restored or removed while the correction reports success.
 
 | Correction | Event | Result |
 | --- | --- | --- |

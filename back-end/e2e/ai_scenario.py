@@ -367,6 +367,14 @@ class RoutedAiProvider(AiProvider):
     def max_call_seconds(self) -> float:
         return max(self.fake.max_call_seconds, self.live.max_call_seconds)
 
+    def judge_meta(self):
+        provider = self.live if "judge_sufficiency" in self.live_ops else self.fake
+        return provider.judge_meta()
+
+    def reset_judge_meta(self):
+        provider = self.live if "judge_sufficiency" in self.live_ops else self.fake
+        provider.reset_judge_meta()
+
     def _complete(self, *_args, **_kwargs):  # pragma: no cover - operations are delegated
         raise NotImplementedError
 
@@ -415,6 +423,10 @@ def build_from_env() -> AiProvider | None:
         from e2e import owner_persona
 
         owner_persona.install_fake(fake)
+        if os.getenv("E2E_INTERVIEW_EVAL_VOICE") == "1":
+            from e2e.interview_eval import install_voice_fake
+
+            install_voice_fake(fake)
     elif script:
         raise ValueError("E2E_AI_SCRIPT must be persona or unset")
     trace = CallTrace(os.getenv("E2E_AI_TRACE_FILE") or None)

@@ -30,7 +30,8 @@ def test_schema_is_strict_mode_compatible(operation):
 
 
 SAMPLES = {
-    "judge_sufficiency": {"sufficient": False, "probability": 0.3, "missing_aspects": ["마감 순서"]},
+    "judge_sufficiency": {"sufficient": False, "probability": 0.3, "missing_aspects": ["마감 순서"],
+                          "not_applicable_probability": None, "not_applicable_confirmed_probability": None},
     "generate_question": {"question": "기계는 어떤 순서로 닦나요?", "guidance": None,
                           "examples": [{"label": "커피 머신", "description": None}]},
     "summarize_intent": {"summary": "요약", "structure": {

@@ -52,7 +52,7 @@ from app.ai.contracts import (
     TranscriptionRequest,
     clean_text,
 )
-from app.ai.decisions import Thresholds, build_request, config_tag, decide
+from app.ai.decisions import Thresholds, build_request, config_tag, decide, not_applicable_outcome
 from app.ai.errors import AiError, AiErrorCode
 from app.ai.prompts import INSTRUCTIONS, PROMPT_VERSION, data_message
 from app.ai.schemas import (
@@ -77,6 +77,7 @@ from app.ai.validation import (
     invalid,
     known_ids,
     materialize_structure,
+    repeats_removed_text,
     same_content,
 )
 
@@ -103,13 +104,22 @@ def _structure_payload(snapshot: StructureSnapshot) -> dict[str, Any]:
     return snapshot.model_dump(mode="json")
 
 
-def _ground(operation: str, raw_structure, evidence, **exempt):
-    """`ground_structure` against the request's evidence; logs counts only (never text)."""
+def _ground(operation: str, raw_structure, evidence, *, strict: bool = False, **exempt):
+    """`ground_structure` against the request's evidence; logs counts only (never text).
+
+    `strict` (corrections): anything grounding would restore, drop or clear fails the whole
+    output as INVALID_OUTPUT instead. A correction's evidence holds the owner's instruction, so a
+    faithful change can always cite it; an altered result would no longer be what the outcome
+    and the model's summary describe (e.g. "APPLIED, changed X" with X silently restored)."""
     structure, grounding = ground_structure(raw_structure, (chunk.id for chunk in evidence), **exempt)
     if grounding.dropped_steps or grounding.cleared_shifts:
         logger.info("ai grounding op=%s dropped_steps=%d dropped_in_kept_sections=%d cleared_shifts=%d",
                     operation, grounding.dropped_steps, grounding.dropped_in_kept_sections,
                     grounding.cleared_shifts)
+    if grounding.restored_steps:
+        logger.info("ai reviewed_steps op=%s restored=%d", operation, grounding.restored_steps)
+    if strict and (grounding.dropped_steps or grounding.cleared_shifts or grounding.restored_steps):
+        raise invalid("ungrounded_revision")
     return structure
 
 
@@ -156,7 +166,7 @@ class AiProvider(ABC):
             parts.append(config_tag(self.judge_thresholds))
         elif operation is not None:
             if operation == "judge_sufficiency":
-                parts.append("responses")
+                parts.append(f"responses:{self.judge_thresholds.tag}")
             effort = self.effort_for(operation)
             if effort:
                 parts.append(f"effort={effort}")
@@ -167,6 +177,9 @@ class AiProvider(ABC):
         failed before any judgement (the evaluation row still records backend and effort)."""
         backend = self.judge_backend if self._supports_decisions() else "responses"
         return self.meta("judge_sufficiency", backend=backend)
+
+    def reset_judge_meta(self) -> None:
+        """Start a new evaluation before input validation; discard per-thread prior-call state."""
 
     # --- backend hooks ----------------------------------------------------------------------
 
@@ -254,8 +267,26 @@ class AiProvider(ABC):
 
     def _judge_by_responses(self, request: SufficiencyRequest) -> SufficiencyJudgement:
         payload = request.model_dump(mode="json", exclude={"depth"})
+        table = aspects_for(request.intent)
+        if table.confirmation:
+            payload["not_applicable_rule"] = table.not_applicable
+            payload["not_applicable_confirmation_rule"] = table.confirmation
         raw: RawJudgement = self._structured("judge_sufficiency", payload)
         aspects = tuple(dict.fromkeys(a for a in (clean_text(x) for x in raw.missing_aspects) if a))
+        if table.confirmation:
+            if raw.not_applicable_probability is None or raw.not_applicable_confirmed_probability is None:
+                raise invalid("missing_not_applicable_confirmation")
+            na = raw.not_applicable_probability
+            confirmed = raw.not_applicable_confirmed_probability
+            result = not_applicable_outcome(
+                na, confirmed, self.judge_thresholds, probability=min(na, confirmed),
+                confirmation_label=table.confirmation_label)
+            if result is not None:
+                return SufficiencyJudgement(
+                    sufficient=result.sufficient, probability=result.probability,
+                    missing_aspects=result.missing_aspects, not_applicable=result.not_applicable,
+                    meta=self.meta("judge_sufficiency"),
+                )
         if (raw.probability >= 0.5) != raw.sufficient:
             raise invalid("inconsistent_sufficiency_probability")
         if raw.sufficient and aspects:
@@ -334,16 +365,15 @@ class AiProvider(ABC):
             return StructureRevision(outcome=raw.outcome, meta=meta)
         external_ids = {shift.id for shift in request.external_shifts}
         try:
-            written = _contentless(
-                "revise_structure", raw.structure, kept_section_refs=ids["section"],
-                existing_steps={step.id: step.instruction for section in current.sections for step in section.steps},
-            )
+            existing_steps = {step.id: step.instruction for section in current.sections for step in section.steps}
             grounded = _ground(
-                "revise_structure", written, request.evidence,
-                grounded_steps={step.id: step.instruction for section in current.sections for step in section.steps},
+                "revise_structure", raw.structure, request.evidence, strict=True,
+                grounded_steps=existing_steps,
                 grounded_shifts={shift.id: (shift.start_time, shift.end_time, shift.ends_next_day)
                                  for shift in current.shifts},
             )
+            grounded = _contentless("revise_structure", grounded, kept_section_refs=ids["section"],
+                                    existing_steps=existing_steps)
             structure = materialize_structure(
                 grounded,
                 known_shift_ids=ids["shift"] | external_ids,
@@ -377,12 +407,15 @@ class AiProvider(ABC):
         step_ids: set[str] = set()
         previous = []
         reviewed_shifts: dict[str, tuple] = {}
+        reviewed_steps: dict[str, str] = {}
         for review in request.reviews:
             reviewed_shifts.update({s.id: (s.start_time, s.end_time, s.ends_next_day) for s in review.structure.shifts})
             ids = known_ids(review.structure)
             shift_ids |= ids["shift"]
             section_ids |= ids["section"]
             step_ids |= ids["step"]
+            reviewed_steps.update({step.id: step.instruction for section in review.structure.sections
+                                   for step in section.steps})
             previous.extend(review.structure.missing_information)
         # Reviewed shift times are what the owner confirmed or corrected in the review; evidence
         # holds earlier answers too, so a draft must not move them back (a cited change would pass
@@ -405,11 +438,24 @@ class AiProvider(ABC):
         if restored:
             logger.info("ai reviewed_shift_times op=compose_draft restored=%d", restored)
             written = written.model_copy(update={"shifts": shifts, "missing_information": missing})
-        # Reviewed steps were grounded when their review was written and may be reworded here;
-        # anything new must cite the evidence.
-        written = _contentless("compose_draft", written, kept_section_refs=section_ids)
-        grounded = _ground("compose_draft", written, request.evidence,
-                           grounded_steps=dict.fromkeys(step_ids), grounded_shifts=reviewed_shifts)
+        # The ID identifies the reviewed action, not permission to invent facts while polishing.
+        # Ground before contentless filtering so an unsupported replacement cannot erase it.
+        restored = _ground("compose_draft", written, request.evidence,
+                           grounded_steps=reviewed_steps, grounded_shifts=reviewed_shifts)
+        grounded = _contentless("compose_draft", restored, kept_section_refs=section_ids)
+        # An uncited rewrite is restored above. If it was half of a split ("A하고 B해요" ->
+        # "A해요" + new "B해요"), the new part would repeat what the restored original already
+        # says: retry instead of keeping both. A new step that repeats none of the removed words
+        # (an unrelated cited addition beside harmless polishing) is kept.
+        rewrites: dict[str, list[tuple[str, str]]] = {}
+        for section, after in zip(written.sections, restored.sections, strict=True):
+            kept = {step.ref: step.instruction for step in after.steps}
+            rewrites[section.ref] = [(reviewed_steps[step.ref], step.instruction) for step in section.steps
+                                     if step.ref in reviewed_steps and kept.get(step.ref) != step.instruction]
+        if any(repeats_removed_text(original, rewritten, step.instruction)
+               for section in grounded.sections for step in section.steps if step.ref not in reviewed_steps
+               for original, rewritten in rewrites.get(section.ref, ())):
+            raise invalid("uncited_step_change_with_additions")
         structure = materialize_structure(
             grounded, known_shift_ids=shift_ids, known_section_ids=section_ids,
             known_step_ids=step_ids, previous_missing=previous, require_manual_level=True,
@@ -481,6 +527,10 @@ class FallbackAiProvider(AiProvider):
         # The configured path (the primary's); a failure after the fallback is still recorded
         # against the configuration the task was run with.
         return self.primary.judge_meta()
+
+    def reset_judge_meta(self) -> None:
+        self.primary.reset_judge_meta()
+        self.fallback.reset_judge_meta()
 
     @property
     def max_call_seconds(self) -> float:

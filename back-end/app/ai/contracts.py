@@ -267,7 +267,8 @@ class SufficiencyJudgement(_Model):
     missing_aspects: tuple[str, ...] = Field(default=(), max_length=MAX_ASPECTS)
     meta: CallMeta
     # Sufficient because the owner clearly said the whole intent does not apply (the Decisions
-    # `not_applicable` predicate at or above its threshold). Always False on the Responses path.
+    # `not_applicable` predicate at or above its threshold). WORK_STRUCTURE Responses applies
+    # the same gate and additionally requires the owner's actual reconfirmation.
     not_applicable: bool = False
 
     @property
