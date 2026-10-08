@@ -21,9 +21,11 @@ from app.ai.errors import AiError, AiErrorCode
 from app.ai.fake import FakeAiProvider, structure_to_raw
 from app.db.models import (
     InterviewIntentReview,
+    InterviewSession,
     ManualMedia,
     ManualMediaSnapshotRef,
     ManualPhotoAttachment,
+    ManualVersion,
 )
 from e2e.ai_scenario import summarize
 from e2e.conftest import RegistrationCase
@@ -269,6 +271,62 @@ def test_upload_and_link_replays_preserve_photos_and_conflicts_have_no_partial_s
         assert db.get(ManualMedia, first["id"]).deleted_at is None
 
 
+def test_review_no_change_failure_and_explicit_section_deletion_preserve_other_photo_references(lifecycle):
+    case = lifecycle
+    sid, listing = finish_answers(case)
+    targets = [item for item in listing["items"] if item["content"]["sections"]]
+    first, other = targets[:2]
+    section_id = first["content"]["sections"][0]["id"]
+    other_id = other["content"]["sections"][0]["id"]
+    image = upload(case)
+    expected = [photo(image)]
+    first_result = link(case, sid, first, section_id, expected)
+    other_result = link(case, sid, other, other_id, expected)
+    assert first_result.status_code == other_result.status_code == 200
+    first, other = first_result.json(), other_result.json()
+    retained_id = other["content"]["sections"][1]["id"]
+    retained = link(case, sid, other, retained_id, expected)
+    assert retained.status_code == 200, retained.text
+    other = retained.json()
+    before = first["content"]
+    request = case.post(review_url(case, sid, first["intentId"]) + "/corrections", {
+        "expectedRevision": first["revision"], "input": {"method": "TEXT", "text": "fixture-no-change"}})
+    assert request.status_code == 202, request.text
+    first = poll(case, review_url(case, sid, first["intentId"]), lambda value: value["status"] in {"READY", "ERROR"})
+    assert first["status"] == "READY" and first["content"] == before
+    assert_review_commit(case, sid, first, section_id, expected)
+    request = case.post(review_url(case, sid, first["intentId"]) + "/corrections", {
+        "expectedRevision": first["revision"], "input": {"method": "TEXT", "text": "fixture-timeout"}})
+    assert request.status_code == 202, request.text
+    failed = poll(case, review_url(case, sid, first["intentId"]), lambda value: value["status"] == "ERROR", timeout=60)
+    assert failed["content"] == before
+    assert_review_commit(case, sid, failed, section_id, expected)
+    # A failed correction must retain the photos and reject completion, with no draft snapshot.
+    listing = get(case, case.url(sid, "/reviews"))
+    completion = case.post(case.url(sid, "/completion"), {
+        "expectedRevision": listing["sessionRevision"], "reviewRevisions": [
+            {"intentId": item["intentId"], "revision": item["revision"]} for item in listing["items"]]})
+    assert completion.status_code == 409, completion.text
+    with Session(case.engine) as db:
+        version = db.get(ManualVersion, db.get(InterviewSession, sid).manual_version_id)
+        assert version.generation_input_snapshot is None and version.generation_status == "NOT_STARTED"
+    # The other independently valid review permits an explicit deletion, without deleting bytes
+    # still referenced by the failed first review.
+    deleted_title = section(other, other_id)["title"]
+    request = case.post(review_url(case, sid, other["intentId"]) + "/corrections", {
+        "expectedRevision": other["revision"], "input": {"method": "TEXT", "text": f"{deleted_title}를 삭제해 주세요"}})
+    assert request.status_code == 202, request.text
+    other = poll(case, review_url(case, sid, other["intentId"]), lambda value: value["status"] in {"READY", "ERROR"})
+    assert other["status"] == "READY", other
+    assert [item["id"] for item in other["content"]["sections"]] == [retained_id]
+    assert section(other, retained_id)["photos"] == expected
+    assert_review_commit(case, sid, other, retained_id, expected)
+    with Session(case.engine) as db:
+        assert db.get(ManualMedia, image["id"]).deleted_at is None
+        refs = list(db.scalars(select(ManualMediaSnapshotRef).where(
+            ManualMediaSnapshotRef.media_id == image["id"], ManualMediaSnapshotRef.holder_kind == "INTENT_REVIEW")))
+        assert {(ref.holder_id, ref.holder_intent_id) for ref in refs} == {(sid, first["intentId"]), (sid, other["intentId"])}
+    assert case.client.get(manual(case, f"/media/{image['id']}/content")).status_code == 200
 
 
 
@@ -277,3 +335,48 @@ def test_upload_and_link_replays_preserve_photos_and_conflicts_have_no_partial_s
 
 
 
+def test_section_deletion_and_photo_link_race_does_not_move_or_delete_media(lifecycle):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    case = lifecycle
+    sid, listing = finish_answers(case)
+    review = review_with_section(listing)
+    chosen, retained = review["content"]["sections"][:2]
+    original = photo(upload(case))
+    attached = link(case, sid, review, retained["id"], [original])
+    assert attached.status_code == 200
+    review = attached.json()
+    candidate = photo(upload(case), "삭제 경합 사진")
+    barrier = Barrier(2)
+    correction_headers, link_headers = headers(case), headers(case)
+    correction_body = {"expectedRevision": review["revision"], "input": {
+        "method": "TEXT", "text": f"{chosen['title']}를 삭제해 주세요"}}
+    photo_body = {"expectedRevision": review["revision"], "target": "SECTION", "sectionId": chosen["id"],
+                  "photos": [candidate]}
+    url = review_url(case, sid, review["intentId"])
+
+    def remove():
+        barrier.wait(timeout=10)
+        return case.client.post(url + "/corrections", json=correction_body, headers=correction_headers)
+
+    def attach():
+        barrier.wait(timeout=10)
+        return case.client.put(url + "/photos", json=photo_body, headers=link_headers)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = pool.submit(remove), pool.submit(attach)
+        deleted, linked = first.result(timeout=30), second.result(timeout=30)
+    assert (deleted.status_code, linked.status_code) in {(202, 409), (409, 200)}, (deleted.text, linked.text)
+    if deleted.status_code == 409:
+        latest = get(case, url)
+        assert section(latest, chosen["id"])["photos"] == [candidate]
+        deleted = case.post(url + "/corrections", {**correction_body, "expectedRevision": latest["revision"]})
+        assert deleted.status_code == 202, deleted.text
+    ready = poll(case, url, lambda value: value["status"] in {"READY", "ERROR"})
+    assert ready["status"] == "READY", ready
+    assert [item["id"] for item in ready["content"]["sections"]] == [retained["id"]]
+    assert_review_commit(case, sid, ready, retained["id"], [original])
+    with Session(case.engine) as db:
+        assert db.get(ManualMedia, candidate["mediaId"]).deleted_at is None
+        assert db.get(ManualMedia, original["mediaId"]).deleted_at is None
