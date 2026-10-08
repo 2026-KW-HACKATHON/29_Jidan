@@ -12,13 +12,16 @@ import time
 import uuid
 import wave
 
+import httpx
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.ai.contracts import StructureSnapshot
 from app.ai.errors import AiError, AiErrorCode
 from app.ai.fake import FakeAiProvider, structure_to_raw
+from app.db import utcnow
 from app.db.models import (
     InterviewIntentReview,
     InterviewSession,
@@ -26,10 +29,13 @@ from app.db.models import (
     ManualMediaSnapshotRef,
     ManualPhotoAttachment,
     ManualVersion,
+    Store,
+    StoreAccessGrant,
 )
 from e2e.ai_scenario import summarize
 from e2e.conftest import RegistrationCase
 from e2e.interview_helpers import interview_case, scenario_server
+from tests.factories import make_regular_grant, make_user
 from tests.media_samples import png
 
 REVIEW_RENAME = "사진 업무 이름 변경"  # exact synthetic STT marker, never sent to a live model
@@ -206,6 +212,105 @@ def voiced_input(case):
     return {"method": "VOICE", "transcriptionId": done["id"]}
 
 
+def test_photo_survives_voice_correction_draft_preview_publication_and_worker_access(lifecycle):
+    case = lifecycle
+    sid, listing = finish_answers(case)
+    review = review_with_section(listing)
+    section_id = review["content"]["sections"][0]["id"]
+    uploaded = [upload(case), upload(case)]
+    expected = [photo(uploaded[1], "두 번째", None), photo(uploaded[0], "첫 번째", "원래 설명")]
+    response = link(case, sid, review, section_id, expected)
+    assert response.status_code == 200, response.text
+    review = assert_review_commit(case, sid, response.json(), section_id, expected)
+    correction = case.post(review_url(case, sid, review["intentId"]) + "/corrections",
+                           {"expectedRevision": review["revision"], "input": voiced_input(case)})
+    assert correction.status_code == 202, correction.text
+    review = poll(case, review_url(case, sid, review["intentId"]), lambda value: value["status"] in {"READY", "ERROR"})
+    assert review["status"] == "READY", review
+    assert section(review, section_id)["title"] == "사진을 보며 하는 포스 마감"
+    assert_review_commit(case, sid, review, section_id, expected)
+    listing = get(case, case.url(sid, "/reviews"))
+    body = {"expectedRevision": listing["sessionRevision"], "reviewRevisions": [
+        {"intentId": item["intentId"], "revision": item["revision"]} for item in listing["items"]]}
+    key = str(uuid.uuid4())
+    accepted = case.post(case.url(sid, "/completion"), body, key=key)
+    assert accepted.status_code == 202, accepted.text
+    replay = case.post(case.url(sid, "/completion"), body, key=key)
+    assert replay.status_code == 202 and replay.json() == accepted.json()
+    case.wait(sid, lambda value: value["phase"] == "COMPLETED")
+    draft = get(case, manual(case, "/draft"))
+    assert draft["generationStatus"] == "READY" and draft["revision"] == 1
+    assert section(draft, section_id)["photos"] == expected
+    with Session(case.engine) as db:
+        saved = db.get(ManualVersion, draft["versionId"])
+        assert saved.generation_status == "READY" and saved.revision == 1
+        assert db.get(InterviewSession, sid).status == "COMPLETED"
+        attachments = list(db.scalars(select(ManualPhotoAttachment).where(
+            ManualPhotoAttachment.version_id == saved.id,
+            ManualPhotoAttachment.section_id == section_id).order_by(ManualPhotoAttachment.sort_order)))
+        assert [(a.media_id, a.title, a.caption) for a in attachments] == [
+            (p["mediaId"], p["title"], p["caption"]) for p in expected]
+    original_content = draft["content"]
+    for text, terminal in (("fixture-no-change", "SUCCEEDED"), ("fixture-draft-failure", "ERROR")):
+        requested = case.post(manual(case, "/draft/corrections"), {
+            "expectedVersionId": draft["versionId"], "expectedRevision": draft["revision"],
+            "target": {"kind": "SECTION", "targetId": section_id},
+            "input": {"method": "TEXT", "text": text}})
+        assert requested.status_code == 202, requested.text
+        finished = poll(case, manual(case, f"/draft/corrections/{requested.json()['id']}"),
+                        lambda value: value["status"] in {"SUCCEEDED", "ERROR"}, timeout=60)
+        assert finished["status"] == terminal, finished
+        unchanged = get(case, manual(case, "/draft"))
+        assert unchanged["content"] == original_content and unchanged["revision"] == draft["revision"]
+        assert_draft_photos_commit(case, draft["versionId"], section_id, expected)
+    retried = case.post(manual(case, f"/draft/corrections/{requested.json()['id']}/retries"), {
+        "expectedVersionId": draft["versionId"], "expectedRevision": draft["revision"]})
+    assert retried.status_code == 202, retried.text
+    completed_retry = poll(case, manual(case, f"/draft/corrections/{requested.json()['id']}"),
+                           lambda value: value["status"] in {"SUCCEEDED", "ERROR"})
+    assert completed_retry["status"] == "SUCCEEDED", completed_retry
+    draft = get(case, manual(case, "/draft"))
+    assert_draft_photos_commit(case, draft["versionId"], section_id, expected)
+    correction = case.post(manual(case, "/draft/corrections"), {
+        "expectedVersionId": draft["versionId"], "expectedRevision": draft["revision"],
+        "target": {"kind": "SECTION", "targetId": section_id},
+        "input": voiced_input(case)})
+    assert correction.status_code == 202, correction.text
+    done = poll(case, manual(case, f"/draft/corrections/{correction.json()['id']}"),
+                lambda value: value["status"] in {"SUCCEEDED", "ERROR"})
+    assert done["status"] == "SUCCEEDED", done
+    draft = get(case, manual(case, "/draft"))
+    assert section(draft, section_id)["photos"] == expected
+    assert section(draft, section_id)["steps"][-1]["instruction"] == "영수증을 지정된 서랍에 보관해요."
+    assert_draft_photos_commit(case, draft["versionId"], section_id, expected)
+    preview = get(case, manual(case, "/draft/preview"))
+    assert preview["content"] == draft["content"]
+    assert preview["versionId"] == draft["versionId"] and preview["revision"] == draft["revision"]
+    publication = {"expectedVersionId": draft["versionId"], "expectedRevision": draft["revision"],
+                   "confirmed": True, "acknowledgedIssueIds": [i["id"] for i in draft["issues"] if i["status"] == "OPEN"]}
+    published = case.post(manual(case, "/draft/publication"), publication)
+    assert published.status_code == 200, published.text
+    assert published.json()["content"] == preview["content"]
+    assert_draft_photos_commit(case, draft["versionId"], section_id, expected)
+    with Session(case.engine) as db:
+        assert db.get(ManualVersion, draft["versionId"]).status == "PUBLISHED"
+        worker = make_user(db, "WORKER", google_sub=f"lifecycle-{uuid.uuid4()}")
+        grant = make_regular_grant(db, db.get(Store, case.store_id), worker, granted_at=utcnow())
+        issued = auth.create_session(worker.id, db=db)
+        db.commit()
+        grant_id = grant.id
+    with httpx.Client(base_url=str(case.client.base_url), timeout=10, trust_env=False,
+                      headers={"Cookie": f"{auth.SESSION_COOKIE_NAME}={issued.token}"}) as reader:
+        detail = reader.get(manual(case, f"/published/sections/{section_id}"))
+        assert detail.status_code == 200 and detail.json()["section"]["photos"] == expected
+        media_url = manual(case, f"/media/{uploaded[0]['id']}/content")
+        image = reader.get(media_url)
+        assert image.status_code == 200 and image.headers["content-type"].startswith("image/") and image.content
+        with Session(case.engine) as db:
+            db.get(StoreAccessGrant, grant_id).revoked_at = utcnow()
+            db.commit()
+        assert reader.get(media_url).status_code == 404
+    assert get(case, manual(case, f"/published/sections/{section_id}"))["section"]["photos"] == expected
 
 
 def test_upload_and_link_replays_preserve_photos_and_conflicts_have_no_partial_save(lifecycle):
@@ -329,10 +434,110 @@ def test_review_no_change_failure_and_explicit_section_deletion_preserve_other_p
     assert case.client.get(manual(case, f"/media/{image['id']}/content")).status_code == 200
 
 
+def test_completion_and_photo_link_race_freezes_one_consistent_snapshot(lifecycle):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    case = lifecycle
+    sid, listing = finish_answers(case)
+    review = review_with_section(listing)
+    section_id = review["content"]["sections"][0]["id"]
+    expected = [photo(upload(case))]
+    completion_body = {"expectedRevision": listing["sessionRevision"], "reviewRevisions": [
+        {"intentId": item["intentId"], "revision": item["revision"]} for item in listing["items"]]}
+    link_body = {"expectedRevision": review["revision"], "target": "SECTION", "sectionId": section_id,
+                 "photos": expected}
+    completion_headers, link_headers = headers(case), headers(case)
+    barrier = Barrier(2)
+
+    def complete():
+        barrier.wait(timeout=10)
+        return case.client.post(case.url(sid, "/completion"), json=completion_body, headers=completion_headers)
+
+    def attach():
+        barrier.wait(timeout=10)
+        return case.client.put(review_url(case, sid, review["intentId"]) + "/photos",
+                               json=link_body, headers=link_headers)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = pool.submit(complete), pool.submit(attach)
+        completed, linked = first.result(timeout=30), second.result(timeout=30)
+    assert (completed.status_code, linked.status_code) in {(202, 409), (409, 200)}, (completed.text, linked.text)
+    frozen_photos = [] if completed.status_code == 202 else expected
+    if completed.status_code == 409:
+        with Session(case.engine) as db:
+            version = db.get(ManualVersion, db.get(InterviewSession, sid).manual_version_id)
+            assert version.generation_input_snapshot is None
+        listing = get(case, case.url(sid, "/reviews"))
+        accepted = case.post(case.url(sid, "/completion"), {
+            "expectedRevision": listing["sessionRevision"], "reviewRevisions": [
+                {"intentId": item["intentId"], "revision": item["revision"]} for item in listing["items"]]})
+        assert accepted.status_code == 202, accepted.text
+    case.wait(sid, lambda value: value["phase"] == "COMPLETED")
+    draft = get(case, manual(case, "/draft"))
+    assert section(draft, section_id)["photos"] == frozen_photos
+    with Session(case.engine) as db:
+        stored = list(db.scalars(select(ManualPhotoAttachment).where(
+            ManualPhotoAttachment.version_id == draft["versionId"], ManualPhotoAttachment.section_id == section_id)))
+        assert [item.media_id for item in stored] == [item["mediaId"] for item in frozen_photos]
+        assert db.get(ManualMedia, expected[0]["mediaId"]).deleted_at is None
 
 
+def build_generation_failure_provider():
+    from app.ai.fake import _default_draft
+
+    provider = build_lifecycle_provider()
+    attempts = 0
+
+    def generate(data):
+        nonlocal attempts
+        attempts += 1
+        raw = _default_draft(data)
+        if attempts <= 3:
+            # Valid raw schema but illegal replacement: dropping a reviewed ID would lose photos.
+            raw["structure"]["sections"][0]["ref"] = "new-999"
+        return raw
+
+    return provider.on("compose_draft", generate)
 
 
+def test_generation_rejects_replaced_section_ids_and_retry_preserves_frozen_photo_snapshot(real_db, tmp_path):
+    with (
+        scenario_server(tmp_path, "e2e.test_interview_photo_lifecycle_http:build_generation_failure_provider") as origin,
+        interview_case(real_db, origin) as case,
+    ):
+        sid, listing = finish_answers(case)
+        review = review_with_section(listing)
+        section_id = review["content"]["sections"][0]["id"]
+        expected = [photo(upload(case))]
+        linked = link(case, sid, review, section_id, expected)
+        assert linked.status_code == 200
+        listing = get(case, case.url(sid, "/reviews"))
+        accepted = case.post(case.url(sid, "/completion"), {
+            "expectedRevision": listing["sessionRevision"], "reviewRevisions": [
+                {"intentId": item["intentId"], "revision": item["revision"]} for item in listing["items"]]})
+        assert accepted.status_code == 202, accepted.text
+        failed = poll(case, case.url(sid), lambda value: value["phase"] == "ERROR", timeout=60)
+        with Session(case.engine) as db:
+            version_id = db.get(InterviewSession, sid).manual_version_id
+            version = db.get(ManualVersion, version_id)
+            assert version.generation_status == "ERROR" and version.revision == 1
+            frozen = version.generation_input_snapshot
+            assert frozen is not None
+            assert db.scalar(select(func.count()).select_from(ManualPhotoAttachment).where(
+                ManualPhotoAttachment.version_id == version_id)) == 0
+            assert db.scalar(select(func.count()).select_from(ManualMediaSnapshotRef).where(
+                ManualMediaSnapshotRef.holder_kind == "DRAFT_GENERATION",
+                ManualMediaSnapshotRef.media_id == expected[0]["mediaId"])) == 1
+        retry = case.post(case.url(sid, "/retries"), {"expectedRevision": failed["revision"]})
+        assert retry.status_code == 202, retry.text
+        case.wait(sid, lambda value: value["phase"] == "COMPLETED")
+        draft = get(case, manual(case, "/draft"))
+        assert draft["versionId"] == version_id and draft["revision"] == 1
+        assert section(draft, section_id)["photos"] == expected
+        assert_draft_photos_commit(case, version_id, section_id, expected)
+        with Session(case.engine) as db:
+            assert db.get(ManualVersion, version_id).generation_input_snapshot == frozen
 
 
 def test_section_deletion_and_photo_link_race_does_not_move_or_delete_media(lifecycle):
