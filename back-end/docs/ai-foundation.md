@@ -24,16 +24,54 @@
 | --- | --- | --- |
 | `AI_PROVIDER` | `openai` | `fake`는 local/dev 시연용(`production`에서 시작 시 거부) |
 | `OPENAI_API_KEY` | 없음 | 환경 변수로만 읽는다. 없으면 모든 호출이 `not_configured`(재시도 불가) |
-| `OPENAI_MODEL` | `gpt-6-luna` | 사용자 결정 "ChatGPT 6 Luna". `/v1/models`와 공식 문서로 ID 확인 |
-| `OPENAI_FALLBACK_MODEL` | 없음 | 지정하면 재시도 가능 실패 뒤 이 모델로 한 번 더 시도(fallback) |
-| `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | OpenAI 파일 전사 모델 |
 | `OPENAI_SERVICE_TIER` | `fast` | Responses의 Fast mode. `auto/default/fast/priority` 허용(빈 값은 기본값), 잘못된 값은 시작 거절. 주 모델·fallback 공통, STT 제외 |
-| `OPENAI_REASONING_EFFORT` | `low` | `none/low/medium/high/xhigh/max`, 빈 값이면 미지정 |
-| `OPENAI_TIMEOUT_SECONDS` / `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 60 / 120 | 호출당 타임아웃(유한한 1~600초, NaN·무한대 거부). 핸들러 lease보다 길면 시작 거부(§ lease와 장시간 호출) |
+| `OPENAI_MODEL` | `gpt-6-luna` | 사용자 결정 "ChatGPT 6 Luna". `/v1/models`와 공식 문서로 ID 확인 |
+| `OPENAI_FALLBACK_MODEL` | 없음 | 지정하면 재시도 가능 실패 뒤 이 모델로 한 번 더 시도(fallback). fallback의 Jev는 `OPENAI_JUDGE_BACKEND`와 관계없이 Responses 경로를 쓴다(Decisions API는 일부 모델만 받으므로, 미지원 모델이 모든 평가를 `not_configured`로 끝내지 않게) |
+| `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | OpenAI 파일 전사 모델 |
+| `OPENAI_REASONING_EFFORT` | `low` | `none/low/medium/high/xhigh/max`, 빈 값이면 미지정. `answer_question`과 Responses 경로의 Jev |
+| `OPENAI_QUESTION_REASONING_EFFORT` | `low` | 질문 생성(`generate_question`). 값 규칙은 위와 같다 |
+| `OPENAI_WRITING_REASONING_EFFORT` | `medium` | 매뉴얼 작성(`summarize_intent`, `compose_draft`, `revise_structure`, `write_section_from_media`) |
+| `OPENAI_JUDGE_BACKEND` | `decisions` | Jev 경로. `decisions`=`POST /v1/decisions`(aspect별 predicate 확률), `responses`=기존 구조화 출력 판단 |
+| `OPENAI_JUDGE_ASPECT_THRESHOLD` | 0.7 | aspect 확률이 이 값 이상이면 확보로 본다(0.5 이상 1 미만, NaN·무한대 거부) |
+| `OPENAI_JUDGE_NOT_APPLICABLE_THRESHOLD` | 0.8 | "해당 없음" predicate가 이 값 이상이면 인텐트 전체를 충분으로 본다(범위 같음) |
+| `OPENAI_TIMEOUT_SECONDS` / `OPENAI_WRITING_TIMEOUT_SECONDS` / `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 60 / 120 / 120 | 호출당 타임아웃(유한한 1~600초, NaN·무한대 거부). 작성 연산은 medium effort라 따로 둔다. 핸들러 lease보다 길면 시작 거부(§ lease와 장시간 호출) |
+
+모델은 모든 연산이 `OPENAI_MODEL` 하나를 쓴다(연산별 모델 설정 없음). fallback이 "한 모델 → 다른 한 모델"로 단순하게 유지되고, Decisions가 받는 모델을 연산마다 따로 확인할 필요가 없기 때문이다. 연산별로 달라지는 것은 reasoning effort와 타임아웃, Jev 경로다.
+
+| 연산 | 경로 | effort | 타임아웃 | 출력 상한(`MAX_OUTPUT_TOKENS`) |
+| --- | --- | --- | --- | --- |
+| `judge_sufficiency` | Decisions(기본) / Responses | 없음 / `OPENAI_REASONING_EFFORT` | `OPENAI_TIMEOUT_SECONDS` | 없음(텍스트 생성 없음) / 4000 |
+| `generate_question` | Responses | `OPENAI_QUESTION_REASONING_EFFORT`(low) | `OPENAI_TIMEOUT_SECONDS` | 4000 |
+| `summarize_intent` | Responses | `OPENAI_WRITING_REASONING_EFFORT`(medium) | `OPENAI_WRITING_TIMEOUT_SECONDS` | 24000(medium 추론 여유로 16000에서 올림) |
+| `compose_draft`, `revise_structure`, `write_section_from_media` | Responses | `OPENAI_WRITING_REASONING_EFFORT`(medium) | `OPENAI_WRITING_TIMEOUT_SECONDS` | 32000 |
+| `answer_question` | Responses | `OPENAI_REASONING_EFFORT`(low) | `OPENAI_TIMEOUT_SECONDS` | 8000 |
+
+결과의 `meta.config_version`은 `provider:model:PROMPT_VERSION` 뒤에 실제 호출 조건을 붙인다: effort를 보냈으면 `:effort=<값>`, Jev는 `:responses:t=<aspect>/<not_applicable>`(+effort) 또는 `:decisions:aspects-<ASPECTS_VERSION>:t=<aspect>/<not_applicable>`로 남긴다(예: `openai:gpt-6-luna:2026-10-08.7:decisions:aspects-2026-10-08.1:t=0.7/0.8`). 임계값은 Python float의 왕복 가능한 표현(`repr`)을 사용하며, 허용되는 인접 float 설정도 반올림으로 같은 태그가 되지 않는다. 현재 프롬프트 버전은 `2026-10-09.171`이고 instructions SHA-256은 `3f7e0b3df124f7e692087d23247dcbf32785a951f247a1ccb738fec10d71c026`이다(`tests/test_interview_sufficiency_policy.py`에서 함께 고정).
+
+실패 평가 행은 `provider.judge_meta()`에 위임한다. E2E의 `RoutedAiProvider`도 Jev를 실제 담당한 fake/live 제공자에 위임하며, Fake는 해당 스레드에서 예약·소비한 Responses/Decisions 백엔드를 기록한다. 작업 실행기는 새 평가 입력을 검증하기 전에 `reset_judge_meta()`로 이전 작업의 상태를 지우며, 실제 AI 진입 전 실패는 현재 큐/handler가 선택할 백엔드로 기록한다. 판단 결과 없이 실패한 OpenAI 호출은 주 모델의 설정된 Jev 경로·effort를 기록한다(fallback 성공 결과의 meta는 Responses 경로다). 한계: 주 모델과 `OPENAI_FALLBACK_MODEL`이 모두 실패하면 행에는 주 모델 이름과 설정 경로가 남고, 마지막에 실제로 실패한 fallback 모델·Responses 경로는 기록되지 않는다(실행 설정 기준 기록 정책). 과거 평가 행의 `t=0.70/0.80`은 덮어쓰지 않는다. 같은 수치 설정의 새 `t=0.7/0.8`과 config별 집계에서 별도 그룹이 되므로 비교할 때 형식 전환을 함께 확인한다.
+
 
 전사 기본값 근거(OpenAI speech-to-text 가이드, 2026-10 확인): `gpt-transcribe`는 녹음 파일 전사의 권장 모델이고 다국어 힌트(`languages`)와 용어 힌트(`keywords`)를 받는다. 지원 형식 mp3·mp4·m4a·wav·webm은 우리 4개 형식을 모두 포함하고 파일 상한 25 MB는 20 MiB보다 크며 길이 제한은 문서에 없다(우리 상한 120초). `gpt-4o-transcribe`·`gpt-4o-mini-transcribe`·`whisper-1`로 바꾸면 `language`/`prompt`로 보낸다. 한국어 합성 음성 실키 테스트로 확인했다.
 
-SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 요청은 `store=False`라 provider에 대화가 저장되지 않는다.
+SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). Responses 요청은 `store=False`라 provider에 대화가 저장되지 않는다. Decisions 요청 스키마에는 `store`를 포함한 보관 옵션이 아예 없다(`model`/`input`/`questions`/`safety_identifier`만, `additionalProperties: false`). Decisions의 기본 보관 정책은 API 명세에 적혀 있지 않으므로 데이터 보관 요건이 생기면 OpenAI 쪽 정책을 따로 확인해야 한다.
+
+### Jev: Decisions API (`app/ai/decisions.py`, `app/ai/aspects.py`)
+
+설치된 SDK에는 Decisions 메서드가 없어 `client.post("/decisions", cast_to=httpx.Response, body=..., options={"timeout": OPENAI_TIMEOUT_SECONDS})`로 보낸다. 인증·base URL·예외 타입이 SDK 그대로라 오류 분류(`classify`)도 같다.
+
+- **aspect 표**: 질문 셋 v1의 인텐트마다 `coverage_criteria`를 원자적 점검 항목으로 나눈다(예: COMMON_TASKS → `공통 업무의 종류`, `공통 업무의 작업 순서`, `공통 업무의 완료 기준`). 표의 순서가 PROBE 순서다: 근무자에게 가장 먼저 필요한 기본 내용이 앞이고, 설비는 사용 순서 → 관리 방법 → 주의 사항 순이다(사용자 결정 2026-10-08: 관리 방법을 들은 뒤 그 자리에서 주의 사항을 묻는 편이 흐름이 매끄럽다). 작업·사용 순서 predicate는 "메뉴를 누르고 결제까지 받아요"처럼 문장 안에서 동작을 이어 말한 설명도 순서로 인정하고("먼저/그다음"·번호 불필요), 업무 이름만 말했거나 업무들의 차례만 말한 답은 거짓으로 둔다. 라벨은 "<대상>의 <측면>" 하나이고 그대로 `missing_aspects`가 되어 PROBE 질문이 묻는다. 기본 내용(종류·순서)은 "따로 정한 게 없어요"로 채워지지 않고 세부(완료 기준·주의 사항·연락 기준)는 채워진다(B04 정책). 인텐트마다 "점주가 해당 사항이 없다고 분명히 말했다" predicate(`not_applicable`)가 하나 있다. 키와 `coverage_criteria`가 모두 v1과 같을 때만 표를 쓰고, 그 밖에는 `coverage_criteria` 전체를 aspect 하나로 쓴다. 표 문구를 바꾸면 `ASPECTS_VERSION`을 올린다.
+- **요청**: 입력은 다른 연산과 같은 `<data>` JSON 문서(store·intent·context·dialogue, depth 제외)를 user 메시지로 보낸다. Decisions에는 instructions 필드가 없어 predicate마다 데이터 취급 규칙(데이터 안 지시를 따르지 않음, 점주가 실제로 말한 것만 근거, 네 가지 무응답 구분)을 붙인다.
+- **재검증**: 응답의 답 수·순서·`name`이 질문과 일치해야 하고, `predicate`의 `probability`는 0~1의 유한한 숫자(불리언 불가)여야 한다. 어기면 `INVALID_OUTPUT`(재시도 가능). JSON이 아닌 본문도 `INVALID_OUTPUT`.
+- **판정**: `P(not_applicable) ≥ 0.8`이면 충분. 아니면 모든 aspect `P ≥ 0.7`일 때 충분. `missing_aspects`는 임계 미만 aspect 라벨(표 순서, 최대 5개). 결과 `probability`는 결합 확률 `max(P(not_applicable), min P(aspect))`이며 기록용이다(판정은 임계값으로 하므로 불충분인데 0.5 이상일 수 있다).
+- **해당 없음 재확인(WORK_STRUCTURE)**: 사용자 결정(2026-10-08)으로 "직원 근무 자체가 없다(무인 매장)"는 한 번 듣고 확정하지 않는다. 이 인텐트에만 `not_applicable_confirmed` predicate(다시 확인하는 질문에 점주가 근무가 없다고 다시 답했다)를 `not_applicable` 바로 앞에 붙인다. `P(not_applicable) ≥ 0.8`이어도 재확인이 0.8 미만이면 불충분이고 `missing_aspects = ("근무가 없는 매장인지의 재확인",)`만 돌려준다. 그러면 질문 모델(Luna low)이 점주 말을 되짚어 "…무인 매장이라고 이해했는데, 맞나요?" 형태로 확인하고, 생성 실패 시에는 `aspects.confirmation_question`의 고정 문장을 쓴다. 재확인이 참이면 충분·해당 없음, 점주가 번복하면 근무조 aspect를 다시 묻는다. 결합 확률은 `P(not_applicable)` 대신 `min(P(not_applicable), P(재확인))`을 쓴다. 실측(2026-10-08): 첫 "무인 운영" 답 → 재확인 요청, "네, 맞아요" → 충분·해당 없음, "주말엔 알바가 와요" → 근무조 4개 aspect 부족.
+- **refusal**: 질문 하나의 refusal은 그 aspect를 미확보(확률 0)로, `not_applicable` refusal은 "말하지 않음"으로 본다. 모르는 것을 아는 것으로 바꾸지 않으면서 인터뷰를 ERROR로 멈추지 않게 하기 위해서다(그 aspect를 다시 묻고, depth 5에서 서버가 NEEDS_DETAIL로 끝낸다). 모든 질문이 refusal이면 `REFUSED`(재시도 불가).
+- **실측**(2026-10-08, gpt-6-luna, `tests/test_ai_decisions_live.py`): COMMON_TASKS 완전한 답 → aspect 1.0/1.0/1.0, not_applicable 0.0 → 충분. "홀 서빙이랑 설거지 정도요." → 종류 0.83, 작업 순서 0.0, 완료 기준 0.0 → 불충분(`공통 업무의 작업 순서`, `공통 업무의 완료 기준`). B04 골든 케이스(`tests/test_interview_sufficiency_live.py`, 기준이 v1과 달라 단일 aspect 폴백) 6회 모두 불충분, 무인 매장 해당 없음 대조군은 충분.
+
+### Responses의 직원 근무 없음 재확인
+
+Responses와 타임아웃 뒤 fallback도 WORK_STRUCTURE의 같은 재확인 정책을 적용한다. 모델 입력에 `not_applicable_rule`과 `not_applicable_confirmation_rule`을 전달하고, strict 내부 `JUDGE_SCHEMA`는 nullable `not_applicable_probability`와 `not_applicable_confirmed_probability`를 요구한다. 이 정책이 있는 인텐트에서 둘 중 하나가 누락되거나 null이면 `INVALID_OUTPUT`이다. 다른 인텐트의 과거 캡처는 nullable 기본값으로 재생할 수 있다. 공개 HTTP/OpenAPI와 DB 컬럼은 바뀌지 않는다.
+
+서버는 Decisions와 같은 `not_applicable_outcome`을 쓴다. 유한한 0~1 확률 등 strict 출력 형식을 먼저 검증하고, 해당 없음 gate를 일반 `sufficient`/`probability`/`missing_aspects` 일관성 검사보다 먼저 적용한다. 해당 없음이 아니거나 번복했으면 일반 일관성 검사를 그대로 적용한다. 직원 근무 없음 확률이 임계 이상이어도 실제 재확인 질문과 점주의 확인 답이 아직 없으면 재확인 aspect만 부족으로 돌려준다. 확인 확률도 임계 이상이면 충분·해당 없음이고, 직원 근무가 있다고 번복하면 근무조 측면 판정으로 돌아간다. 모르겠음·무응답은 재확인을 채우지 않는다. 질문 깊이나 한국어 단어 일치로 확인 여부를 결정하지 않는다. 한계: 해당 없음 확률이 임계 바로 아래(예: 0.79)이면 두 경로 모두 gate를 지나 일반 판정으로 간다. Decisions는 근무조 aspect가 모두 임계 이상이어야 충분이지만, Responses는 모델의 전체 `sufficient`(확률과 일관)를 따르므로 이 경계의 의미 정확도는 모델 보정에 달려 있고 live 실행으로만 확인된다. 서버는 별도 임계 구간을 만들지 않는다.
 
 ### 연산
 
@@ -41,11 +79,12 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 
 | 메서드 | 요청 | 결과 | 쓰는 곳 |
 | --- | --- | --- | --- |
-| `judge_sufficiency` | `SufficiencyRequest(intent, dialogue, depth, context)` | `SufficiencyJudgement(sufficient, probability, missing_aspects)`; `needs_follow_up` | Jev(#120) |
-| `generate_question` | `QuestionRequest(kind=BASE/PROBE, intent, depth, dialogue, missing_aspects, context)` | `GeneratedQuestion(text)` | 기본·추가 질문(#120). PROBE는 `missing_aspects` 필수 |
-| `summarize_intent` | `IntentSummaryRequest(intent, dialogue, needs_detail, available_shifts)` | `IntentSummary(summary, structure)` | 인텐트 요약(#120) |
-| `revise_structure` | `StructureRevisionRequest(current, summary, target, instruction, external_shifts, require_manual_level)` | `StructureRevision(outcome, structure, summary)` | 인텐트 정정(#120), 초안 정정(#118) |
-| `compose_draft` | `DraftRequest(reviews)` | `DraftComposition(structure)` | 초안 생성(#120 completion) |
+| `judge_sufficiency` | `SufficiencyRequest(intent, dialogue, depth, context, store)` | `SufficiencyJudgement(sufficient, probability, missing_aspects)`; `needs_follow_up` | Jev(#120). 기본은 Decisions API(아래 § Jev) |
+| `generate_question` | `QuestionRequest(kind=BASE/PROBE, intent, depth, dialogue, missing_aspects, context)` | `GeneratedQuestion(text)` | 기본·추가 질문(#120). PROBE는 `missing_aspects` 필수이고, 모델에는 첫 항목이 `target_aspect`로 따로 전달되어 그 항목만 묻는다(나머지는 다음 질문). BASE는 기본 질문의 범위를 줄이지 않고, 다른 인텐트 요약(context)의 "해당 없음"을 전제로 삼지 않는 중립 문장이다 |
+| `summarize_intent` | `IntentSummaryRequest(intent, dialogue, needs_detail, available_shifts, evidence)` | `IntentSummary(summary, structure)` | 인텐트 요약(#120) |
+| `revise_structure` | `StructureRevisionRequest(current, summary, target, instruction, external_shifts, require_manual_level, evidence)` | `StructureRevision(outcome, structure, summary)` | 인텐트 정정(#120), 초안 정정(#118) |
+| `compose_draft` | `DraftRequest(reviews, evidence)` | `DraftComposition(structure)` | 초안 생성(#120 completion) |
+| `write_section_from_media` | `MediaWritingRequest(intent, current, target=SECTION, media, evidence, external_shifts, require_manual_level, store)` | `StructureRevision(outcome=APPLIED/NO_CHANGE, structure)` (`summary`는 항상 `None`) | 검토·초안 섹션에 첨부한 사진·영상으로 단계 작성(아래 § 사진·영상 기반 작성) |
 | `answer_question` | `QaRequest(question, manual, images)` | `QaAnswer(outcome, text, citations)` | 근무자 Q&A(#121) |
 | `transcribe` | `TranscriptionRequest(audio, mime_type, language="ko")` | `Transcript(text)` | 전사(이미 구현) |
 
@@ -59,9 +98,35 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 - `SHIFT_TASK`만 근무조를 참조하고 그 근무조가 같은 결과나 `available_shifts`/`external_shifts`에 있어야 한다. 외부 근무조는 재정의할 수 없다.
 - 시간은 `HH:MM`, 알려진 근무 구간은 0 < 길이 ≤ 24시간. 모르는 시간(null)과 빈 단계에는 미확정 정보가 반드시 있어야 하며, 확정 값에 붙은 미확정 정보는 버린다. `require_manual_level=True`(초안)이면 근무조·섹션 0개에도 MANUAL 미확정이 필요하다.
 - 미확정 정보 ID는 같은 (대상, 대상 ID, 필드)이면 입력의 ID를 유지한다 → 부족 항목 확인 이력이 같은 issue를 계속 가리킨다.
-- `revise_structure`: SHIFT/SECTION 대상이면 대상 외 기존 항목이 하나라도 바뀌면 거절, 근무조 삭제로 다른 업무 참조가 깨지면 **서버가** `REFERENCE_CONFLICT`, 내용이 같으면 `NO_CHANGE`(revision을 올리지 않는다). `CLARIFICATION_REQUIRED`/`REFERENCE_CONFLICT`/`NO_CHANGE`이면 `structure`는 `None`이다. 검토 요약을 정정할 때는 `summary`를 넘기면 새 요약을 받는다.
+- `revise_structure`: SHIFT/SECTION 대상이면 대상 외 기존 항목이 하나라도 바뀌면 거절, 근무조 삭제로 다른 업무 참조가 깨지면 **서버가** `REFERENCE_CONFLICT`, 내용이 같으면 `NO_CHANGE`(revision을 올리지 않는다). 구조가 같고 검토 요약만 새로 쓴 결과는 `APPLIED`(요약만 변경)다. `CLARIFICATION_REQUIRED`/`REFERENCE_CONFLICT`/`NO_CHANGE`이면 `structure`는 `None`이다. 검토 요약을 정정할 때는 `summary`를 넘기면 새 요약을 받는다.
 - `compose_draft`: 입력 검토의 모든 근무조·섹션 ID가 결과에 남아야 한다(사진 보존).
+- 근거 인용(작성 3연산, `validation.ground_structure`): evidence가 있으면 단계와 시간 값이 있는 근무조는 `evidence_ids`로 점주 근거 조각을 인용한다. 입력에 없는 ID는 `INVALID_OUTPUT`(`unknown_evidence_id`)다. 인용 없는 새 단계는 제거하고 비워진 섹션에 SECTION/steps 미확정을, 인용 없는 새 시간은 null과 SHIFT 미확정을 넣는다. 기존 단계는 ID와 원문을 함께 비교한다. 원문 그대로면 인용이 없어도 통과하고, 인용 없이 바뀌면 원문으로 복원한다(개수만 `restored_steps`로 로그). 이 보호는 evidence가 빈 과거 요청에도 적용한다. evidence가 없는 요청의 새 항목은 기존 호환 동작을 유지한다. 다른 단계가 남은 섹션의 제거는 미확정 규칙상 로그 개수(`dropped_in_kept_sections`)만 기록한다. 인용 ID는 검증 뒤 버려지므로 API·DB 구조는 그대로다.
+- 초안 구성은 검토의 근무조 시간과 기존 근무조·섹션 ID를 보존한다. 검토 단계를 다듬거나 분할하려면 기존 ID를 쓰는 부분과 새 단계 모두 근거를 인용해야 한다. 근거를 못 찾으면 원문만 유지한다. 서버가 무인용 변경을 복원한 섹션의 새 단계가 그 변경이 원문에서 지운 글자를 절반 이상 되풀이하면(분할의 한쪽) 복원된 원문과 중복되므로 `INVALID_OUTPUT`(`uncited_step_change_with_additions`)으로 재시도한다. 무관한 인용 추가와 무인용 다듬기가 함께 있으면 다듬기만 복원하고 추가는 남긴다. 이 비교는 글자 기준이라 놓치면 점주 말의 중복이 남고, 잘못 걸리면 재시도할 뿐 사실을 만들지 않는다. 인용 ID 유효성은 문장의 의미 충실도를 증명하지 않으므로 점주 답·정정·최종 내용을 별도 비교해야 한다.
+- 초안 정정(#118)의 근거는 정정 지시문 자체다(`<correctionId>#<문장번호>`). 바뀐 기존 단계도 같은 ID라는 이유로 면제하지 않는다.
+- 정정(`revise_structure`, 인텐트 정정·초안 정정)은 grounding이 결과를 고치면 적용하지 않는다: 인용 없이 바뀐 기존 단계(복원 대상), 인용 없는 새 단계(제거 대상), 인용 없이 바뀐 근무조 시간(비움 대상)이 하나라도 있으면 출력 전체가 `INVALID_OUTPUT`(`ungrounded_revision`, 재시도 가능)이다. 복원·제거한 채 저장하면 `APPLIED`와 모델 요약이 실제로 반영되지 않은 정정을 성공으로 말하기 때문이다. 정정의 근거에는 정정 지시가 들어 있으므로 충실한 변경은 항상 인용할 수 있다. 자동 재시도가 끝나면 인텐트 검토는 ERROR(마지막 READY 내용·요약·사진 유지, 검토 재시도 가능), 초안 정정은 `AI_PROCESSING_FAILED`(재시도 가능, 초안 내용·revision 그대로)다. 요약·초안 작성은 위의 제거·비움·복원 정책을 그대로 쓴다.
+- 내용 없는 단계(작성 3연산, `validation.drop_contentless_steps`): 서버는 짧은 문장 전체가 모호한 처리 지시 또는 규칙 없음 표현인 경우만 제거한다. 순수한 “상황에 맞게 알아서 처리해요”, “정해진 규칙은 따로 없어요”도 해당한다. 앞에 짧은 주제·주어 명사구(“청소는”, “손님 불만은”, “정해진 순서는”)나 문제 조건(“포스기 고장이 나면”)이 붙어도 같다. 명사구는 한글 단어 1~4개로 목적격 조사·연결/관형 어미·빈도 부사(“매일”)가 없어야 하고, 규칙 없음은 “정해진/정한/특별한” 같은 수식어나 규칙류 명사(규칙·방법·기준·순서·규정 등)가 있어야 한다(“청소 도구는 따로 없어요”는 매장 사실로 남긴다). 명사 목록으로 판정하지 않으며 조건에 맞지 않으면 남겨 점주 검토에 맡긴다. 구체적인 행동을 포함한 혼합 문장·종속절·인용 문장은 그대로 보존한다. 모호한 단계가 모두 빠지면 SECTION/steps 미확정, 규칙 없음만 있던 새 섹션은 삭제한다(검토된 기존 섹션의 확보/미확정 상태 변경은 초안 사실 보존 검사에서 거절). 정정·초안은 grounding을 먼저 하므로 무근거 교체가 contentless 필터로 원문을 지우지 못한다. 정정에서 원문 그대로인 단계는 건드리지 않는다.
+- 해당 없음(`not_applicable`): Decisions와 WORK_STRUCTURE 재확인 정책이 있는 Responses가 같은 임계 gate로 확정한다. 참이면 요약 요청(`IntentSummaryRequest.not_applicable`, 작업 payload 고정)에 실리고 서버가 요약 구조(근무조·섹션·미확정)를 비운다. 다른 인텐트의 Responses는 해당 없음에 관한 작성 프롬프트 규칙을 적용한다.
 - `answer_question`: `ANSWERED`는 인용 1개 이상, `NEEDS_OWNER`는 0개. 인용 섹션·단계는 입력 게시본에 있어야 하고, **발췌(excerpt)는 서버가 해당 단계 원문을 이어 만든다**(최대 1000자). 모델이 쓴 문장을 근거로 저장하지 않는다.
+
+### 사진·영상 기반 작성 (`write_section_from_media`)
+
+사용자 결정(2026-10-08): 검토(인텐트 요약)·초안의 **섹션에 첨부한 사진·영상**을 AI가 보고 그 섹션의 단계를 작성·보강한다. 사진에 보이는 것과 영상에서 들리는 것은 **점주 발화와 동급 근거**이고, 인용 검증은 그대로 유지된다(근거 ID에 미디어 ID가 더해질 뿐). 작업 흐름(작업 종류·잠금·revision)은 [인터뷰 설계](manual-interview-design.md)가 정한다.
+
+- **입력**(`app/ai/contracts.py`): `MediaEvidence(id, kind, title, caption, image | text)`.
+  - `id`는 서버가 저장된 UUID로만 만든다: 사진 `media:<uuid>`, 영상 프레임 `media:<uuid>@<t_ms>`, 영상 음성 전사 `media:<uuid>#transcript`. 형식(`contracts.MEDIA_ID`)과 `kind`의 짝이 맞지 않으면 요청 생성 자체가 실패한다(사용자 텍스트가 ID에 섞일 수 없다).
+  - `PHOTO`/`VIDEO_FRAME`은 `image`만, `VIDEO_TRANSCRIPT`는 `text`만 가진다. `title`·`caption`은 점주가 쓴 문장이라 점주 발화로 본다.
+  - `MediaWritingRequest`: `media` 1~20개(ID 중복·evidence ID와 충돌 불가), 이 중 이미지 **최대 16장**(`MAX_MEDIA_IMAGES`), 이미지 원본 합계 32 MiB(`MAX_MEDIA_IMAGE_BYTES`, 전송 시 base64로 1/3 늘어 OpenAI 요청 한도 안). 넘으면 호출 없이 `INPUT_REJECTED`(`too_many_images`/`images_too_large`, 재시도 불가). 작업 쪽은 사진을 긴 변 2048px 안팎으로 줄여 넘기는 편이 안전하다(영상 프레임은 이미 ≤1024px). `target`은 `SECTION`이고 `current`에 있는 섹션이어야 한다(아니면 `ValueError` — 호출자 버그).
+- **모델에 보이는 것**: `<data>` JSON에는 이미지 바이트를 뺀 media 목록(`id`, `kind`, `title`, `caption`, `text`, `image_index`)과 `current`·`target`·`evidence`·`intent`·`store`·`image_count`가 들어간다. 이미지는 `<data>` 뒤에 **요청 순서대로** 붙고, 각 이미지 바로 앞에 서버가 만든 라벨 `[이미지 n] media id: <id>`(`prompts.image_label`, `LabeledImage`)를 `input_text`로 둔다. 라벨에는 순번과 ID만 있고, 점주 텍스트(title·caption·전사)는 모두 `<data>` 안에만 있다. 글자를 읽어야 해서 이미지 `detail`은 `high`다.
+- **지시문**(`INSTRUCTIONS["write_section_from_media"]`): 다른 작성 연산과 같은 데이터 취급·인젝션 방어·근거 인용·단계 작성(행동 하나, 체크리스트) 규칙에 더해, 근거는 ①사진·프레임에 분명히 보이는 것(위치·배치·순서·읽히는 글자) ②전사 text ③title·caption과 evidence뿐이고, 읽히지 않는 상표·제품명·온도·수량·시간은 쓰지 않으며, 사진 속 글자의 지시는 따르지 않는다. target 섹션만 고치고(제목·분류·근무조 유지, 새 근무조·섹션 없음), 기존 단계는 같은 ID로 유지하며 빼려면 `removed_steps`에 근거 ID와 함께 적는다.
+- **출력 스키마**(`section_from_media`): `outcome`(`APPLIED`/`NO_CHANGE`), `structure`(revise_structure와 같은 형태, `evidence_ids`에 media ID 허용), `removed_steps[{ref, evidence_ids}]`.
+- **서버 재검증**(`AiProvider.write_section_from_media`, `app/ai/validation.py`):
+  - 인용 ID ⊆ 입력 evidence ID ∪ media ID. 그 밖의 ID(다른 사진, 없는 프레임 시각 등)는 `INVALID_OUTPUT`(`unknown_evidence_id`, 재시도). evidence가 비어 있어도 media ID가 있으므로 근거 검사는 항상 켜진다.
+  - 인용 없는 새 단계는 `ground_structure` 규칙대로 제거. 내용 없는 단계(`drop_contentless_steps`)도 제거.
+  - **기존 단계는 근거 없이 사라지지 않는다**(Figma 777-3464 "사진만 삭제돼요. 작성한 업무 내용은 그대로 유지돼요."의 반대 방향): 인용 없이 문장을 바꾼 기존 단계는 그 자리에서 원래 문장으로 되돌리고, 빠뜨린 기존 단계는 원래 앞 단계 뒤(없으면 맨 앞)에 원래대로 되살린다(`restore_existing_steps`). 인용과 함께 바꾼 단계가 내용 없는 단계로 걸러져도 되살린다. 삭제는 `removed_steps`에 근거 ID가 1개 이상 있을 때만이며, 대상 섹션의 기존 단계가 아닌 ID나 모르는 근거 ID를 적으면 `INVALID_OUTPUT`. `removed_steps`에 적었어도 structure에 남겨 두면 그 단계는 유지한다. 체크리스트 여부만 바뀐 것과 기존 단계의 순서만 바뀐 것은 다른 작성 연산과 같이 사실 변경으로 보지 않는다(순서는 그대로 반영). 되살림·삭제는 개수만 로그(`ai media_writing restored_steps=… removed_steps=…`).
+  - 범위: 새 근무조·섹션, 다른 섹션·근무조 변경, 대상 섹션 삭제는 `INVALID_OUTPUT`(`revision_outside_target` 등, `check_revision_scope` 재사용). 대상 섹션의 제목·분류·근무조는 모델이 바꿔도 서버가 원래 값으로 둔다(사진은 라벨의 근거가 아니다). 대상이 아닌 미확정 항목의 문구도 입력 문구로 되돌린다(`check_revision_scope`는 미확정 항목을 비교하지 않으므로).
+  - 결과가 입력과 같거나 미확정 문구만 달라졌으면 `NO_CHANGE`(revision을 올리지 않는다). `APPLIED`면 `structure`에 대상 섹션만 바뀐 전체 구조가 있다. `summary`는 돌려주지 않는다(검토 요약은 바뀌지 않음).
+- **Fake 기본 응답**: 대상 섹션 끝에 첫 media를 인용하는 단계 하나(`"<title|caption|전사>: 첨부한 자료에 보이는 대로 해요."`)를 붙여 `APPLIED`. `fake.script("write_section_from_media", FakeOutcome.ok({...}))`로 바꾸고, `evidence_ids`가 없는 스크립트 단계는 `auto_cite`가 첫 media ID를 인용한다. `fake.calls_for(...)[i].extra["image_labels"]`로 라벨을 확인할 수 있다.
+- **실측**: `tests/test_ai_media_live.py`(`@pytest.mark.openai`)가 Pillow로 그린 합성 이미지 2장(우유 진열 도식·"마감 후 금고 잠금" 안내문)으로 gpt-6-luna medium을 호출해, 새 단계가 모두 유효한 media ID를 인용하고 보이는 글자를 반영하는지 확인한다.
 
 ### 오류 분류 → 공개 오류
 
@@ -82,6 +147,10 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 3. **업무 상태**: 발화 없음은 재시도하지 않는 `EMPTY_TRANSCRIPT` → 즉시 ERROR `TRANSCRIPTION_FAILED`(빈 답변·지어낸 답변 저장 없음). 발화가 있으면 인식 텍스트 그대로 READY. 텍스트를 일괄로 버리거나 문구 목록으로 지우지 않는다.
 
 실측(2026-10-06, `gpt-transcribe`, `languages=["ko"]`): 무음 WAV·저역 소음(-30 dBFS) WAV → `text:""`, `languages:[]`; 합성 발화 "야간조는 밤 열 시부터…" → 정확한 문장, `languages:[ko]`; 짧은 "네." → `"네."`, `languages:[ko]`. 즉 현재 모델은 무음·소음에서 문장을 만들지 않았고, 2번 규칙은 모델이 바뀌거나 환각할 때의 방어선이다. 속삭임·강한 사투리·다국어 혼용에서 `languages:[]`가 실제 발화에 붙는지는 미검증이다.
+
+### 근거 검색 (RAG, `app.ai.retrieval`·`app.interview.evidence`)
+
+벡터 DB·임베딩 없이 MySQL에 저장된 **같은 인터뷰 세션**의 점주 턴(답변·정정)만 근거 풀로 쓴다(다른 매장 데이터 불가). 턴을 문장 단위 조각으로 나누고 ID는 `<turnId>#<문장번호>`(안정적). 작성 대상(인텐트 질문·기준, 정정 지시·섹션 제목, 초안의 검토 요약·제목·미확정)으로 문자 bigram BM25 순위를 매겨(조사 변형에 강함, 순수 파이썬, 동점은 원래 순서) 상위 k개를 고르고, 대상 인텐트 자체 조각은 항상 먼저 넣는다. 전체는 문자 수 예산(요약·정정 12000자, 초안 16000자)으로 상한한다. 요약은 evidence가 있으면 `dialogue` 대신 evidence(첫 조각에 질문 맥락)를 모델에 보낸다. 재시도 시 같은 입력: 요약과 인텐트 정정은 작업 payload(정정은 접수 시점에 검색해 고정, 검토 재시도도 같은 payload), 초안은 `generation_input_snapshot["evidence"]`에 고정한다. payload에 근거가 없는 이전 정정 작업은 정정 턴 번호까지의 불변 턴으로 execute에서 같은 결과를 다시 만든다.
 
 ### 프롬프트 정책과 인젝션 방어
 
@@ -105,6 +174,8 @@ def test_probe_after_insufficient_answer(api, fake_ai):
     assert fake_ai.calls_for("judge_sufficiency")[0].data["depth"] == 0      # 모델에 보낸 데이터
 ```
 
+Jev는 스크립트한 형식으로 경로가 정해진다. `FakeOutcome.predicates(aspect_2=0.3)`(잘 짜인 Decisions 응답, 이름별 확률·`refuse=`)나 `FakeOutcome.decision(<원문 JSON 또는 body→응답 함수>)`는 Decisions 경로(본문 생성·답 재검증·임계값)를, 기존 `FakeOutcome.ok({"sufficient": ..})`·`raw`·`candidates`는 구조화 출력 경로를 탄다. 큐가 비었거나 `fail`이면 Decisions 경로로 모든 aspect 0.95(충분)를 돌려준다(`on("judge_sufficiency", ...)`로 Responses 기본 응답을 바꿨으면 그 경로). `FakeAiProvider(judge_backend="responses")`는 항상 구조화 출력 경로다. Decisions 호출 기록은 `extra={"backend": "decisions", "body": ...}`를 가진다.
+
 큐가 비면 연산별 기본 응답(충분, 기본 질문 그대로, 답변을 단계로 옮긴 요약, `NO_CHANGE`, 검토 합치기, `NEEDS_OWNER`, 고정 전사 문장)을 돌려준다. `fake_ai.on(op, handler)`로 기본 응답을 바꿀 수 있다. 실제 API 테스트는 `@pytest.mark.openai`로 표시하며 `OPENAI_API_KEY`와 `JIDAN_RUN_OPENAI=1`이 모두 있을 때만 실행된다(`tests/test_ai_live.py`).
 
 ## 3. 작업 실행기 (`app.tasks`)
@@ -126,7 +197,7 @@ lease 만료 RUNNING(재시작·멈춘 호출) → recover_expired()가 재대�
 
 - **heartbeat**: `run_claimed`는 `execute` 동안 별도 스레드에서 `renew_lease(claimed)`를 `lease_seconds / 3`마다 호출한다. lease token 조건부 UPDATE이며 lease를 줄이지 않는다. 살아 있는 worker의 긴 호출은 lease를 넘겨도 회수되지 않고, 프로세스가 죽어 heartbeat가 멈춘 경우에만 마지막 갱신 + `lease_seconds` 뒤 복구된다.
 - **소유권 상실**: 갱신이 0행이면(다른 worker가 회수, 취소) `ctx.lease_lost()`가 참이 된다. 이미 보낸 외부 호출·과금은 되돌릴 수 없으므로, 여러 번 호출하는 `execute`는 다음 호출 전에 `ctx.lease_lost()`를 확인해 멈춘다. 결과는 finalize의 token 검사로 어차피 버려진다.
-- **시작 검증**: 백그라운드 실행기는 시작 시 `validate_task_leases()`로 모든 핸들러에 `lease_seconds ≥ provider_calls × provider.max_call_seconds + 30초`를 요구하고, 아니면 앱 시작을 거부한다. `max_call_seconds`는 OpenAI면 `max(OPENAI_TIMEOUT_SECONDS, OPENAI_TRANSCRIBE_TIMEOUT_SECONDS)`, fallback 모델이 있으면 두 모델의 합이다(SDK 재시도는 0, 실행기 재시도는 새 lease로 별도 claim). heartbeat가 DB 장애로 실패해도 살아 있는 호출이 lease 안에 끝나도록 하는 이중 장치다. 한 `execute`에서 AI를 여러 번 순차 호출하는 핸들러는 `TaskHandler(..., provider_calls=N)`을 선언한다.
+- **시작 검증**: 백그라운드 실행기는 시작 시 `validate_task_leases()`로 모든 핸들러에 `lease_seconds ≥ provider_calls × provider.max_call_seconds + 30초`를 요구하고, 아니면 앱 시작을 거부한다. `max_call_seconds`는 OpenAI면 `max(OPENAI_TIMEOUT_SECONDS, OPENAI_WRITING_TIMEOUT_SECONDS, OPENAI_TRANSCRIBE_TIMEOUT_SECONDS)`(기본 120초), fallback 모델이 있으면 두 모델의 합이다(SDK 재시도는 0, 실행기 재시도는 새 lease로 별도 claim). heartbeat가 DB 장애로 실패해도 살아 있는 호출이 lease 안에 끝나도록 하는 이중 장치다. 한 `execute`에서 AI를 여러 번 순차 호출하는 핸들러는 `TaskHandler(..., provider_calls=N)`을 선언한다.
 - **보장 범위**: 살아 있는 두 worker가 같은 작업의 호출을 동시에 하지 않는다. 호출 도중 프로세스가 죽으면 복구 후 다시 호출한다(at-least-once, 과금 1회 추가 가능).
 
 `kind`는 `TASK_KINDS`(`TRANSCRIPTION`, `INITIAL_QUESTION`, `EVALUATION`, `FOLLOWUP_GENERATION`, `DRAFT_GENERATION`, `REVIEW_UNDERSTANDING`, `REVIEW_CORRECTION`, `DRAFT_CORRECTION`, `QA_ANSWER`) 중 하나다. API의 `processing.kind`와 1:1이다(검토는 `REVIEW_` 접두사).
@@ -187,6 +258,15 @@ register_handler(TaskHandler(kind="EVALUATION", execute=execute, apply=apply, fa
 - `inspect_media(data, "IMAGE" | "AUDIO") -> InspectedMedia(kind, mime_type, data, duration_ms)` 또는 `MediaRejected`(`status_code`, `code`). 순서: 빈 파일 422 → byte 상한 413(정확히 상한 허용) → 실제 형식 415 → 내용(손상 422, 픽셀·길이 초과 413, 애니메이션·영상 트랙 415). 사진은 EXIF 방향 적용 후 메타데이터 없이 재인코딩한 byte를 저장한다. 음성은 원본 그대로이며 길이는 밀리초(올림)다.
 - `read_media_form(request, max_file_bytes=, purposes=)`: `purpose`/`file` multipart를 스트리밍으로 읽고 상한을 넘으면 즉시 413. **#121 질문 미디어 업로드도 같은 함수를 쓰면 된다**(`purposes=("QUESTION_IMAGE", "QUESTION_AUDIO")`, scope `"qa"`, 테이블 `qa_media`, 보관 `QA_IMAGE_TTL` 7일·`QA_AUDIO_TTL` 24시간).
 
+### 영상 (`app.media.video`, MANUAL_VIDEO)
+
+모델은 텍스트·이미지만 받으므로 영상은 원본 그대로 보내지 않는다. 디코딩은 PyAV(`av`, FFmpeg 내장 wheel)로 한다.
+
+- `inspect_video(data) -> InspectedMedia(kind="VIDEO", mime_type, data=원본, duration_ms)`(`inspect_media(data, "VIDEO")`도 같다). MP4·MOV(H.264/HEVC), WebM(VP8/VP9/AV1), ≤100 MiB(`MAX_VIDEO_BYTES`), ≤60초(`MAX_VIDEO_MILLISECONDS`=60500: 계약 문구는 60초, 휴대폰 '1분' 녹화의 60.03초 같은 초과분을 위해 0.5초 여유), 프레임당 ≤4천만 화소(선언·디코딩 크기 모두). 순서와 오류 코드는 사진·음성과 같다: 빈 파일 422 → byte 413 → 실제 형식 415(AVI·MKV·MPEG-TS·HEIC·사진·WAV, 영상 트랙 없는 M4A/WebM 녹음, 다른 코덱) → 내용(잘림·손상 422, 길이·화소·패킷 수 초과 413). 길이는 헤더가 아니라 영상 패킷 타임스탬프로 잰다(헤더 위조 방지). FFmpeg에는 형식을 명시(`mov`/`matroska`)해 메모리에서만 열므로 다른 demuxer(HLS·concat 등 외부 URL·파일을 여는 형식)는 쓰이지 않는다.
+- `digest_video(data) -> VideoDigest(duration_ms, frames, poster, audio, audio_mime)`: 작업 실행기에서 요청 트랜잭션 밖에서 호출한다(프로세스당 동시 1개). 프레임은 길이를 2초당 1장(최대 `MAX_VIDEO_FRAMES`=8)으로 나눈 구간의 가운데 시각에 가장 가까운 프레임이다(키프레임 우선, 키프레임이 목표에서 구간 폭의 1/4보다 멀거나 부족하면 전체 디코딩). 각 프레임은 회전(display matrix) 적용 후 긴 변 ≤1024px JPEG(q85)이며 EXIF·컨테이너 메타데이터(위치·제목)가 없다. `poster`는 그중 하나로, 거의 검은(평균 휘도 < 24)·단색(표준편차 < 8) 프레임을 빼고 가장 선명한(에지 표준편차 최대) 프레임이다. 음성은 첫 오디오 트랙을 16 kHz mono 16-bit WAV로 바꿔 영상 길이에서 자른다. 트랙이 없거나 디지털 무음(`app.ai.silence` 기준)이면 `audio=None`.
+- 보관: 영상 원본은 참조가 있어도 `expires_at`(업로드 24시간)에 정리된다. 영상을 첨부하거나 처리 작업을 넣거나 끝낼 때 `hold_video_bytes(row)`(행 잠금 상태)로 그 시각부터 24시간을 보장한다. 사진·영상은 AI 입력 전용이다(사용자 결정 2026-10-08): 매뉴얼·근무자 화면에는 정리된 텍스트만 남고, 영상이나 영상 프레임은 노출하지 않는다(`poster`는 digest에 남아 있지만 저장·노출하지 않는다).
+- 스키마: `manual_media.kind`에 `VIDEO`를 허용하고 `media_shape`에 `kind = 'VIDEO' AND mime_type IN (VIDEO_MIME_TYPES) AND byte_size <= MAX_VIDEO_BYTES AND duration_ms BETWEEN 1 AND MAX_VIDEO_MILLISECONDS`를 더하는 마이그레이션이 필요하다(상수는 `app.db.models`).
+
 ### 사진 연결 규칙 (반드시 지킬 것)
 
 사진을 답변·검토·초안·게시본에 연결하는 모든 트랜잭션은 다음 순서를 따른다. 삭제 API와 직렬화되어 dangling 참조가 생기지 않는다.
@@ -232,7 +312,7 @@ turn.input_method, turn.transcription_id, turn.content = "VOICE", row.id, text
 
 ### 보관 정리
 
-`purge_media_content()`(`PERIODIC_JOBS`의 `media-retention`, 5분 주기): 삭제 tombstone 즉시, 미첨부 24시간, 음성 원본은 전사 종료 24시간 뒤(전사 중이면 미룸), 사진은 참조가 있는 동안 보존. DB 표시를 먼저 commit하고 byte를 지우며 `sweep_orphan_files()`가 고아 파일을 지운다. 행·전사 텍스트·답변은 남는다.
+`purge_media_content()`(`PERIODIC_JOBS`의 `media-retention`, 5분 주기): 삭제 tombstone 즉시, 미첨부 24시간, 음성 원본은 전사 종료 24시간 뒤(전사 중이면 미룸), 사진·영상은 참조가 있는 동안 보존. 미디어 작성의 참조는 작업 ID에 귀속되며 성공·최종 실패·취소 후 해제한다. 마지막 참조 해제 후 24시간 유예를 주고, 자동 재시도 대기 중에는 참조를 유지한다. DB 표시를 먼저 commit하고 byte를 지우며 `sweep_orphan_files()`가 고아 파일을 지운다. 행·전사 텍스트·답변은 남는다.
 
 ## 5. 스키마 요약 (0032~0035)
 
@@ -265,3 +345,5 @@ turn.input_method, turn.transcription_id, turn.content = "VOICE", row.id, text
 - 레이트 리밋(429)은 이 범위에서 구현하지 않았다.
 
 Fast mode는 Responses 요청의 `service_tier="fast"`로 지정한다. `priority`는 공식 별칭이며, 프로젝트 설정에 따르려면 `auto`, 표준 처리는 `default`를 명시한다. reasoning effort 기본 `low`와는 별도 설정이다. 근거: [OpenAI Fast mode 가이드](https://developers.openai.com/api/docs/guides/fast-mode).
+
+PR170 통합 시 근거 검색이 실행되어 `evidence=[]`인 초안 요청은 레거시의 근거 미지정 요청과 구분한다. 빈 검색에서도 신규 지시·시간은 인용 검증을 우회하지 못하며, 기존 단계 원문과 검토 시간은 유지한다. 최신 카드·답변 접수 스냅샷·선택 사진 후처리 및 배포된 0042/0043는 그대로 사용한다.

@@ -48,4 +48,4 @@ def test_requests_authentication_and_success_responses_keep_the_approved_contrac
 
 def test_schema_behavior_and_version_match_the_recorded_contract():
     assert _digest(SPEC["components"]["schemas"]) == BASELINE["schemasHash"]
-    assert SPEC["info"]["version"] == BASELINE["localVersion"] == "0.11.0"
+    assert SPEC["info"]["version"] == BASELINE["localVersion"] == "0.12.0"

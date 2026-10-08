@@ -360,6 +360,6 @@ def test_exemptions_point_at_real_operations():
 
 
 def test_the_matrix_is_not_empty():
-    assert len(OPERATIONS) == 102
+    assert len(OPERATIONS) == 103  # 0.12.0 adds review media-writing
     assert sum(applies(op, "no-session") for op in OPERATIONS) >= 90
     assert MYSQL_SUBSET

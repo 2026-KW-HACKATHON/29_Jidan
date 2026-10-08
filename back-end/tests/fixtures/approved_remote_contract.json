@@ -1,8 +1,8 @@
 {
   "approvedRemoteSha": "5fd6896955ca9133c5b8967485438dd86eceefc4",
-  "localVersion": "0.11.0",
-  "policy": "Preserve all remote response declarations; user approved 25 additions, 2026-10-07",
-  "schemasHash": "d4e140653eb6d6fee72fc827e177879cd3d66a83ff9c927200aaa489b4435790",
+  "localVersion": "0.12.0",
+  "policy": "Preserve all remote response declarations; user approved 25 additions, 2026-10-07; 0.12.0 (2026-10-08, media writing): one new operation writeManualInterviewSectionFromMedia and enum-extending schema changes only (MANUAL_VIDEO, MEDIA_WRITING, mediaIds request bodies, draft correction input MEDIA); no existing response, request or success shape removed",
+  "schemasHash": "f18df310f80c69cf8f54def56d91a87abd5dded6373a3dfd32c42cd6ed65c5cd",
   "operations": [
     {
       "operationId": "startGoogleLogin",
@@ -1870,6 +1870,26 @@
       ],
       "requestSecurityHash": "880748e7b87f8348b8f3e9d64cfca462123e31188c1bc255fbfa840f606877de",
       "successResponseHash": "69fdf38fa891026e170d465ca94dc3a12dcb757c3a55d6c348e0417bbaa101d7"
+    },
+    {
+      "operationId": "writeManualInterviewSectionFromMedia",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/intents/{intentId}/review/media-writing",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "031c882a93f2c17e0c86ec84a39393b91f18bc97e4eeb251698e17fe869d3f94",
+      "successResponseHash": "57f385b2564ad19a206cf1fdd412aa560eaf33fdc6a31dd4935a060b3380217d"
     }
   ]
 }

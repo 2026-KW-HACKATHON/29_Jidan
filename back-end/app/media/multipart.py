@@ -46,8 +46,11 @@ def _too_large() -> ApiError:
     return ApiError(413, ErrorCode.MEDIA_TOO_LARGE, "파일 크기 또는 음성 길이가 너무 큽니다.")
 
 
-async def read_media_form(request: Request, *, max_file_bytes: int,
-                          purposes: tuple[str, ...]) -> UploadForm:
+async def read_media_form(request: Request, *, max_file_bytes: int, purposes: tuple[str, ...],
+                          purpose_limits: dict[str, int] | None = None) -> UploadForm:
+    """`max_file_bytes` bounds every file; `purpose_limits` (media-B, 0.12.0) lowers it per
+    purpose once a valid `purpose` part has arrived before the file (clients send it first), so
+    a photo stops at its own limit even though the video limit is larger."""
     content_type = request.headers.get("content-type", "")
     mime, params = parse_options_header(content_type)
     boundary = params.get(b"boundary")
@@ -95,7 +98,11 @@ async def read_media_form(request: Request, *, max_file_bytes: int,
             return
         buffer = parts[name]
         buffer += data[start:end]
-        cap = max_file_bytes if name == "file" else MAX_PURPOSE_BYTES
+        cap = MAX_PURPOSE_BYTES
+        if name == "file":
+            cap = max_file_bytes
+            if purpose_limits and "purpose" in parts and name != "purpose":
+                cap = min(cap, purpose_limits.get(bytes(parts["purpose"]).decode("utf-8", "replace"), cap))
         if len(buffer) > cap:
             if name == "file":
                 raise _TooLarge()

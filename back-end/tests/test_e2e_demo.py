@@ -65,3 +65,13 @@ def test_fake_kakao_still_rejects_an_unknown_address():
         documents = client.get(KAKAO_HOST + "/v2/local/search/address.json",
                                params={"query": "서울 노원구 광운로 21"}).json()["documents"]
     assert documents == []
+
+
+
+def test_server_environment_enables_guidance_with_the_production_parser(monkeypatch):
+    from app.interview.settings import guidance_responses_enabled
+    from e2e.demo_scenario import server_env
+
+    environment, _password = server_env("http://127.0.0.1:8000", 1025)
+    monkeypatch.setenv("INTERVIEW_GUIDANCE_RESPONSES", environment["INTERVIEW_GUIDANCE_RESPONSES"])
+    assert guidance_responses_enabled() is True

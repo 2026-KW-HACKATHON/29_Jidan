@@ -1,6 +1,6 @@
 """Owner manual media and transcription API (#119; openapi tag 매뉴얼 미디어).
 
-    POST   /api/stores/{storeId}/manual/media                       upload a photo or recording
+    POST   /api/stores/{storeId}/manual/media                       upload a photo, video or recording
     DELETE /api/stores/{storeId}/manual/media/{mediaId}             delete an unreferenced file
     GET    /api/stores/{storeId}/manual/media/{mediaId}/content     protected photo bytes
     POST   /api/stores/{storeId}/manual/transcriptions              start / retry transcription
@@ -9,6 +9,9 @@
 Owners need an ACTIVE OWNER session, ownership of the store and APPROVED status on every
 request (app.store_access). The photo endpoint also serves workers with a currently valid
 store access, but only photos of the store's current published version.
+
+Videos (MANUAL_VIDEO, 0.12.0) are AI input only (section media writing): never attached, never
+served. Like any upload they are purged 24 h after upload unless a media-writing task holds them.
 """
 
 import hashlib
@@ -26,6 +29,9 @@ from app.auth import ROLE_OWNER, CurrentMember, CurrentOwner, DbSession
 from app.csrf import CsrfOwner
 from app.db import new_uuid, utcnow
 from app.db.models import (
+    MAX_AUDIO_BYTES,
+    MAX_IMAGE_BYTES,
+    MAX_VIDEO_BYTES,
     ManualMedia,
     ManualPhotoAttachment,
     MediaTranscription,
@@ -60,9 +66,13 @@ from app.worker_stores import published_version_id
 router = APIRouter()
 logger = logging.getLogger("jidan.media")
 
-PURPOSE_KIND = {"MANUAL_PHOTO": "IMAGE", "INTERVIEW_AUDIO": "AUDIO"}
+PURPOSE_KIND = {"MANUAL_PHOTO": "IMAGE", "INTERVIEW_AUDIO": "AUDIO", "MANUAL_VIDEO": "VIDEO"}
 KIND_PURPOSE = {kind: purpose for purpose, kind in PURPOSE_KIND.items()}
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+# The stream stops at the purpose's own limit once the purpose part has arrived (413 at once),
+# else at the largest one; inspection enforces each limit again.
+MAX_UPLOAD_BYTES = MAX_VIDEO_BYTES
+PURPOSE_UPLOAD_BYTES = {"MANUAL_PHOTO": MAX_IMAGE_BYTES, "INTERVIEW_AUDIO": MAX_AUDIO_BYTES,
+                        "MANUAL_VIDEO": MAX_VIDEO_BYTES}
 MANUAL_NOT_FOUND = "매뉴얼 리소스를 찾을 수 없습니다."
 
 MediaIdPath = Annotated[str, Path(alias="mediaId", pattern=UUID_PATTERN)]
@@ -132,10 +142,11 @@ def _authorize_upload(db: Session, owner_id: str, store_id: str) -> None:
 async def upload_manual_media(
     request: Request, store_id: StoreIdPath, owner: CsrfOwner, db: DbSession, key: IdempotencyKey,
 ) -> Response:
-    # Authorization before reading the body: a stranger cannot make us buffer 20 MiB. The
+    # Authorization before reading the body: a stranger cannot make us buffer 100 MiB. The
     # read-only transaction ends here so no snapshot stays open while the upload streams in.
     await run_in_threadpool(_authorize_upload, db, owner.user_id, store_id)
-    form = await read_media_form(request, max_file_bytes=MAX_UPLOAD_BYTES, purposes=tuple(PURPOSE_KIND))
+    form = await read_media_form(request, max_file_bytes=MAX_UPLOAD_BYTES, purposes=tuple(PURPOSE_KIND),
+                                 purpose_limits=PURPOSE_UPLOAD_BYTES)
     # The canonical path, not request.url.path: a retry spelling the store UUID in another
     # letter case is the same request and must replay, not collide as another endpoint.
     path = f"/api/stores/{normalize_uuid(store_id)}/manual/media"

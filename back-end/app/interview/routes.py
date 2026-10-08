@@ -11,6 +11,7 @@
     POST .../intents/{intentId}/review/confirmations    confirm (never a progress gate)  200
     POST .../intents/{intentId}/review/corrections      correct the summary              202
     POST .../intents/{intentId}/review/retries          resume a failed summary task     202
+    POST .../intents/{intentId}/review/media-writing    write a section from photos/videos 202
     PUT  .../intents/{intentId}/review/photos           replace one photo list           200
 
 Every request re-checks the ACTIVE OWNER session, store ownership and APPROVED status. Writes
@@ -67,7 +68,8 @@ from app.interview.common import (
     state_conflict,
     turn_body,
 )
-from app.interview.content import photo_ids
+from app.interview.content import photo_ids, snapshot_from_content
+from app.interview.evidence import correction_evidence, media_writing_evidence
 from app.interview.flow import (
     enqueue_base_question,
     enqueue_evaluation,
@@ -77,6 +79,16 @@ from app.interview.question_set import CURRENT_QUESTION_SET_ID
 from app.jobs.state import begin_transition
 from app.manual_content import active_draft, store_manual
 from app.manual_drafts import ensure_no_running_correction
+from app.manual_media_writing import (
+    MAX_MEDIA_IDS,
+    MEDIA_HOLDER,
+    MediaWritingRejected,
+    evidence_query,
+    hold_media,
+    lock_media_for_writing,
+    release_media,
+    relock_for_retry,
+)
 from app.media.references import (
     MediaLinkError,
     add_snapshot_refs,
@@ -170,6 +182,25 @@ class PhotoAttachment(_Body):
     mediaId: Uuid
     caption: Annotated[str | None, Field(max_length=300, strict=True)]
     title: Annotated[str, Field(min_length=1, max_length=100, pattern=r"\S", strict=True)]
+
+
+class MediaWritingBody(_Body):
+    expectedRevision: Revision
+    sectionId: Uuid
+    mediaIds: Annotated[list[Uuid], Field(min_length=1, max_length=MAX_MEDIA_IDS)]
+
+    @model_validator(mode="after")
+    def _distinct(self):
+        _unique(self.mediaIds, "mediaIds")
+        return self
+
+
+def media_writing_error(error: MediaWritingRejected, field: str = "mediaIds") -> ApiError:
+    if error.reason == "not_found":
+        return not_found()
+    message = ("영상은 한 번에 2개까지 보낼 수 있어요." if error.reason == "too_many_videos"
+               else "사진이나 영상만 보낼 수 있어요.")
+    return _validation(field, message)
 
 
 class PhotoUpdate(_Body):
@@ -501,11 +532,16 @@ def correct_manual_interview_understanding(store_id: StoreIdPath, session_id: Se
         if review.confirmed_at is not None:
             previous = {"at": review.confirmed_at.isoformat(), "by": review.confirmed_by_owner_id}
         # The request is rebuilt in execute from the review (frozen while PROCESSING) and this turn,
-        # so a large review never exceeds the task payload limit. Enqueue first: the row may only
-        # become PROCESSING together with its task (CHECK).
+        # so a large review never exceeds the task payload limit. The evidence (bounded by its
+        # character budget) is retrieved now and frozen in the payload, like a summary's, so every
+        # attempt and review retry cites the same chunks. Enqueue first: the row may only become
+        # PROCESSING together with its task (CHECK).
+        evidence = correction_evidence(db, session.id, intent.intent_key, turn,
+                                       snapshot_from_content(review.ready_content))
         task_id = enqueue(
             db, "REVIEW_CORRECTION", session.id,
-            {"intentId": intent.id, "correctionTurnId": turn.id, "previousConfirmation": previous},
+            {"intentId": intent.id, "correctionTurnId": turn.id, "previousConfirmation": previous,
+             "evidence": [chunk.model_dump(mode="json") for chunk in evidence]},
             input_revision=review.revision + 1, attempt=1,
         )
         review.confirmed_at = review.confirmed_by_owner_id = None
@@ -524,7 +560,7 @@ def retry_manual_intent_review(store_id: StoreIdPath, session_id: SessionIdPath,
                                body: RevisionCommand, owner: CsrfOwner, db: DbSession,
                                key: IdempotencyKey) -> Response:
     def work() -> IdempotentResult:
-        _store, session = lock_session(db, owner.user_id, store_id, session_id)
+        store, session = lock_session(db, owner.user_id, store_id, session_id)
         _progress, _intent, review = _review_or_409(db, session, intent_id, lock=True)
         if _reviews_frozen(session) or review.status != "ERROR":
             raise state_conflict()
@@ -534,6 +570,9 @@ def retry_manual_intent_review(store_id: StoreIdPath, session_id: SessionIdPath,
         attempt = review.processing_attempt + 1
         task_id = enqueue(db, "REVIEW_" + review.processing_kind, session.id, failed.payload,
                           input_revision=review.revision + 1, attempt=attempt)
+        if review.processing_kind == "MEDIA_WRITING":  # each attempt owns its own references
+            rows = relock_for_retry(db, store.id, failed.payload["mediaIds"])
+            hold_media(db, MEDIA_HOLDER, task_id, rows, intent_id=review.intent_id)
         review.status, review.error_code = "PROCESSING", None
         review.revision += 1
         review.processing_task_id, review.processing_attempt = task_id, attempt
@@ -542,6 +581,52 @@ def retry_manual_intent_review(store_id: StoreIdPath, session_id: SessionIdPath,
 
     return _idempotent(db, owner, key, store_id, _review_path(store_id, session_id, intent_id, "retries"),
                        {"expectedRevision": body.expectedRevision}, work)
+
+
+@router.post(R + "/media-writing", status_code=202)
+def write_manual_interview_section_from_media(store_id: StoreIdPath, session_id: SessionIdPath,
+                                              intent_id: IntentIdPath, body: MediaWritingBody,
+                                              owner: CsrfOwner, db: DbSession, key: IdempotencyKey) -> Response:
+    """Write one review section's steps from the given photos/videos (0.12.0): AI input only, the
+    files are not attached. Same PROCESSING/READY/ERROR cycle, locks and retries as a correction,
+    without a correction turn (app.manual_media_writing)."""
+    section_id = normalize_uuid(body.sectionId)
+    media_ids = [normalize_uuid(m) for m in body.mediaIds]
+
+    def work() -> IdempotentResult:
+        store, session = lock_session(db, owner.user_id, store_id, session_id)
+        _progress, intent, review = _changeable_review(db, session, intent_id, body.expectedRevision)
+        section = next((s for s in review.ready_content["sections"] if s["id"] == section_id), None)
+        if section is None:
+            raise _validation("sectionId", "이 요약에 있는 업무를 선택해 주세요.")
+        try:
+            rows = lock_media_for_writing(db, store.id, media_ids)
+        except MediaWritingRejected as error:
+            raise media_writing_error(error) from None
+        previous = None
+        if review.confirmed_at is not None:
+            previous = {"at": review.confirmed_at.isoformat(), "by": review.confirmed_by_owner_id}
+        # The owner's words about the section are retrieved now and frozen with the request, so
+        # every attempt and review retry cites the same chunks (like a correction's evidence).
+        evidence = media_writing_evidence(db, session.id, evidence_query(section), intent_key=intent.intent_key)
+        task_id = enqueue(
+            db, "REVIEW_MEDIA_WRITING", session.id,
+            {"intentId": intent.id, "sectionId": section_id, "mediaIds": media_ids,
+             "previousConfirmation": previous, "evidence": [chunk.model_dump(mode="json") for chunk in evidence]},
+            input_revision=review.revision + 1, attempt=1,
+        )
+        release_media(db, MEDIA_HOLDER, session.id, intent_id=intent.id)  # an earlier request's leftovers
+        hold_media(db, MEDIA_HOLDER, task_id, rows, intent_id=intent.id)
+        review.confirmed_at = review.confirmed_by_owner_id = None
+        review.status, review.error_code = "PROCESSING", None
+        review.revision += 1
+        review.processing_kind, review.processing_task_id, review.processing_attempt = "MEDIA_WRITING", task_id, 1
+        db.flush()
+        return IdempotentResult(202, review_body(review))
+
+    return _idempotent(db, owner, key, store_id, _review_path(store_id, session_id, intent_id, "media-writing"),
+                       {"expectedRevision": body.expectedRevision, "sectionId": section_id, "mediaIds": media_ids},
+                       work)
 
 
 @router.put(R + "/photos")

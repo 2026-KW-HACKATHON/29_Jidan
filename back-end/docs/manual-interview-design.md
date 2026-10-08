@@ -194,7 +194,7 @@ OpenAPI lint, 모든 요청/응답 예시의 JSON Schema 검사, 상태별 필�
 
 같은 업무 항목 ID는 질문 전환·재조회에서도 유지하며 카드 ID는 배열 내, 항목 ID는 카드 내 유일하다. 한 질문에는 진행 체크리스트를 최대 하나만 제공한다. 복수 업무에 대한 질문은 CURRENT 없이 목록 전체를 대상으로 할 수 있다. 카드 변경도 세션 revision을 올리고 질문과 함께 원자적으로 저장·조회한다. CURRENT와 질문 대상의 일치, 안정적인 ID·중복 ID·다중 진행 카드 제한은 서버 검증 책임이며 JSON Schema만으로 보장하지 않는다.
 
-호환성: 선택 필드이므로 새 스키마는 기존 응답도 허용한다. 그러나 기존 프론트의 additionalProperties:false 검증기는 새 응답을 거절하므로 무조건적인 하위 호환 변경은 아니다. 프론트 계약 스냅샷·검증기·렌더러를 먼저 갱신하고 서버에서 필드 송출을 활성화한다. 기존 멱등 응답은 수정하지 않으며 필드가 없는 과거 응답에서는 카드를 숨긴다. 신규 필드의 실제 송출, DB 저장, UI 구현은 #120/#131 후속 범위다.
+호환성: 선택 필드이므로 새 스키마는 기존 응답도 허용한다. 그러나 기존 프론트의 additionalProperties:false 검증기는 새 응답을 거절하므로 무조건적인 하위 호환 변경은 아니다. 프론트 계약 스냅샷·검증기·렌더러를 먼저 갱신하고 서버에서 필드 송출을 활성화한다. 기존 멱등 응답은 수정하지 않으며 필드가 없는 과거 응답에서는 카드를 숨긴다. 신규 필드의 실제 송출, DB 저장, UI 구현은 #120/#131 후속 범위다. 서버 저장·검증·송출 구현과 송출 스위치(`INTERVIEW_GUIDANCE_RESPONSES`)는 [백엔드 README](../README.md#점주-ai-인터뷰-120)에 정리한다.
 
 ### 사진 추천과 실제 첨부 대상
 
@@ -204,9 +204,33 @@ PHOTO_SUGGESTIONS는 추천 목록과 attachmentTarget을 제공한다. READY �
 
 ### 답변 처리 중 질문 복원
 
-lastAnsweredQuestion은 EVALUATION 처리 중 또는 해당 평가의 ERROR에서만 제공하는 선택적 표시 스냅샷이다. POST answers의 접수 응답과 GET 세션 응답에서 같은 질문 ID·카드·항목을 제공한다. 답변 접수와 같은 트랜잭션에서 질문·카드를 복사하고 answered=true로 저장한다. 현재 답변 가능한 질문은 기존 questions 배열만 사용하며 처리 중에는 계속 빈 배열이다. 스냅샷을 다시 답변 대상으로 제출하지 않는다.
+lastAnsweredQuestion은 EVALUATION 처리 중 또는 해당 평가의 ERROR에서만 제공하는 선택적 표시 스냅샷이다. POST answers의 접수 응답과 GET 세션 응답에서 같은 질문 ID·카드·항목을 제공한다. 답변 접수와 같은 트랜잭션에서 질문·카드를 고정하고 answered=true로 제공한다(구현: 질문 행과 그 안내는 작성 후 바뀌지 않으므로 복사본 대신 평가 중인 질문 행을 그대로 쓴다. 결과는 접수 당시 스냅샷과 같다). 현재 답변 가능한 질문은 기존 questions 배열만 사용하며 처리 중에는 계속 빈 배열이다. 스냅샷을 다시 답변 대상으로 제출하지 않는다.
 
 스냅샷은 직전 답변 questionId 및 currentIntentId와 일치해야 하고 처리 재시도에도 유지한다. 질문 스냅샷의 카드는 접수 당시 상태를 보존하며 CURRENT를 자동 COMPLETED로 바꾸지 않는다. 새 질문·다음 인텐트 질문 생성·초안 생성으로 전환하면 스냅샷은 null 또는 생략한다. 평가 결과로 바뀌는 목록은 새 질문 응답에 반영한다. 과거 응답에 스냅샷이 없으면 새로고침 시 일반 처리 안내를 표시하고 임의 질문을 복원하지 않는다. 동일 revision에서 서로 다른 질문·카드·스냅샷을 반환하지 않는다. 이 교차 리소스 정합성은 서버 구현 테스트가 필요하다.
+
+## 사진·영상 기반 작성 (0.12.0)
+
+점주가 올린 사진·영상에서 **AI가 정보를 읽어** 검토(인텐트 요약)·초안의 한 섹션 단계를 작성하거나 보강한다. 사용자 결정(2026-10-08): "사진 나오는 건 빼라. 정보만 나오면 된다." 사진·영상은 AI 입력일 뿐이며 검토·초안·게시본·근무자 화면에는 **텍스트 단계만** 남는다. 파일을 섹션에 첨부하거나 대표 사진을 만들지 않고, 기존 사진 첨부 계약(`photos`, `structurePhotos`, `photoIds`)은 바뀌지 않는다. 인터뷰 질문 흐름도 그대로다.
+
+사진·영상에서 읽은 내용은 점주 발화와 같은 근거로 쓰되 단계별 인용 검증은 유지한다. 인용 가능한 ID에 미디어 ID(`media:<id>`, 영상 프레임 `media:<id>@<ms>`, 영상 음성 `media:<id>#transcript`)가 추가될 뿐이며 근거 없는 새 단계는 버리고 기존 단계는 근거 없이 지우지 않는다. 대상 섹션 밖과 검토 요약 문장은 바꾸지 않는다. 단계별 출처 표시는 두지 않는다(근거 ID 미저장).
+
+| 메서드·경로 | 역할 |
+| --- | --- |
+| `POST M/media` purpose `MANUAL_VIDEO` | MP4(H.264/HEVC)·MOV·WebM, 100 MiB·60초 이하. 사진·음성과 같은 검사·오류 규칙 |
+| `POST R/media-writing` | `{expectedRevision, sectionId, mediaIds[1..10]}` → 202, 검토 PROCESSING(`processing.kind=MEDIA_WRITING`). 실패는 검토 ERROR, 기존 `R/retries`로 재시도 |
+| `POST M/draft/corrections` `input={method: MEDIA, mediaIds}` | 초안 섹션 작성. 기존 초안 정정(0.10.0) 리소스·잠금·조회·재시도를 그대로 쓰며 `target.kind=SECTION`만 허용 |
+
+`mediaIds`는 같은 매장의 MANUAL_PHOTO·MANUAL_VIDEO이며 배열 순서대로 AI에 보여 준다(영상은 프레임 시간순 → 전사). 영상은 요청당 2개까지(작업 lease: 전사 2회 + 작성 1회, 900초). 다른 매장·삭제·정리된 파일은 404, 음성 파일·영상 3개 이상·중복 ID는 422, 섹션이 이 검토에 없으면 422(sectionId)이며 새 오류 코드는 없다.
+
+초안 쪽은 새 endpoint 대신 정정 리소스를 확장했다. 초안당 RUNNING 하나, 처리 중 편집·게시 409, 결과 적용 시 versionId·baseRevision·작업 ID 재검사, 재시도 규칙이 모두 같아 프론트는 하나의 비동기 패턴만 다룬다. 검토 쪽은 정정이 섹션 단위가 아니어서 별도 operation을 두었지만 처리 상태·재시도·잠금·revision 규칙은 정정과 같다. 결과 화면의 확인·수정·재시도는 기존 confirmations·corrections·retries를 쓴다.
+
+작업 실행: 사진은 긴 변 2048px JPEG로 줄이고, 영상은 프레임 샘플과 음성 전사(실패하면 프레임만)로 바꿔 넣는다. 이미지 16장·32 MiB, 항목 20개 상한을 넘는 것은 요청 순서대로 뺀다. 제목·설명은 없다(첨부 메타데이터가 아니므로). 사진·영상에서 읽을 것이 하나도 없으면 재시도 불가 실패다.
+
+보관: 작업이 대기·실행 중인 동안 사진·영상을 snapshot 참조로 잡아 두고 삭제 요청은 409 MEDIA_IN_USE다. 24시간 넘게 대기하거나 자동 재시도를 위해 QUEUED로 돌아가도 원본은 정리하지 않는다. 참조는 작업 ID별로 분리하므로 오래된 작업의 취소가 후속 작업의 파일을 해제하지 않는다. 성공·최종 실패·취소 시 참조를 풀고 마지막 참조가 사라지면 미첨부 파일 규칙대로 24시간 유예를 준다. 수동 재시도는 남아 있는 파일을 새 작업 ID로 다시 잡는다. DB 변경은 migration 0044(`manual_media` VIDEO 형식, snapshot 참조 종류 MEDIA_WRITING, 정정 입력 MEDIA, 작업 종류 REVIEW_MEDIA_WRITING·DRAFT_MEDIA_WRITING, 검토 처리 MEDIA_WRITING)이며 새 열은 없다.
+
+작성 범위: 모델이 같은 근무조·섹션을 다른 순서로 반환해도 원래 배열 순서를 유지한다. 대상 섹션의 단계 순서만 작성 결과를 따른다. SQLite의 0044 테이블 재구성은 외래 키 검사를 트랜잭션 종료까지 지연하고 재구성된 참조를 검사한다. 중간 실패는 스키마·데이터를 함께 롤백하며, MySQL은 기존 CHECK 변경 방식을 유지한다.
+
+Figma 근거: [섹션 사진 첨부](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-2979)·[777-3041](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3041)·[777-3009](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3009)와 [가져오기](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3360)(카메라·앨범·파일)는 파일을 고르는 흐름의 근거다. [삭제](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3464) "사진만 삭제돼요. 작성한 업무 내용은 그대로 유지돼요."에 따라 파일이 정리돼도 작성한 단계는 남는다. 영상 업로드·AI 자동 작성 화면은 Figma에 없어 계약은 최소로 추가했다.
 
 
 ## 구조화 질문과 요약 후 사진 추천의 처리 경계 (#174, A01)

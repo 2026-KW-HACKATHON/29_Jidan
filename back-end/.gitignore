@@ -8,3 +8,6 @@ htmlcov/
 
 # Uploaded manual/Q&A media stored locally (MEDIA_ROOT default)
 .media/
+
+# Interview evaluation reports (e2e.interview_eval); may quote owner answers and model output
+.e2e-reports/

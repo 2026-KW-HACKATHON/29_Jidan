@@ -583,7 +583,7 @@ def test_evaluation_apply_failure_rolls_back_aspects_and_progress(ctx, fake_ai, 
     fake_ai.script("judge_sufficiency", FakeOutcome.ok(INSUFFICIENT))
     judgement = fake_ai.judge_sufficiency(SufficiencyRequest.model_validate(task_ctx.payload["request"]))
 
-    def fail_after_evaluation_flush(*args):
+    def fail_after_evaluation_flush(*args, **kwargs):
         raise RuntimeError("injected progress failure")
 
     monkeypatch.setattr(tasks, "apply_judgement", fail_after_evaluation_flush)

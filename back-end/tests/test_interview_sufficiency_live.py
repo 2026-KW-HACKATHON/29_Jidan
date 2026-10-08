@@ -50,15 +50,18 @@ NOT_APPLICABLE = turns(
 def provider(monkeypatch):
     provider = get_ai_provider()
     calls = []
-    original = provider._complete
 
-    def counted(*args, **kwargs):
-        calls.append(args[0])
-        if len(calls) > MAX_CALLS:
-            raise AssertionError("live call budget exceeded")
-        return original(*args, **kwargs)
+    def counting(original):
+        def counted(*args, **kwargs):
+            calls.append(original.__name__)
+            if len(calls) > MAX_CALLS:
+                raise AssertionError("live call budget exceeded")
+            return original(*args, **kwargs)
+        return counted
 
-    monkeypatch.setattr(provider, "_complete", counted)
+    # Jev goes to `_decide` on the Decisions backend (default) and `_complete` on Responses.
+    for hook in ("_complete", "_decide"):
+        monkeypatch.setattr(provider, hook, counting(getattr(provider, hook)))
     yield provider
     print(f"\nlive judge_sufficiency calls={len(calls)}")
 
@@ -70,7 +73,8 @@ def test_live_jev_keeps_missing_information_missing(provider):
                 intent=CLOSING, dialogue=dialogue, depth=len(dialogue) - 1))
             assert judgement.sufficient is False, name
             assert judgement.missing_aspects, name
-            assert judgement.probability < 0.5, name
+            if provider.judge_backend == "responses":  # Decisions: a combined probability (decisions.py)
+                assert judgement.probability < 0.5, name
     control = provider.judge_sufficiency(SufficiencyRequest(intent=CLOSING, dialogue=NOT_APPLICABLE, depth=0))
     print(f"\nnot-applicable control: sufficient={control.sufficient} aspects={len(control.missing_aspects)}")
 

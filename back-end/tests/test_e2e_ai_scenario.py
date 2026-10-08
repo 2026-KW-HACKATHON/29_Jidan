@@ -5,6 +5,7 @@ import pytest
 
 from app.ai.contracts import (
     DialogueTurn,
+    EvidenceChunk,
     IntentBrief,
     IntentSummaryRequest,
     PhotoSuggestionsRequest,
@@ -74,7 +75,8 @@ def test_pos_questions_cite_the_pos_section_and_others_need_the_owner(fake):
 
 def test_revision_rewrites_the_last_step_or_moves_the_first_shift(fake):
     revised = fake.revise_structure(StructureRevisionRequest(current=manual(POS), instruction="사진을 보내요.",
-                                                             require_manual_level=False))
+                                                             require_manual_level=False, evidence=(
+        EvidenceChunk(id="c#1", intent_key="COMMON_TASKS", text="사진을 보내요."),)))
     assert [s.instruction for s in revised.structure.sections[0].steps] == ["정산을 눌러요.", "사진을 보내요."]
     assert revised.summary is None
     shifts = StructureSnapshot.model_validate({"shifts": [{"id": "h-1", "name": "오픈조", "start_time": "09:00",
@@ -134,6 +136,15 @@ def test_build_from_env(monkeypatch):
     with pytest.raises(ValueError):
         ai_scenario.build_from_env()
 
+
+def test_router_delegates_every_ai_operation():
+    """A new operation must be routed too; otherwise the base class calls the router's
+    `_complete`, which raises (write_section_from_media was missing at first)."""
+    from app.ai.fake import OPERATIONS
+    from app.ai.provider import AiProvider
+
+    for operation in OPERATIONS:
+        assert getattr(ai_scenario.RoutedAiProvider, operation) is not getattr(AiProvider, operation), operation
 
 def test_photo_operation_defaults_to_fake_without_spending_live_budget(tmp_path):
     provider, live, counter = routed(tmp_path, ops=ai_scenario.DEFAULT_LIVE_OPS)

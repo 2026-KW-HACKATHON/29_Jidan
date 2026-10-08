@@ -511,6 +511,7 @@ runtime 이미지에는 `tests/`와 `e2e/`가 들어가지 않는다(`runtime-so
 | `OPENAI_SERVICE_TIER` | 기본 `fast`; `auto/default/fast/priority` 허용. Responses 주 모델·fallback에 적용, STT 제외 |
 | `OPENAI_REASONING_EFFORT`, `OPENAI_TIMEOUT_SECONDS`, `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 기본 `low`, 60, 120 |
 | `MEDIA_ROOT` | 미디어 저장 디렉터리 |
+| `INTERVIEW_GUIDANCE_RESPONSES` | `true`이면 인터뷰 응답에 질문 안내(`guidance`·`guidanceCards`·`lastAnsweredQuestion`)를 포함. 기본은 생략(프론트 계약 갱신 후 켬) |
 | `TASK_RUNNER_MODE`, `TASK_RUNNER_WORKERS`, `TASK_RUNNER_POLL_SECONDS` | `background`(기본)/`manual`, 양의 정수(기본 2), 유한한 양수 초(기본 2). 잘못된 숫자 설정은 시작 시 거부. 실행기 스레드는 `BACKGROUND_JOBS=off`여도 뜨지 않음 |
 
 ## 점주 AI 인터뷰 (#120)
@@ -521,6 +522,8 @@ runtime 이미지에는 `tests/`와 `e2e/`가 들어가지 않는다(`runtime-so
 - 전역 잠금 순서는 `store_manuals` → 세션 → 버전 → 검토다(#118의 `store_manuals` → 정정 → 버전과 같은 순서). 초안을 바꾸는 경로(시작·completion·세션 재시도·초안 생성 apply/fail)는 `store_manuals`를 가장 먼저 잡고 READ COMMITTED로 시작한다. 단, 시작 경로만 매장 첫 시작을 직렬화하려고 `stores` → `store_manuals` 순서로 잡는다. `store_manuals`를 쥔 채 `stores`를 잠그지 말 것. 인터뷰만 바꾸는 경로(답변·검토·질문/Jev/요약 작업)는 세션 행 `FOR UPDATE`를 첫 문장으로 둔다. 세션 revision은 질문 진행, 검토 revision은 검토별로 독립이다.
 - 새 인터뷰 시작은 `store_manuals` 잠금 아래에서 기존 초안을 확인하고 `app.manual_drafts.ensure_no_running_correction`으로 정정 중 409를 먼저 판정한다. 초안 내용은 `app.manual_editing.prepare_content`/`write_initial_content`로 기록한다(revision 1 유지).
 - 근무 구조 외 인텐트의 요약 작업은 AI 호출 직전에 다른 검토의 최신 READY 근무조를 읽는다. 근무 구조 최초 요약이 아직 생성 중이면 `app.tasks.TaskDeferred`로 시도 횟수를 쓰지 않고 기다린다(근무 구조 요약 ERROR는 막지 않음).
+- 질문 안내는 생성기의 `guidance`와 `guidanceCards`를 질문과 함께 저장한다. LIST와 PROGRESS_CHECKLIST만 질문 생성에 사용하고, 같은 인텐트의 저장된 항목 ID는 표현·순서·카드 재구성이 달라도 유지한다. 새 항목 ID는 서버가 부여한다. 카드만 잘못되면 그 카드만 제외하고 질문은 유지한다. 저장된 이해 요약의 선택 사진 추천은 별도 `after_success`에서 다음 실제 미답변 질문에만 붙이며 필수 진행을 막지 않는다.
+- 안내 송출은 `INTERVIEW_GUIDANCE_RESPONSES=on|off`로 설정한다. 답변 접수 때 공개된 안내는 기존 ANSWER 행의 nullable 안내 필드에 고정한다. `lastAnsweredQuestion`은 원 QUESTION 기본 필드와 이 스냅샷으로 복원하여 설정 변경·오류·재시도에도 접수 당시 값을 유지한다. 배포된 `0042`·`0043`와 DB 모델은 변경하지 않는다.
 - 질문 생성 실패는 재시도 후 고정 문구로 fallback하므로 세션을 멈추지 않는다. Jev·초안 생성 실패만 세션 `ERROR`이고 요약·정정 실패는 해당 검토만 `ERROR`다. 재시도는 실패한 작업의 저장된 입력을 그대로 쓴다.
 - completion은 모든 검토 READY·revision·근무조 참조를 확인하고 `generation_input_snapshot`에 고정한 뒤 `DRAFT_GENERATION`을 예약한다. 적용 시 같은 근무조·섹션 ID로 초안 행을 만들고 사진을 섹션 ID로 다시 붙이며, 미확정 정보마다 같은 ID의 issue(유래 인텐트 연결)와 `NEEDS_DETAIL` 인텐트마다 대상 없는 issue를 만든다. 초안 편집·정정·게시는 #118 범위다.
 - 테스트 도우미는 `tests/interview_factories.py`(`ensure_question_set`, `InterviewDriver`)에 있다. MySQL 테스트는 테이블을 비우므로 seed를 다시 넣는다. 실키 스모크는 `tests/test_interview_live.py`(`@pytest.mark.openai`).

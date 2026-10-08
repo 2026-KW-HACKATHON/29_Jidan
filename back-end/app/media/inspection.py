@@ -1,6 +1,6 @@
 """What an uploaded file really is, judged from its bytes only.
 
-`inspect_media(data, kind)` ignores the client's file name and Content-Type: it sniffs the
+`inspect_media(data, kind)` (kind IMAGE, AUDIO or VIDEO; VIDEO is `app.media.video.inspect_video`) ignores the client's file name and Content-Type: it sniffs the
 signature, requires a format accepted for the purpose, fully validates it (image decode or audio
 container walk), enforces byte/pixel/duration limits and returns what to store.
 Order of checks: empty (422) -> byte limit (413) -> format (415) -> content (422/413/415).
@@ -68,6 +68,10 @@ def sniff(data: bytes) -> str | None:
 
 
 def inspect_media(data: bytes, kind: str) -> InspectedMedia:
+    if kind == "VIDEO":
+        from app.media.video import inspect_video  # PyAV is loaded only where videos are handled
+
+        return inspect_video(data)
     if not data:
         raise MediaInvalid("empty")
     if len(data) > MAX_BYTES[kind]:
