@@ -29,7 +29,7 @@ export function createQaService(storeId:string, transport:typeof fetch=fetch):Qa
    const file=input.get('file') as Blob,purpose=input.get('purpose')
    if(purpose==='QUESTION_IMAGE')validatePhoto(file)
    else if(purpose!=='QUESTION_AUDIO'||!['audio/webm','audio/mp4','audio/mpeg','audio/wav'].includes(file.type)||!file.size||file.size>20*1024*1024)throw new ApiError(0,'INVALID_REQUEST')
-  }else if(op.method!=='GET'&&input!==undefined&&!matches(op.input as Schema,input,schemas))throw new ApiError(0,'INVALID_REQUEST')
+  }else if(Object.keys(op.input).length>0&&!matches(op.input as Schema,input,schemas))throw new ApiError(0,'INVALID_REQUEST')
   const controller=new AbortController(),abort=()=>controller.abort(options.signal.reason)
   if(options.signal.aborted)abort();else options.signal.addEventListener('abort',abort,{once:true})
   try{return await withDeadline(async signal=>{
