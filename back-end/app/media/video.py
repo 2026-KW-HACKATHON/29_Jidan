@@ -1,8 +1,8 @@
 """Owner manual videos (purpose MANUAL_VIDEO): upload checks and the digest the AI reads.
 
 The language model takes text and images only, so a video is never sent as is. `digest_video`
-turns it into evenly spaced still frames, a poster frame that workers see as the section photo
-(kept for callers; the manual shows no media — the frames are AI input only) and the sound track as 16 kHz mono
+turns it into evenly spaced still frames, a representative frame retained in the digest for callers
+(the manual shows no media — the frames are AI input only) and the sound track as 16 kHz mono
 PCM WAV for transcription. The original bytes are only AI input and are purged by retention.
 
 Formats: MP4 (H.264/HEVC), QuickTime MOV (H.264/HEVC) and WebM (VP8/VP9/AV1); at most
@@ -78,7 +78,7 @@ class VideoFrame:
 class VideoDigest:
     duration_ms: int
     frames: tuple[VideoFrame, ...]    # evenly spaced, 1..MAX_VIDEO_FRAMES, in time order
-    poster: VideoFrame                # one of `frames`; workers see it as the section photo
+    poster: VideoFrame                # one of `frames`; never attached to the manual or shown to workers
     audio: bytes | None = field(default=None, repr=False)   # 16 kHz mono PCM WAV
     audio_mime: str | None = None     # AUDIO_MIME, or None: no sound track or digital silence
 

@@ -226,6 +226,8 @@ lastAnsweredQuestion은 EVALUATION 처리 중 또는 해당 평가의 ERROR에�
 
 작업 실행: 사진은 긴 변 2048px JPEG로 줄이고, 영상은 프레임 샘플과 음성 전사(실패하면 프레임만)로 바꿔 넣는다. 이미지 16장·32 MiB, 항목 20개 상한을 넘는 것은 요청 순서대로 뺀다. 제목·설명은 없다(첨부 메타데이터가 아니므로). 사진·영상에서 읽을 것이 하나도 없으면 재시도 불가 실패다.
 
-보관: 작업이 대기·실행 중인 동안 파일을 snapshot 참조로 잡아 두고(영상은 바이트 보관 연장도 함께) 삭제 요청은 409 MEDIA_IN_USE다. 작업이 끝나면(성공 또는 최종 실패) 참조를 풀어 미첨부 파일 규칙대로 24시간 뒤 정리하며, 재시도는 남아 있는 파일을 다시 잡는다. DB 변경은 migration 0043(`manual_media` VIDEO 형식, snapshot 참조 종류 MEDIA_WRITING, 정정 입력 MEDIA, 작업 종류 REVIEW_MEDIA_WRITING·DRAFT_MEDIA_WRITING, 검토 처리 MEDIA_WRITING)이며 새 열은 없다.
+보관: 작업이 대기·실행 중인 동안 사진·영상을 snapshot 참조로 잡아 두고 삭제 요청은 409 MEDIA_IN_USE다. 24시간 넘게 대기하거나 자동 재시도를 위해 QUEUED로 돌아가도 원본은 정리하지 않는다. 참조는 작업 ID별로 분리하므로 오래된 작업의 취소가 후속 작업의 파일을 해제하지 않는다. 성공·최종 실패·취소 시 참조를 풀고 마지막 참조가 사라지면 미첨부 파일 규칙대로 24시간 유예를 준다. 수동 재시도는 남아 있는 파일을 새 작업 ID로 다시 잡는다. DB 변경은 migration 0043(`manual_media` VIDEO 형식, snapshot 참조 종류 MEDIA_WRITING, 정정 입력 MEDIA, 작업 종류 REVIEW_MEDIA_WRITING·DRAFT_MEDIA_WRITING, 검토 처리 MEDIA_WRITING)이며 새 열은 없다.
+
+작성 범위: 모델이 같은 근무조·섹션을 다른 순서로 반환해도 원래 배열 순서를 유지한다. 대상 섹션의 단계 순서만 작성 결과를 따른다. SQLite의 0043 테이블 재구성은 외래 키 검사를 트랜잭션 종료까지 지연하고 재구성된 참조를 검사한다. 중간 실패는 스키마·데이터를 함께 롤백하며, MySQL은 기존 CHECK 변경 방식을 유지한다.
 
 Figma 근거: [섹션 사진 첨부](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-2979)·[777-3041](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3041)·[777-3009](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3009)와 [가져오기](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3360)(카메라·앨범·파일)는 파일을 고르는 흐름의 근거다. [삭제](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3464) "사진만 삭제돼요. 작성한 업무 내용은 그대로 유지돼요."에 따라 파일이 정리돼도 작성한 단계는 남는다. 영상 업로드·AI 자동 작성 화면은 Figma에 없어 계약은 최소로 추가했다.

@@ -310,7 +310,7 @@ turn.input_method, turn.transcription_id, turn.content = "VOICE", row.id, text
 
 ### 보관 정리
 
-`purge_media_content()`(`PERIODIC_JOBS`의 `media-retention`, 5분 주기): 삭제 tombstone 즉시, 미첨부 24시간, 음성 원본은 전사 종료 24시간 뒤(전사 중이면 미룸), 사진은 참조가 있는 동안 보존. DB 표시를 먼저 commit하고 byte를 지우며 `sweep_orphan_files()`가 고아 파일을 지운다. 행·전사 텍스트·답변은 남는다.
+`purge_media_content()`(`PERIODIC_JOBS`의 `media-retention`, 5분 주기): 삭제 tombstone 즉시, 미첨부 24시간, 음성 원본은 전사 종료 24시간 뒤(전사 중이면 미룸), 사진·영상은 참조가 있는 동안 보존. 미디어 작성의 참조는 작업 ID에 귀속되며 성공·최종 실패·취소 후 해제한다. 마지막 참조 해제 후 24시간 유예를 주고, 자동 재시도 대기 중에는 참조를 유지한다. DB 표시를 먼저 commit하고 byte를 지우며 `sweep_orphan_files()`가 고아 파일을 지운다. 행·전사 텍스트·답변은 남는다.
 
 ## 5. 스키마 요약 (0032~0035)
 
