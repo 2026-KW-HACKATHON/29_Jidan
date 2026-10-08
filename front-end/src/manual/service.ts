@@ -8,7 +8,8 @@ export type Result<T> = { data: T; retryAfterMs: number }
 export type ManualService = { storeId: string; call: <N extends Operation>(name:N, params:Record<string,string>, input:Operations[N]['input'], options:RequestOptions)=>Promise<Result<Operations[N]['output']>> }
 export class ManualError extends Error {
  readonly code:string
- constructor(code:string){super(code);this.name='ManualError';this.code=code}
+ readonly status:number
+ constructor(code:string,status=0){super(code);this.name='ManualError';this.code=code;this.status=status}
 }
 export const newKey=()=>crypto.randomUUID()
 /** #123 supplies CSRF/auth lifecycle. No cookie parsing or speculative login is owned here. */
@@ -30,7 +31,7 @@ export function createManualHttpService(storeId:string, csrf:()=>string|null, tr
   try{return await withDeadline(async(signal)=>{
   const response=await transport(path,{method:op.method,headers,body,signal,credentials:'include',cache:'no-store'})
   signal.throwIfAborted()
-  if(!response.ok){let code='REQUEST_FAILED';try {const error=await response.json();if(typeof error.code==='string')code=error.code}catch{/* Never expose provider payloads. */}throw new ManualError(code)}
+  if(!response.ok){let code='REQUEST_FAILED';try {const error=await response.json();if(typeof error.code==='string')code=error.code}catch{/* Never expose provider payloads. */}throw new ManualError(code,response.status)}
   const retry=response.headers.get('Retry-After');const seconds=retry?Number(retry):NaN; const date=retry?Date.parse(retry):NaN
   const retryAfterMs=Number.isFinite(seconds)?Math.max(2000,seconds*1000):Number.isFinite(date)?Math.max(2000,date-Date.now()):2000
   let data:unknown
