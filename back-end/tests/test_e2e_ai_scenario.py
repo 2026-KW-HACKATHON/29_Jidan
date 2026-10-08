@@ -132,3 +132,13 @@ def test_build_from_env(monkeypatch):
     monkeypatch.setenv("E2E_AI", "other")
     with pytest.raises(ValueError):
         ai_scenario.build_from_env()
+
+
+def test_router_delegates_every_ai_operation():
+    """A new operation must be routed too; otherwise the base class calls the router's
+    `_complete`, which raises (write_section_from_media was missing at first)."""
+    from app.ai.fake import OPERATIONS
+    from app.ai.provider import AiProvider
+
+    for operation in OPERATIONS:
+        assert getattr(ai_scenario.RoutedAiProvider, operation) is not getattr(AiProvider, operation), operation

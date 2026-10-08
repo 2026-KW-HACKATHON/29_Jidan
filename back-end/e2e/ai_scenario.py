@@ -400,6 +400,9 @@ class RoutedAiProvider(AiProvider):
     def transcribe(self, request):
         return self._call("transcribe", request)
 
+    def write_section_from_media(self, request):
+        return self._call("write_section_from_media", request)
+
 
 def build_from_env() -> AiProvider | None:
     """The provider `e2e.serve` installs, or None when E2E_AI is unset (the app's own choice)."""
