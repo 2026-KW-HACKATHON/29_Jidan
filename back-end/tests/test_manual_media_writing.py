@@ -321,7 +321,9 @@ def test_retry_after_the_files_were_purged_ends_as_an_error(flow, fake_ai):
     assert held(flow) == set()  # nothing left to hold
     flow.run()
     assert review(flow, sid)["status"] == "ERROR"
-    assert rows(flow, BackgroundTask, BackgroundTask.kind == "REVIEW_MEDIA_WRITING")[-1].last_error_code == "INPUT_REJECTED"
+    # The retry (attempt 2) found no file: rows come back unordered on MySQL, so pick by attempt.
+    tasks = rows(flow, BackgroundTask, BackgroundTask.kind == "REVIEW_MEDIA_WRITING")
+    assert max(tasks, key=lambda task: task.attempt).last_error_code == "INPUT_REJECTED"
 
 
 def test_request_checks_change_nothing(flow):
