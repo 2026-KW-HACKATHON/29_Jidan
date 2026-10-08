@@ -18,6 +18,17 @@ afterEach(() => {
 const base = { title: '종료할까요?', description: '접근 권한이 종료됩니다.', state: 'warning' as const, confirmLabel: '접근 종료' }
 
 describe('Modal', () => {
+  it('선택한 배경 닫기에서도 패딩과 내부 클릭은 모달을 유지한다', () => {
+    const close = vi.fn()
+    render(<Modal title="안내" description="내용" open dismissOnBackdrop onClose={close} />)
+    const dialog = screen.getByRole('dialog')
+    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue(new DOMRect(24, 300, 342, 200))
+    fireEvent.click(dialog, { clientX: 30, clientY: 310 })
+    fireEvent.click(screen.getByText('내용'), { clientX: 0, clientY: 0 })
+    expect(close).not.toHaveBeenCalled()
+    fireEvent.click(dialog, { clientX: 10, clientY: 310 })
+    expect(close).toHaveBeenCalledOnce()
+  })
   it('uses a distinct Figma status icon for each overlay example', () => {
     const { rerender } = render(<Modal {...base} open onClose={vi.fn()} />)
     const icon = () => document.querySelector<HTMLImageElement>('.ds-modal-icon img')?.getAttribute('src')

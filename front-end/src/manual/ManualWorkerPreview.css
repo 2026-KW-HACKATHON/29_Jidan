@@ -1,0 +1,6 @@
+
+.manual-worker-preview{gap:var(--ds-space-6)}
+.manual-worker-preview h2{font-size:22px}
+.manual-worker-preview .manual-card h3{font-size:19px;color:var(--ds-text)}
+.manual-preview-label{font-weight:700;font-size:var(--ds-small);color:var(--ds-primary-strong)}
+.manual-worker-preview .manual-card{gap:var(--ds-space-4)}

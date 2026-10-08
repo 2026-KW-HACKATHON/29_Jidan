@@ -21,7 +21,6 @@
 .home-nav-items { display: flex; width: 100%; }
 .home-nav-items button { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ds-secondary); cursor: pointer; font-size: 13px; line-height: 20px; }
 .home-nav-items button[aria-current] { color: var(--ds-primary-strong); }
-.home-indicator { display: block; width: 130px; height: 4px; border-radius: 12px; background: var(--ds-text); }
 .home-calendar { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
 .home-calendar-heading { display: flex; align-items: center; gap: 12px; min-height: 26px; }
 .home-calendar-heading strong { flex: 1; font-size: 17px; line-height: 26px; }

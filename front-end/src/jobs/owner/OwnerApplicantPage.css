@@ -1,0 +1,32 @@
+/* Figma 698:2714 / 698:2765 / 698:2821 / 698:2981. */
+.preview-applicant-status { background: var(--ds-primary-surface); }
+.preview-applicant-status .ds-app-bar h1 { line-height: 26px; }
+.preview-applicant-status .ds-mobile-body { padding: 8px var(--ds-space-6) var(--ds-space-6); }
+.preview-applicant-status .ds-mobile-footer { padding: var(--ds-space-4) var(--ds-space-6) max(var(--ds-space-6), env(safe-area-inset-bottom, 0px)); }
+.preview-applicant-status .applicant-content { display: flex; flex-direction: column; gap: var(--ds-space-5); }
+.preview-applicant-status .applicant-title { font-size: 22px; line-height: 33px; font-weight: 700; }
+.preview-applicant-status .applicant-summary .owner-job-summary strong { line-height: 23px; }
+.preview-applicant-status .applicant-summary .owner-job-summary p { line-height: 20px; }
+.preview-applicant-status .applicant-label { font-size: var(--ds-body); line-height: 23px; font-weight: 700; }
+.preview-applicant-status .applicant-list { display: flex; flex-direction: column; gap: var(--ds-space-3); }
+.preview-applicant-status .applicant-card { display: flex; flex-direction: column; gap: var(--ds-space-3); padding: var(--ds-space-4); border-radius: var(--ds-radius-dialog); background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.preview-applicant-status .owner-applicant-identity h3 { line-height: 29px; }
+.preview-applicant-status .owner-applicant-identity p { line-height: 20px; }
+.preview-applicant-status .applicant-status { color: var(--ds-secondary); font-size: var(--ds-small); line-height: 20px; font-weight: 700; }
+.preview-applicant-status .applicant-status.is-confirmed { color: var(--ds-primary-strong); }
+.preview-applicant-status .applicant-card .ds-button-secondary { box-shadow: 0 0 2px rgb(0 0 0 / 12%), 0 1px 2px rgb(0 0 0 / 12%); }
+.preview-applicant-status .applicant-helper { color: var(--ds-secondary); font-size: var(--ds-small); line-height: 20px; }
+.preview-applicant-status .applicant-no-response { display: flex; flex-direction: column; gap: var(--ds-space-3); padding: var(--ds-space-4); border-radius: var(--ds-radius-dialog); background: #d6e3fd; }
+.preview-applicant-status .applicant-no-response p { font-size: var(--ds-body); line-height: 23px; }
+.preview-applicant-status .applicant-no-response .ds-button { width: 100%; }
+.preview-applicant-alert[open],
+.preview-applicant-alert .ds-modal-message { gap: var(--ds-space-4); }
+.preview-applicant-alert .ds-modal-message h2 { font-size: 22px; line-height: 33px; }
+.preview-applicant-alert .ds-modal-message p { line-height: 23px; }
+/* Center the top-layer dialog over the canvas below the mobile preview banner. */
+.preview-workbench .preview-applicant-alert { top: 36px; }
+.preview-workbench .preview-applicant-alert::backdrop { top: 36px; height: calc(100% - 36px); }
+@media (min-width: 800px) {
+  .preview-workbench .preview-applicant-alert { top: 0; }
+  .preview-workbench .preview-applicant-alert::backdrop { top: 0; height: 100%; }
+}

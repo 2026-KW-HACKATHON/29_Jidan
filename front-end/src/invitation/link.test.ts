@@ -1,0 +1,5 @@
+import {afterEach,expect,it,vi} from 'vitest'
+import {captureInvitationLink,pendingInvitation,clearInvitation} from './link'
+afterEach(()=>{clearInvitation();window.history.replaceState(null,'','/');vi.useRealTimers()})
+it('메일 fragment를 주소에서 제거하고 로그인 복귀까지 초대 문맥을 유지한다',()=>{window.history.replaceState(null,'','/invitations/accept#token=secret-value');expect(captureInvitationLink()).toBe(true);expect(window.location.pathname).toBe('/home');expect(window.location.hash).toBe('');expect(window.location.search).toBe('');expect(pendingInvitation()).toBe('secret-value');window.history.replaceState(null,'','/login');expect(captureInvitationLink()).toBe(false);expect(pendingInvitation()).toBe('secret-value')})
+it('오래된 초대 문맥과 토큰 없는 새 링크는 폐기한다',()=>{vi.useFakeTimers();window.history.replaceState(null,'','/invitations/accept#token=secret');captureInvitationLink();vi.advanceTimersByTime(3600000);expect(pendingInvitation()).toBeNull();window.history.replaceState(null,'','/invitations/accept');captureInvitationLink();expect(pendingInvitation()).toBeNull()})

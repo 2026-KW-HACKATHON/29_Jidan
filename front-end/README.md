@@ -8,13 +8,15 @@ npm ci
 npm run dev
 ```
 
-개발 서버의 `/api` 요청은 `http://127.0.0.1:8000`으로 전달한다. 배포 환경에서는 동일 도메인의 `/api`를 사용한다.
+개발 서버의 `/api` 요청은 `http://127.0.0.1:8000`으로 전달한다. `VITE_API_PROXY_TARGET`로 로컬 대상 포트를 변경할 수 있다. 배포 환경에서는 동일 도메인의 `/api`를 사용한다.
 
 ```bash
 npm run lint
 npm run test:ci
 npm run build
 ```
+
+기본 인증 서비스는 서버 `/api`를 호출하며 Google 로그인·가입·홈 진입·로그아웃을 연결합니다. 배포 환경에서 dev는 dev 도메인의 API, production은 production 도메인의 API를 호출합니다. 실제 E2E는 사용자 검증 대상입니다.
 
 기본 경로는 로그인 화면이며 API·DB 연결 상태는 `/status`에서 확인합니다.
 [로그인·가입 유형 선택의 연동 계약과 검증 범위](src/auth/README.md)를 확인합니다.
