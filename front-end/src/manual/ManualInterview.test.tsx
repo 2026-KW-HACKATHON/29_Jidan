@@ -27,7 +27,7 @@ it('모든 요약을 차례로 확인해야 최종 검토로 진행한다',async
  for(let i=0;i<initial.intents.length;i++){await waitFor(()=>expect(screen.getByRole('button',{name:'네, 맞아요'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'네, 맞아요'}));await act(async()=>{await Promise.resolve()})}
  await waitFor(()=>expect(screen.getByRole('button',{name:'최종 검토로'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'최종 검토로'}));expect(onFinal).toHaveBeenCalledWith(initial)
 })
-it.each(['review','review-error','depth5','ready'])('모의 상태 %s는 OpenAPI 세션과 검토 응답 제약을 따른다',async scenario=>{
+it.each(['review','review-loading','review-error','depth5','ready'])('모의 상태 %s는 OpenAPI 세션과 검토 응답 제약을 따른다',async scenario=>{
  const service=createManualPreviewService(true,scenario),signal=new AbortController().signal;const session=(await service.call('getManualInterview',{sessionId:interviewFixture.id},undefined,{signal})).data;const reviews=(await service.call('listManualIntentReviews',{sessionId:session.id},undefined,{signal})).data
  expect(matches(schemas.ManualInterviewSession,session,schemas)).toBe(true);expect(matches(schemas.ManualIntentReviewList,reviews,schemas)).toBe(true)
 })

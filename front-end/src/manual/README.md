@@ -70,6 +70,7 @@ NEEDS_DETAIL의 느낌표+보완 필요 표기, 업무 0/1개 미리보기, 여�
 - `?case=checklist`: 대기/현재/완료/보완 필요
 - `?case=processing`: 새로고침 후 질문 스냅샷 유지
 - `?case=photo-request`: 추천 대상 → 요청 화면 → 사진 편집
+- `?case=review-loading`: 요약 카드 스켈레톤 유지 (검수용)
 - `?case=review`, `review-error`, `depth5`, `ready`: 주제 검토와 최종 진입
 - `?case=draft`, `missing`, `correction-running`, `correction-error`, `correction-clarify`, `correction-noop`, `generation-error`: 초안·정정·확인
 
