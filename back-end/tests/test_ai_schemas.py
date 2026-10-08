@@ -31,7 +31,7 @@ def test_schema_is_strict_mode_compatible(operation):
 
 SAMPLES = {
     "judge_sufficiency": {"sufficient": False, "probability": 0.3, "missing_aspects": ["마감 순서"]},
-    "generate_question": {"question": "기계는 어떤 순서로 닦나요?"},
+    "generate_question": {"question": "기계는 어떤 순서로 닦나요?", "guidance": None, "guidanceCards": []},
     "summarize_intent": {"summary": "요약", "structure": {
         "shifts": [{"ref": "new-1", "name": "오전", "start_time": "09:00", "end_time": None,
                     "ends_next_day": None}],

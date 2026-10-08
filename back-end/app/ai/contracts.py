@@ -10,7 +10,7 @@ and replaces placeholders with fresh UUIDs, so a result's `StructureSnapshot` al
 unique UUIDs whose references resolve.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -148,9 +148,17 @@ class SufficiencyRequest(_Model):
     store: StoreContext | None = None
 
 
+class QuestionEvaluation(_Model):
+    sufficient: bool
+    probability: float = Field(ge=0, le=1)
+    missing_aspects: tuple[str, ...] = Field(default=(), max_length=MAX_ASPECTS)
+
+
 class QuestionRequest(_Model):
     """Word the next question: BASE adapts the intent's base question, PROBE asks one follow-up."""
 
+    previous_cards: tuple[dict[str, Any], ...] = ()
+    evaluation: QuestionEvaluation | None = None
     kind: Literal["BASE", "PROBE"]
     intent: IntentBrief
     depth: int = Field(ge=0, le=5)
@@ -243,6 +251,8 @@ class SufficiencyJudgement(_Model):
 
 
 class GeneratedQuestion(_Model):
+    guidance: str | None = None
+    guidance_cards: tuple[dict[str, Any], ...] = ()
     text: str = Field(min_length=1, max_length=2000)
     meta: CallMeta
 

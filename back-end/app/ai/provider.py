@@ -52,6 +52,7 @@ from app.ai.schemas import (
     RawQuestion,
     RawRevision,
     RawSummary,
+    parse_question,
 )
 from app.ai.validation import (
     build_citations,
@@ -131,7 +132,8 @@ class AiProvider(ABC):
             candidates = self._complete(operation, INSTRUCTIONS[operation], data_message(payload), images)
             for candidate in candidates:
                 try:
-                    return parser.model_validate(json.loads(candidate))
+                    return (parse_question(json.loads(candidate)) if operation == "generate_question"
+                            else parser.model_validate(json.loads(candidate)))
                 except (ValueError, ValidationError):
                     continue  # malformed or schema-violating item: try the next one
             raise invalid("unparseable_output")
@@ -171,7 +173,10 @@ class AiProvider(ABC):
         text = clean_text(raw.question)
         if not text:
             raise invalid("blank_question")
-        return GeneratedQuestion(text=text, meta=self.meta())
+        return GeneratedQuestion(
+            text=text, guidance=(clean_text(raw.guidance) or None) if raw.guidance else None,
+            guidance_cards=tuple(card.model_dump() for card in raw.guidanceCards), meta=self.meta(),
+        )
 
     def summarize_intent(self, request: IntentSummaryRequest) -> IntentSummary:
         raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json"))
