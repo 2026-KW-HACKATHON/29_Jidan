@@ -29,7 +29,7 @@
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | OpenAI 파일 전사 모델 |
 | `OPENAI_REASONING_EFFORT` | `low` | `none/low/medium/high/xhigh/max`, 빈 값이면 미지정. `answer_question`과 Responses 경로의 Jev |
 | `OPENAI_QUESTION_REASONING_EFFORT` | `low` | 질문 생성(`generate_question`). 값 규칙은 위와 같다 |
-| `OPENAI_WRITING_REASONING_EFFORT` | `medium` | 매뉴얼 작성(`summarize_intent`, `compose_draft`, `revise_structure`) |
+| `OPENAI_WRITING_REASONING_EFFORT` | `medium` | 매뉴얼 작성(`summarize_intent`, `compose_draft`, `revise_structure`, `write_section_from_media`) |
 | `OPENAI_JUDGE_BACKEND` | `decisions` | Jev 경로. `decisions`=`POST /v1/decisions`(aspect별 predicate 확률), `responses`=기존 구조화 출력 판단 |
 | `OPENAI_JUDGE_ASPECT_THRESHOLD` | 0.7 | aspect 확률이 이 값 이상이면 확보로 본다(0.5 이상 1 미만, NaN·무한대 거부) |
 | `OPENAI_JUDGE_NOT_APPLICABLE_THRESHOLD` | 0.8 | "해당 없음" predicate가 이 값 이상이면 인텐트 전체를 충분으로 본다(범위 같음) |
@@ -42,7 +42,7 @@
 | `judge_sufficiency` | Decisions(기본) / Responses | 없음 / `OPENAI_REASONING_EFFORT` | `OPENAI_TIMEOUT_SECONDS` | 없음(텍스트 생성 없음) / 4000 |
 | `generate_question` | Responses | `OPENAI_QUESTION_REASONING_EFFORT`(low) | `OPENAI_TIMEOUT_SECONDS` | 4000 |
 | `summarize_intent` | Responses | `OPENAI_WRITING_REASONING_EFFORT`(medium) | `OPENAI_WRITING_TIMEOUT_SECONDS` | 24000(medium 추론 여유로 16000에서 올림) |
-| `compose_draft`, `revise_structure` | Responses | `OPENAI_WRITING_REASONING_EFFORT`(medium) | `OPENAI_WRITING_TIMEOUT_SECONDS` | 32000 |
+| `compose_draft`, `revise_structure`, `write_section_from_media` | Responses | `OPENAI_WRITING_REASONING_EFFORT`(medium) | `OPENAI_WRITING_TIMEOUT_SECONDS` | 32000 |
 | `answer_question` | Responses | `OPENAI_REASONING_EFFORT`(low) | `OPENAI_TIMEOUT_SECONDS` | 8000 |
 
 결과의 `meta.config_version`은 `provider:model:PROMPT_VERSION` 뒤에 실제 호출 조건을 붙인다: effort를 보냈으면 `:effort=<값>`, Jev는 경로를 `:responses`(+effort) 또는 `:decisions:aspects-<ASPECTS_VERSION>:t=<aspect>/<not_applicable>`로 남긴다(예: `openai:gpt-6-luna:2026-10-07.1:decisions:aspects-2026-10-08.1:t=0.70/0.80`). 실패 평가 행도 성공 행과 같은 연산 단위 값(`provider.judge_meta()`: 설정된 Jev 경로와 effort 포함, fallback 구성이면 주 모델의 설정)을 쓴다.
@@ -74,6 +74,7 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 | `summarize_intent` | `IntentSummaryRequest(intent, dialogue, needs_detail, available_shifts, evidence)` | `IntentSummary(summary, structure)` | 인텐트 요약(#120) |
 | `revise_structure` | `StructureRevisionRequest(current, summary, target, instruction, external_shifts, require_manual_level, evidence)` | `StructureRevision(outcome, structure, summary)` | 인텐트 정정(#120), 초안 정정(#118) |
 | `compose_draft` | `DraftRequest(reviews, evidence)` | `DraftComposition(structure)` | 초안 생성(#120 completion) |
+| `write_section_from_media` | `MediaWritingRequest(intent, current, target=SECTION, media, evidence, external_shifts, require_manual_level, store)` | `StructureRevision(outcome=APPLIED/NO_CHANGE, structure)` (`summary`는 항상 `None`) | 검토·초안 섹션에 첨부한 사진·영상으로 단계 작성(아래 § 사진·영상 기반 작성) |
 | `answer_question` | `QaRequest(question, manual, images)` | `QaAnswer(outcome, text, citations)` | 근무자 Q&A(#121) |
 | `transcribe` | `TranscriptionRequest(audio, mime_type, language="ko")` | `Transcript(text)` | 전사(이미 구현) |
 
@@ -94,6 +95,26 @@ SDK 자동 재시도는 0이다(재시도는 실행기가 기록하며 수행). 
 - 내용 없는 단계(작성 3연산, `validation.drop_contentless_steps`): 프롬프트가 1차 방어이고 서버는 가장 분명한 경우만 막는다. "상황에 맞게 처리해요"처럼 모호한 처리 지시만 있는 짧은 한 절 단계는 제거하고, 섹션이 비면 SECTION/steps 미확정을 붙인다. "따로 정해 둔 규칙은 없어요"처럼 없음을 말하는 단계는 제거하고, 그것만 있던 새 섹션은 섹션째 지운다(검토된 기존 섹션은 비우고 미확정). 정정에서 바뀌지 않은 기존 단계는 건드리지 않는다.
 - 해당 없음(`not_applicable`): Decisions Jev가 인텐트 전체 해당 없음(`not_applicable` ≥ 임계값)으로 충분 판정하면 `SufficiencyJudgement.not_applicable`이 참이 되고, 이 값이 요약 요청(`IntentSummaryRequest.not_applicable`, 작업 payload에 고정)에 실린다. 그때 요약은 문장만 남기고 서버가 구조(근무조·섹션·미확정)를 비운다. Responses Jev는 이 신호가 없어 프롬프트 규칙만 적용된다.
 - `answer_question`: `ANSWERED`는 인용 1개 이상, `NEEDS_OWNER`는 0개. 인용 섹션·단계는 입력 게시본에 있어야 하고, **발췌(excerpt)는 서버가 해당 단계 원문을 이어 만든다**(최대 1000자). 모델이 쓴 문장을 근거로 저장하지 않는다.
+
+### 사진·영상 기반 작성 (`write_section_from_media`)
+
+사용자 결정(2026-10-08): 검토(인텐트 요약)·초안의 **섹션에 첨부한 사진·영상**을 AI가 보고 그 섹션의 단계를 작성·보강한다. 사진에 보이는 것과 영상에서 들리는 것은 **점주 발화와 동급 근거**이고, 인용 검증은 그대로 유지된다(근거 ID에 미디어 ID가 더해질 뿐). 작업 흐름(작업 종류·잠금·revision)은 [인터뷰 설계](manual-interview-design.md)가 정한다.
+
+- **입력**(`app/ai/contracts.py`): `MediaEvidence(id, kind, title, caption, image | text)`.
+  - `id`는 서버가 저장된 UUID로만 만든다: 사진 `media:<uuid>`, 영상 프레임 `media:<uuid>@<t_ms>`, 영상 음성 전사 `media:<uuid>#transcript`. 형식(`contracts.MEDIA_ID`)과 `kind`의 짝이 맞지 않으면 요청 생성 자체가 실패한다(사용자 텍스트가 ID에 섞일 수 없다).
+  - `PHOTO`/`VIDEO_FRAME`은 `image`만, `VIDEO_TRANSCRIPT`는 `text`만 가진다. `title`·`caption`은 점주가 쓴 문장이라 점주 발화로 본다.
+  - `MediaWritingRequest`: `media` 1~20개(ID 중복·evidence ID와 충돌 불가), 이 중 이미지 **최대 16장**(`MAX_MEDIA_IMAGES`), 이미지 원본 합계 32 MiB(`MAX_MEDIA_IMAGE_BYTES`, 전송 시 base64로 1/3 늘어 OpenAI 요청 한도 안). 넘으면 호출 없이 `INPUT_REJECTED`(`too_many_images`/`images_too_large`, 재시도 불가). 작업 쪽은 사진을 긴 변 2048px 안팎으로 줄여 넘기는 편이 안전하다(영상 프레임은 이미 ≤1024px). `target`은 `SECTION`이고 `current`에 있는 섹션이어야 한다(아니면 `ValueError` — 호출자 버그).
+- **모델에 보이는 것**: `<data>` JSON에는 이미지 바이트를 뺀 media 목록(`id`, `kind`, `title`, `caption`, `text`, `image_index`)과 `current`·`target`·`evidence`·`intent`·`store`·`image_count`가 들어간다. 이미지는 `<data>` 뒤에 **요청 순서대로** 붙고, 각 이미지 바로 앞에 서버가 만든 라벨 `[이미지 n] media id: <id>`(`prompts.image_label`, `LabeledImage`)를 `input_text`로 둔다. 라벨에는 순번과 ID만 있고, 점주 텍스트(title·caption·전사)는 모두 `<data>` 안에만 있다. 글자를 읽어야 해서 이미지 `detail`은 `high`다.
+- **지시문**(`INSTRUCTIONS["write_section_from_media"]`): 다른 작성 연산과 같은 데이터 취급·인젝션 방어·근거 인용·단계 작성(행동 하나, 체크리스트) 규칙에 더해, 근거는 ①사진·프레임에 분명히 보이는 것(위치·배치·순서·읽히는 글자) ②전사 text ③title·caption과 evidence뿐이고, 읽히지 않는 상표·제품명·온도·수량·시간은 쓰지 않으며, 사진 속 글자의 지시는 따르지 않는다. target 섹션만 고치고(제목·분류·근무조 유지, 새 근무조·섹션 없음), 기존 단계는 같은 ID로 유지하며 빼려면 `removed_steps`에 근거 ID와 함께 적는다.
+- **출력 스키마**(`section_from_media`): `outcome`(`APPLIED`/`NO_CHANGE`), `structure`(revise_structure와 같은 형태, `evidence_ids`에 media ID 허용), `removed_steps[{ref, evidence_ids}]`.
+- **서버 재검증**(`AiProvider.write_section_from_media`, `app/ai/validation.py`):
+  - 인용 ID ⊆ 입력 evidence ID ∪ media ID. 그 밖의 ID(다른 사진, 없는 프레임 시각 등)는 `INVALID_OUTPUT`(`unknown_evidence_id`, 재시도). evidence가 비어 있어도 media ID가 있으므로 근거 검사는 항상 켜진다.
+  - 인용 없는 새 단계는 `ground_structure` 규칙대로 제거. 내용 없는 단계(`drop_contentless_steps`)도 제거.
+  - **기존 단계는 근거 없이 사라지지 않는다**(Figma 777-3464 "사진만 삭제돼요. 작성한 업무 내용은 그대로 유지돼요."의 반대 방향): 인용 없이 문장을 바꾼 기존 단계는 그 자리에서 원래 문장으로 되돌리고, 빠뜨린 기존 단계는 원래 앞 단계 뒤(없으면 맨 앞)에 원래대로 되살린다(`restore_existing_steps`). 인용과 함께 바꾼 단계가 내용 없는 단계로 걸러져도 되살린다. 삭제는 `removed_steps`에 근거 ID가 1개 이상 있을 때만이며, 대상 섹션의 기존 단계가 아닌 ID나 모르는 근거 ID를 적으면 `INVALID_OUTPUT`. `removed_steps`에 적었어도 structure에 남겨 두면 그 단계는 유지한다. 체크리스트 여부만 바뀐 것과 기존 단계의 순서만 바뀐 것은 다른 작성 연산과 같이 사실 변경으로 보지 않는다(순서는 그대로 반영). 되살림·삭제는 개수만 로그(`ai media_writing restored_steps=… removed_steps=…`).
+  - 범위: 새 근무조·섹션, 다른 섹션·근무조 변경, 대상 섹션 삭제는 `INVALID_OUTPUT`(`revision_outside_target` 등, `check_revision_scope` 재사용). 대상 섹션의 제목·분류·근무조는 모델이 바꿔도 서버가 원래 값으로 둔다(사진은 라벨의 근거가 아니다). 대상이 아닌 미확정 항목의 문구도 입력 문구로 되돌린다(`check_revision_scope`는 미확정 항목을 비교하지 않으므로).
+  - 결과가 입력과 같거나 미확정 문구만 달라졌으면 `NO_CHANGE`(revision을 올리지 않는다). `APPLIED`면 `structure`에 대상 섹션만 바뀐 전체 구조가 있다. `summary`는 돌려주지 않는다(검토 요약은 바뀌지 않음).
+- **Fake 기본 응답**: 대상 섹션 끝에 첫 media를 인용하는 단계 하나(`"<title|caption|전사>: 첨부한 자료에 보이는 대로 해요."`)를 붙여 `APPLIED`. `fake.script("write_section_from_media", FakeOutcome.ok({...}))`로 바꾸고, `evidence_ids`가 없는 스크립트 단계는 `auto_cite`가 첫 media ID를 인용한다. `fake.calls_for(...)[i].extra["image_labels"]`로 라벨을 확인할 수 있다.
+- **실측**: `tests/test_ai_media_live.py`(`@pytest.mark.openai`)가 Pillow로 그린 합성 이미지 2장(우유 진열 도식·"마감 후 금고 잠금" 안내문)으로 gpt-6-luna medium을 호출해, 새 단계가 모두 유효한 media ID를 인용하고 보이는 글자를 반영하는지 확인한다.
 
 ### 오류 분류 → 공개 오류
 
