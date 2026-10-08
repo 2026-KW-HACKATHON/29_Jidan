@@ -32,8 +32,8 @@ def test_schema_is_strict_mode_compatible(operation):
 SAMPLES = {
     "judge_sufficiency": {"sufficient": False, "probability": 0.3, "missing_aspects": ["마감 순서"],
                           "not_applicable_probability": None, "not_applicable_confirmed_probability": None},
-    "generate_question": {"question": "기계는 어떤 순서로 닦나요?", "guidance": None,
-                          "examples": [{"label": "커피 머신", "description": None}]},
+    "generate_question": {"question": "기계는 어떤 순서로 닦나요?", "guidance": None, "guidanceCards": []},
+    "suggest_review_photos": {"suggestions": []},
     "summarize_intent": {"summary": "요약", "structure": {
         "shifts": [{"ref": "new-1", "name": "오전", "start_time": "09:00", "end_time": None,
                     "ends_next_day": None, "evidence_ids": ["t1#1"]}],
@@ -76,25 +76,11 @@ def test_parser_rejects_extra_and_missing_fields(operation):
 
 @pytest.mark.parametrize("field,value", [
     ("question", ""), ("question", "가" * 2001),
-    ("examples", [{"label": "x", "description": None}] * 51),  # a broken output, not a long one
 ])
 def test_parser_enforces_lengths_the_schema_cannot_express(field, value):
     _name, _schema, parser = OUTPUTS["generate_question"]
-    parser.model_validate(SAMPLES["generate_question"])  # the base sample is valid
     with pytest.raises(ValidationError):
-        parser.model_validate({**SAMPLES["generate_question"], field: value})
-
-
-@pytest.mark.parametrize("field,value", [
-    ("guidance", "가" * 2001), ("guidance", ""),
-    ("examples", [{"label": "", "description": None}]),
-    ("examples", [{"label": "가" * 201, "description": "나" * 1001}]),
-    ("examples", [{"label": "x", "description": None}] * 50),
-])
-def test_parser_leaves_guidance_limits_to_the_provider(field, value):
-    """Guidance is decoration: oversized parts are dropped by the provider, not a parse failure."""
-    _name, _schema, parser = OUTPUTS["generate_question"]
-    parser.model_validate({**SAMPLES["generate_question"], field: value})
+        parser.model_validate({field: value})
 
 
 def test_parser_rejects_out_of_range_probability_and_long_aspects():

@@ -9,6 +9,7 @@ Configuration (environment):
     OPENAI_MODEL                     default gpt-6-luna ("ChatGPT 6 Luna")
     OPENAI_FALLBACK_MODEL            optional second model tried after a retryable failure
     OPENAI_TRANSCRIBE_MODEL          default gpt-transcribe
+    OPENAI_SERVICE_TIER              default fast (auto|default|fast|priority)
     OPENAI_REASONING_EFFORT          default low (none|low|medium|high|xhigh|max, or empty);
                                      answer_question, and Jev on the responses backend
     OPENAI_QUESTION_REASONING_EFFORT default low: generate_question
@@ -84,6 +85,11 @@ def build_provider_from_env() -> AiProvider:
         return fake
     if kind != "openai":
         raise ValueError("AI_PROVIDER must be openai or fake")
+    from app.ai.openai_provider import SERVICE_TIERS, OpenAiProvider
+
+    service_tier = os.getenv("OPENAI_SERVICE_TIER", "fast").strip().lower() or "fast"
+    if service_tier not in SERVICE_TIERS:
+        raise ValueError("OPENAI_SERVICE_TIER is not a supported value")
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         logger.warning("OPENAI_API_KEY is not set; AI and transcription requests will fail")
@@ -91,13 +97,13 @@ def build_provider_from_env() -> AiProvider:
     effort = _effort("OPENAI_REASONING_EFFORT", "low")
     question_effort = _effort("OPENAI_QUESTION_REASONING_EFFORT", "low")
     writing_effort = _effort("OPENAI_WRITING_REASONING_EFFORT", "medium")
-    from app.ai.openai_provider import OpenAiProvider
 
-    def make(model: str, judge_backend: str = judge_backend) -> AiProvider:
+    def make(model: str, *, judge_backend: str = judge_backend) -> AiProvider:
         return OpenAiProvider(
             api_key=api_key, model=model,
             transcribe_model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "").strip() or DEFAULT_TRANSCRIBE_MODEL,
             reasoning_effort=effort, question_effort=question_effort, writing_effort=writing_effort,
+            service_tier=service_tier,
             timeout_seconds=_seconds("OPENAI_TIMEOUT_SECONDS", 60.0),
             writing_timeout_seconds=_seconds("OPENAI_WRITING_TIMEOUT_SECONDS", 120.0),
             transcribe_timeout_seconds=_seconds("OPENAI_TRANSCRIBE_TIMEOUT_SECONDS", 120.0),

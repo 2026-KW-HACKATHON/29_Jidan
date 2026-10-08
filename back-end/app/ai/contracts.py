@@ -11,7 +11,7 @@ unique UUIDs whose references resolve.
 """
 
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -41,11 +41,6 @@ MAX_CONTEXT_NOTES = 50
 MAX_ASPECTS = 5
 MAX_EVIDENCE = 200
 MAX_EVIDENCE_IDS = 20  # citations per step / shift
-MAX_EXAMPLES = 8  # question examples kept (LIST guidance card items)
-MAX_RAW_EXAMPLES = 50  # beyond this the model output is broken, not long
-MAX_GUIDANCE = 2000
-MAX_EXAMPLE_LABEL = 200
-MAX_EXAMPLE_TEXT = 1000
 MAX_MEDIA = 20  # media evidence items of one media-writing request
 MAX_MEDIA_IMAGES = 16  # images among them (photos + video frames); more is INPUT_REJECTED
 MAX_MEDIA_IMAGE_BYTES = 32 * 1024 * 1024  # their total raw size (base64 adds a third on the wire)
@@ -181,9 +176,17 @@ class SufficiencyRequest(_Model):
     store: StoreContext | None = None
 
 
+class QuestionEvaluation(_Model):
+    sufficient: bool
+    probability: float = Field(ge=0, le=1)
+    missing_aspects: tuple[str, ...] = Field(default=(), max_length=MAX_ASPECTS)
+
+
 class QuestionRequest(_Model):
     """Word the next question: BASE adapts the intent's base question, PROBE asks one follow-up."""
 
+    previous_cards: tuple[dict[str, Any], ...] = ()
+    evaluation: QuestionEvaluation | None = None
     kind: Literal["BASE", "PROBE"]
     intent: IntentBrief
     depth: int = Field(ge=0, le=5)
@@ -200,6 +203,7 @@ class IntentSummaryRequest(_Model):
     intent: IntentBrief
     dialogue: tuple[DialogueTurn, ...] = Field(min_length=1, max_length=MAX_DIALOGUE_TURNS)
     needs_detail: bool
+    missing_aspects: tuple[str, ...] = Field(default=(), max_length=MAX_ASPECTS)
     available_shifts: tuple[ShiftItem, ...] = Field(default=(), max_length=MAX_SHIFTS)
     store: StoreContext | None = None
     # Grounding (RAG). Empty keeps the pre-grounding behaviour (no citation check).
@@ -356,17 +360,10 @@ class SufficiencyJudgement(_Model):
         return not self.sufficient
 
 
-class QuestionExample(_Model):
-    """One "how to answer" example; shown as an item of the question's LIST guidance card."""
-
-    label: str = Field(min_length=1, max_length=MAX_EXAMPLE_LABEL)
-    description: str | None = Field(default=None, min_length=1, max_length=MAX_EXAMPLE_TEXT)
-
-
 class GeneratedQuestion(_Model):
+    guidance: str | None = None
+    guidance_cards: tuple[dict[str, Any], ...] = ()
     text: str = Field(min_length=1, max_length=2000)
-    guidance: str | None = Field(default=None, min_length=1, max_length=MAX_GUIDANCE)
-    examples: tuple[QuestionExample, ...] = Field(default=(), max_length=MAX_EXAMPLES)
     meta: CallMeta
 
 
@@ -415,3 +412,26 @@ class Transcript(_Model):
         if not value.strip():
             raise ValueError("blank transcript")
         return value
+
+
+class PhotoSuggestionsRequest(_Model):
+    summary: str = Field(min_length=1, max_length=10000)
+    structure: StructureSnapshot
+    store: StoreContext | None = None
+
+
+class PhotoSuggestionItem(_Model):
+    label: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
+class PhotoSuggestion(_Model):
+    section_id: str
+    title: str = Field(min_length=1, max_length=200)
+    items: tuple[PhotoSuggestionItem, ...] = Field(min_length=1, max_length=50)
+    footer: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
+class PhotoSuggestions(_Model):
+    suggestions: tuple[PhotoSuggestion, ...] = Field(default=(), max_length=5)
+    meta: CallMeta

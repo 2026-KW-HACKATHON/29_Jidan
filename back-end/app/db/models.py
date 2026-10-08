@@ -650,7 +650,7 @@ class InvitationMailOutbox(Base):
 TASK_KINDS = (
     "TRANSCRIPTION", "INITIAL_QUESTION", "EVALUATION", "FOLLOWUP_GENERATION", "DRAFT_GENERATION",
     "REVIEW_UNDERSTANDING", "REVIEW_CORRECTION", "DRAFT_CORRECTION", "QA_ANSWER",
-    "REVIEW_MEDIA_WRITING", "DRAFT_MEDIA_WRITING",  # 0043: sections written from photos/videos
+    "REVIEW_MEDIA_WRITING", "DRAFT_MEDIA_WRITING",  # 0044: sections written from photos/videos
 )
 TASK_STATUSES = ("QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED")
 
@@ -707,7 +707,7 @@ class BackgroundTask(Base):
 # retention task (unattached files after 24 h, audio originals 24 h after transcription ends).
 
 MEDIA_KINDS = ("IMAGE", "AUDIO")
-MANUAL_MEDIA_KINDS = (*MEDIA_KINDS, "VIDEO")  # 0043: owner videos (MANUAL_VIDEO); Q&A keeps photo/audio
+MANUAL_MEDIA_KINDS = (*MEDIA_KINDS, "VIDEO")  # 0044: owner videos (MANUAL_VIDEO); Q&A keeps photo/audio
 IMAGE_MIME_TYPES = ("image/jpeg", "image/png", "image/webp")
 AUDIO_MIME_TYPES = ("audio/mpeg", "audio/mp4", "audio/webm", "audio/wav")
 VIDEO_MIME_TYPES = ("video/mp4", "video/quicktime", "video/webm")
@@ -746,7 +746,7 @@ def _media_columns_args(table: str, kinds: tuple[str, ...] = MEDIA_KINDS, shape:
 class ManualMedia(Base):
     """An owner's private interview photo (IMAGE), answer recording (AUDIO) or video (VIDEO).
 
-    API purpose MANUAL_PHOTO <-> IMAGE, INTERVIEW_AUDIO <-> AUDIO, MANUAL_VIDEO <-> VIDEO (0043).
+    API purpose MANUAL_PHOTO <-> IMAGE, INTERVIEW_AUDIO <-> AUDIO, MANUAL_VIDEO <-> VIDEO (0044).
     `object_key` locates the bytes in app.media storage and is never returned by the API.
     A video is AI input only (section media writing, 0.12.0): it is never attached or shown.
     """
@@ -847,7 +847,7 @@ SPEAKERS = ("AI", "OWNER")
 TURN_KINDS = ("QUESTION", "ANSWER", "CORRECTION")
 QUESTION_KINDS = ("BASE", "PROBE")
 INPUT_METHODS = ("TEXT", "VOICE")
-# A draft correction may also write the target section from photos/videos (0043): no text.
+# A draft correction may also write the target section from photos/videos (0044): no text.
 CORRECTION_INPUT_METHODS = (*INPUT_METHODS, "MEDIA")
 EVALUATION_STATUSES = ("SUCCEEDED", "FAILED")
 # app.tasks.task_error_code(): upper-cased app.ai.errors.AiErrorCode values plus the runner's own.
@@ -861,7 +861,7 @@ CORRECTION_ERRORS = (
     "AI_PROCESSING_FAILED", "CORRECTION_CLARIFICATION_REQUIRED", "MANUAL_REFERENCE_CONFLICT",
     "MANUAL_VERSION_CONFLICT", "REVISION_CONFLICT",
 )
-# MEDIA_WRITING (0043): the photos/videos a review media-writing task reads, held while it waits
+# MEDIA_WRITING (0044): the photos/videos a review media-writing task reads, held while it waits
 # or runs (holder: the session, holder_intent_id the intent). Draft media writing holds its media
 # as DRAFT_CORRECTION (holder: the correction).
 SNAPSHOT_HOLDERS = ("INTENT_REVIEW", "REVIEW_CONFIRMATION", "DRAFT_GENERATION", "DRAFT_CORRECTION", "MEDIA_WRITING")
@@ -1278,8 +1278,6 @@ class InterviewTurn(Base):
         ),
         CheckConstraint("(input_method = 'VOICE') = (transcription_id IS NOT NULL)", name="voice_source"),
         CheckConstraint(not_blank("content"), name="content_not_blank"),
-        CheckConstraint("turn_kind = 'QUESTION' OR (guidance IS NULL AND guidance_cards IS NULL)",
-                        name="guidance_on_questions"),
     )
 
     id: Mapped[str] = _id()
@@ -1294,10 +1292,9 @@ class InterviewTurn(Base):
     reply_to_question_turn_id: Mapped[str | None] = mapped_column(ForeignKey("interview_turns.id"))
     input_method: Mapped[str | None] = mapped_column(cs_string(8))
     content: Mapped[str] = mapped_column(Text)  # submitted text or the READY transcript text
-    transcription_id: Mapped[str | None] = mapped_column(ForeignKey("media_transcriptions.id"))
-    # Question guidance (#158), written once with the question (app.interview.cards).
     guidance: Mapped[str | None] = mapped_column(Text)
-    guidance_cards: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON(none_as_null=True))
+    guidance_cards: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    transcription_id: Mapped[str | None] = mapped_column(ForeignKey("media_transcriptions.id"))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     base_question_intent_id: Mapped[str | None] = mapped_column(
         CHAR(36), Computed("CASE WHEN question_kind = 'BASE' THEN intent_id END", persisted=True),
@@ -1369,6 +1366,7 @@ class InterviewEvaluation(Base):
     provider: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(cs_string(16))
     needs_follow_up: Mapped[bool | None] = mapped_column(Boolean)
+    missing_aspects: Mapped[Any | None] = mapped_column(JSON, nullable=True)
     probability: Mapped[float | None] = mapped_column(Float)
     error_code: Mapped[str | None] = mapped_column(cs_string(32))
     task_id: Mapped[str | None] = mapped_column(CHAR(36))
@@ -1435,7 +1433,7 @@ class ManualIssueAcknowledgement(Base):
 class ManualDraftCorrection(Base):
     """Voice/text correction of a generated draft (API ManualDraftCorrection). The input text
     is a snapshot, so retries survive audio purge. One RUNNING correction per draft.
-    MEDIA (0043) writes the target section from photos/videos instead (their IDs are in the
+    MEDIA (0044) writes the target section from photos/videos instead (their IDs are in the
     task payload) and has no text."""
 
     __tablename__ = "manual_draft_corrections"

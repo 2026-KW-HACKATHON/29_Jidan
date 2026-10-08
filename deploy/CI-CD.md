@@ -263,3 +263,7 @@ reload하지 않으므로 앱 이미지 배포만으로 100 MiB 영상 업로드
 ## 배포 후 백엔드 검증
 
 배포 스크립트의 컨테이너·공개 health 검사와 롤백은 유지한다. 개발 배포가 완료되면 에이전트가 배포된 커밋·문서 revision·health 및 실제 사용자 흐름을 확인하고, 저장 결과·API 재조회·권한 거부 결과와 미검증 범위를 PR에 기록한다. E2E의 스키마 초기화·실패 주입은 격리된 테스트 DB에서만 수행하며 개발·운영 DB에 테스트 하네스를 연결하지 않는다. 전체 회귀 검증은 해당 배포 소스로 로컬의 `back-end/testing/run-e2e.sh` 또는 수동 `Backend HTTP E2E` 워크플로우를 실행한다. 격리 회귀 결과와 배포 서버 검증 결과를 구분해 기록한다.
+
+## 로컬 검증 후 dev CD만 실행
+
+로컬 CI 검증을 완료한 백엔드 커밋은 `gh workflow run backend.yml --ref back-end/dev -f skip_ci=true`로 배포한다. 이 옵션은 dev의 수동 실행에서만 배포 로직 테스트·Nginx 테스트·test 이미지 단계를 생략한다. runtime 이미지 생성에 필요한 문서 빌드, 이미지 게시, migration, 환경 검증, health 검사와 롤백은 유지한다. PR·push·production은 기존 검사를 생략하지 않는다.

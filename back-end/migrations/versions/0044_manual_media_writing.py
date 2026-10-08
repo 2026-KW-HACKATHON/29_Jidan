@@ -1,7 +1,7 @@
 """Sections written from photos and videos (OpenAPI 0.12.0): owner videos and media-writing tasks.
 
-Revision ID: 0043
-Revises: 0042
+Revision ID: 0044
+Revises: 0043
 
 Photos and videos are AI input only here (user decision 2026-10-08): nothing links a video to a
 section, so no new columns, only wider CHECKs.
@@ -15,15 +15,15 @@ section, so no new columns, only wider CHECKs.
   interview_intent_reviews: processing_kind MEDIA_WRITING.
 
 SQLite cannot alter a CHECK, and a batch table copy cannot INSERT into the generated column of
-manual_draft_corrections (see 0042), so on SQLite each table is rebuilt from its own stored DDL
+manual_draft_corrections (see 0034), so on SQLite each table is rebuilt from its own stored DDL
 with exact text edits, copying only the stored columns. The downgrade refuses (before any DDL;
 MySQL DDL is not transactional) while rows use a new value.
 """
 import sqlalchemy as sa
 from alembic import context, op
 
-revision = "0043"
-down_revision = "0042"
+revision = "0044"
+down_revision = "0043"
 branch_labels = None
 depends_on = None
 
@@ -83,11 +83,11 @@ def _sqlite_rebuild(table: str, edits: list[tuple[str, str]]) -> None:
         {"t": table}).scalars().all()
     for old, new in edits:
         if ddl.count(old) != 1:
-            raise RuntimeError(f"0043: unexpected {table} schema near {old[:60]!r}")
+            raise RuntimeError(f"0044: unexpected {table} schema near {old[:60]!r}")
         ddl = ddl.replace(old, new)
     # PRAGMA table_xinfo: hidden 2/3 are generated columns.
     columns = ", ".join(row[1] for row in bind.exec_driver_sql(f"PRAGMA table_xinfo({table})") if row[6] == 0)
-    temporary = f"_0043_{table}"
+    temporary = f"_0044_{table}"
     bind.exec_driver_sql(f"CREATE TABLE {temporary} {ddl[ddl.index('('):]}")
     bind.exec_driver_sql(f"INSERT INTO {temporary} ({columns}) SELECT {columns} FROM {table}")
     bind.exec_driver_sql(f"DROP TABLE {table}")
@@ -113,13 +113,13 @@ def _sqlite_checks(upgrade: bool) -> None:
     previous = bind.exec_driver_sql("PRAGMA defer_foreign_keys").scalar()
     enforced = bind.exec_driver_sql("PRAGMA foreign_keys").scalar()
     if enforced and bind.exec_driver_sql("PRAGMA foreign_key_check").first() is not None:
-        raise RuntimeError("0043: existing foreign key violations; repair before migrating")
+        raise RuntimeError("0044: existing foreign key violations; repair before migrating")
     bind.exec_driver_sql("PRAGMA defer_foreign_keys = ON")
     try:
         for table, edits in _sqlite_edits(upgrade=upgrade).items():
             _sqlite_rebuild(table, edits)
         if enforced and bind.exec_driver_sql("PRAGMA foreign_key_check").first() is not None:
-            raise RuntimeError("0043: foreign key violation after rebuilding tables")
+            raise RuntimeError("0044: foreign key violation after rebuilding tables")
     finally:
         bind.exec_driver_sql("PRAGMA defer_foreign_keys = OFF")
         bind.exec_driver_sql(f"PRAGMA defer_foreign_keys = {int(previous)}")
@@ -229,8 +229,8 @@ def _downgrade_preflight() -> None:
     for table, condition in DOWNGRADE_BLOCKERS:
         count = bind.execute(sa.text(f"SELECT COUNT(*) FROM {table} WHERE {condition}")).scalar()
         if count:
-            raise RuntimeError(f"{table}: {count} row(s) use a 0043 value ({condition});"
-                               " remove them before downgrading below 0043")
+            raise RuntimeError(f"{table}: {count} row(s) use a 0044 value ({condition});"
+                               " remove them before downgrading below 0044")
 
 
 def upgrade() -> None:

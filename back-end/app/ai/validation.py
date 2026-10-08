@@ -235,6 +235,7 @@ def ground_structure(
     *,
     grounded_steps: Mapping[str, str] | None = None,
     grounded_shifts: Mapping[str, ShiftTimes | None] | None = None,
+    require_evidence: bool = False,
 ) -> tuple[RawStructure, Grounding]:
     """Enforce citations against the request's evidence before `materialize_structure`.
 
@@ -262,13 +263,13 @@ def ground_structure(
     Model-written missing entries come first, so their wording wins over the fixed text here.
     """
     allowed = set(evidence_ids)
-    if not allowed and not grounded_steps:
+    if not allowed and not grounded_steps and not require_evidence:
         return raw, Grounding()
     grounded_steps = grounded_steps or {}
     grounded_shifts = grounded_shifts or {}
 
     def cited(ids: list[str]) -> bool:
-        if not allowed:  # legacy callers have no evidence with which to validate citations
+        if not allowed and not require_evidence:  # legacy callers never ran retrieval
             return False
         if any(value not in allowed for value in ids):
             raise invalid("unknown_evidence_id")
@@ -281,7 +282,7 @@ def ground_structure(
         times = _times(shift)
         has_citation = cited(shift.evidence_ids)
         exempt = shift.ref in grounded_shifts and grounded_shifts[shift.ref] in (None, times)
-        if not allowed or times == (None, None, None) or has_citation or exempt:
+        if (not allowed and not require_evidence) or times == (None, None, None) or has_citation or exempt:
             shifts.append(shift)
             continue
         cleared += 1
@@ -303,7 +304,7 @@ def ground_structure(
                     step = step.model_copy(update={"instruction": original})
                     restored += 1
                 kept.append(step)
-            elif has_citation or not allowed:
+            elif has_citation or (not allowed and not require_evidence):
                 kept.append(step)
             else:
                 dropped += 1
@@ -630,6 +631,48 @@ def check_revision_scope(current: StructureSnapshot, revised: StructureSnapshot,
             continue
         if revised_sections.get(section.id) != section:
             raise invalid("revision_outside_target")
+
+
+
+    # Missing descriptions are content too, including outside a correction target.
+    def outside_missing(snapshot):
+        return {(item.target, item.target_id, item.field): item.description
+                for item in snapshot.missing_information
+                if (item.target, item.target_id) != (kind, target_id)}
+    revised_missing = outside_missing(revised)
+    if any(revised_missing.get(key) != value for key, value in outside_missing(current).items()):
+        raise invalid("revision_outside_target")
+
+
+def check_draft_facts(reviews: Iterable[StructureSnapshot], draft: StructureSnapshot) -> None:
+    """Composition has no new owner input with which to change structured facts.
+
+    Wording and order may change; known/unknown times and section ownership survive. Natural-language factual equivalence
+    remains a model-quality evaluation concern.
+    """
+    shifts = {item.id: item for item in draft.shifts}
+    sections = {item.id: item for item in draft.sections}
+    missing = {(item.target, item.target_id, item.field): item
+               for item in draft.missing_information}
+    for review in reviews:
+        for original in review.shifts:
+            revised = shifts[original.id]
+            if (original.start_time, original.end_time, original.ends_next_day) != (
+                    revised.start_time, revised.end_time, revised.ends_next_day):
+                raise invalid("draft_changed_reviewed_fact")
+        for original in review.sections:
+            revised = sections[original.id]
+            if (original.category, original.shift_id) != (revised.category, revised.shift_id):
+                raise invalid("draft_changed_reviewed_fact")
+            if bool(original.steps) != bool(revised.steps):
+                raise invalid("draft_changed_reviewed_fact")
+        for item in review.missing_information:
+            # A partial review's MANUAL gap can be filled by another review.
+            if item.target == "MANUAL":
+                continue
+            preserved = missing.get((item.target, item.target_id, item.field))
+            if preserved is None:
+                raise invalid("draft_changed_reviewed_missing_information")
 
 
 def dangling_shift_references(snapshot: StructureSnapshot, external_shift_ids: Iterable[str] = ()) -> bool:

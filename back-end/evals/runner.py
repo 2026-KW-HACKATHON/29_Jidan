@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from app.ai.contracts import (
     DraftRequest,
     IntentSummaryRequest,
+    PhotoSuggestionsRequest,
     QaRequest,
     QuestionRequest,
     StructureRevisionRequest,
@@ -24,11 +25,12 @@ REQUESTS = {
     "judge_sufficiency": SufficiencyRequest, "generate_question": QuestionRequest,
     "summarize_intent": IntentSummaryRequest, "revise_structure": StructureRevisionRequest,
     "compose_draft": DraftRequest, "answer_question": QaRequest,
+    "suggest_review_photos": PhotoSuggestionsRequest,
 }
 GROUNDED = ("summarize_intent", "revise_structure", "compose_draft")
 Operation = Literal[
     "judge_sufficiency", "generate_question", "summarize_intent", "revise_structure",
-    "compose_draft", "answer_question",
+    "compose_draft", "answer_question", "suggest_review_photos",
 ]
 
 

@@ -42,7 +42,7 @@ from app.db.models import (
     InterviewTurn,
 )
 from app.interview import drafting
-from app.interview.cards import MAX_CARDS, InvalidGuidance, example_card, state_cards
+from app.interview.cards import normalize_question_cards
 from app.interview.common import lock_review, lock_session_row
 from app.interview.content import content_from_structure, photo_ids, snapshot_from_content
 from app.interview.evidence import correction_evidence
@@ -51,11 +51,13 @@ from app.interview.flow import (
     available_shifts,
     fallback_question,
     intent_brief,
+    question_card_history,
     shift_summary_pending,
     store_context,
     store_of,
     write_question,
 )
+from app.interview.photos import suggest_current_question_photos
 from app.manual_media_writing import LEASE_SECONDS as MEDIA_LEASE_SECONDS
 from app.manual_media_writing import MEDIA_HOLDER, gather_media, release_media
 from app.manual_media_writing import PROVIDER_CALLS as MEDIA_PROVIDER_CALLS
@@ -94,30 +96,24 @@ def _set_error(session: InterviewSession) -> None:
 
 
 def _question_execute(ctx: TaskContext) -> GeneratedQuestion:
-    return get_ai_provider().generate_question(QuestionRequest.model_validate(ctx.payload["request"]))
+    request_data = dict(ctx.payload["request"])
+    with session_scope() as db:
+        request_data["previous_cards"] = question_card_history(
+            db, ctx.subject_id, ctx.payload["intentId"], ctx.payload["depth"])
+    return get_ai_provider().generate_question(QuestionRequest.model_validate(request_data))
 
 
 def _question_apply(db: Session, ctx: TaskContext, result: GeneratedQuestion) -> None:
     session = _waiting_session(db, ctx)
-    try:
-        card = example_card(session.id, ctx.payload["intentId"],
-                            [(example.label, example.description) for example in result.examples])
-    except InvalidGuidance as error:  # examples are only decoration: the question goes on
-        logger.warning("interview examples dropped: session=%s reason=%s", session.id, error)
-        card = None
-    cards = ([card] if card else []) + state_cards(
-        db, session, ctx.payload["intentId"],
-        focused=True, max_cards=MAX_CARDS - int(card is not None),
-    )
+    history = question_card_history(db, session.id, ctx.payload["intentId"], ctx.payload["depth"])
+    cards = normalize_question_cards(result.guidance_cards, history)
     write_question(db, session, ctx.payload, result.text, result.meta.config_version,
-                   guidance=result.guidance, cards=cards)
+                   guidance=result.guidance, guidance_cards=cards)
 
 
 def _question_fail(db: Session, ctx: TaskContext, _error: Exception) -> None:
     session = _failing_session(db, ctx)
-    write_question(db, session, ctx.payload, fallback_question(ctx.payload), FALLBACK_SOURCE,
-                   cards=state_cards(db, session, ctx.payload["intentId"],
-                                     focused=True))
+    write_question(db, session, ctx.payload, fallback_question(ctx.payload), FALLBACK_SOURCE)
 
 
 # --- EVALUATION (Jev) ---------------------------------------------------------------------------
@@ -146,7 +142,8 @@ def _evaluation_apply(db: Session, ctx: TaskContext, judgement: SufficiencyJudge
     db.add(_evaluation_row(
         session, ctx, evaluation_config_version=judgement.meta.config_version[:200],
         provider=judgement.meta.provider[:32], status="SUCCEEDED",
-        needs_follow_up=judgement.needs_follow_up, probability=judgement.probability, applied_at=now,
+        needs_follow_up=judgement.needs_follow_up, probability=judgement.probability,
+        missing_aspects=list(judgement.missing_aspects), applied_at=now,
     ))
     db.flush()  # the (session, intent, applied_depth) UNIQUE rejects a second applied result
     apply_judgement(db, session, judgement.sufficient, judgement.missing_aspects, now,
@@ -317,13 +314,13 @@ def _media_writing_cancel(db: Session, ctx: TaskContext) -> None:
 
 HANDLERS = (
     TaskHandler(kind="INITIAL_QUESTION", execute=_question_execute, apply=_question_apply,
-                fail=_question_fail, **LIMITS),
+                fail=_question_fail, after_success=suggest_current_question_photos, **LIMITS),
     TaskHandler(kind="FOLLOWUP_GENERATION", execute=_question_execute, apply=_question_apply,
                 fail=_question_fail, **LIMITS),
     TaskHandler(kind="EVALUATION", execute=_evaluation_execute, apply=_evaluation_apply,
                 fail=_evaluation_fail, **LIMITS),
     TaskHandler(kind="REVIEW_UNDERSTANDING", execute=_understanding_execute, apply=_understanding_apply,
-                fail=_review_fail, **LIMITS),
+                fail=_review_fail, after_success=suggest_current_question_photos, **LIMITS),
     TaskHandler(kind="REVIEW_CORRECTION", execute=_correction_execute, apply=_correction_apply,
                 fail=_review_fail, **LIMITS),
     TaskHandler(kind="REVIEW_MEDIA_WRITING", execute=_media_writing_execute, apply=_media_writing_apply,

@@ -24,6 +24,7 @@
 | --- | --- | --- |
 | `AI_PROVIDER` | `openai` | `fake`는 local/dev 시연용(`production`에서 시작 시 거부) |
 | `OPENAI_API_KEY` | 없음 | 환경 변수로만 읽는다. 없으면 모든 호출이 `not_configured`(재시도 불가) |
+| `OPENAI_SERVICE_TIER` | `fast` | Responses의 Fast mode. `auto/default/fast/priority` 허용(빈 값은 기본값), 잘못된 값은 시작 거절. 주 모델·fallback 공통, STT 제외 |
 | `OPENAI_MODEL` | `gpt-6-luna` | 사용자 결정 "ChatGPT 6 Luna". `/v1/models`와 공식 문서로 ID 확인 |
 | `OPENAI_FALLBACK_MODEL` | 없음 | 지정하면 재시도 가능 실패 뒤 이 모델로 한 번 더 시도(fallback). fallback의 Jev는 `OPENAI_JUDGE_BACKEND`와 관계없이 Responses 경로를 쓴다(Decisions API는 일부 모델만 받으므로, 미지원 모델이 모든 평가를 `not_configured`로 끝내지 않게) |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | OpenAI 파일 전사 모델 |
@@ -45,9 +46,10 @@
 | `compose_draft`, `revise_structure`, `write_section_from_media` | Responses | `OPENAI_WRITING_REASONING_EFFORT`(medium) | `OPENAI_WRITING_TIMEOUT_SECONDS` | 32000 |
 | `answer_question` | Responses | `OPENAI_REASONING_EFFORT`(low) | `OPENAI_TIMEOUT_SECONDS` | 8000 |
 
-결과의 `meta.config_version`은 `provider:model:PROMPT_VERSION` 뒤에 실제 호출 조건을 붙인다: effort를 보냈으면 `:effort=<값>`, Jev는 `:responses:t=<aspect>/<not_applicable>`(+effort) 또는 `:decisions:aspects-<ASPECTS_VERSION>:t=<aspect>/<not_applicable>`로 남긴다(예: `openai:gpt-6-luna:2026-10-08.7:decisions:aspects-2026-10-08.1:t=0.7/0.8`). 임계값은 Python float의 왕복 가능한 표현(`repr`)을 사용하며, 허용되는 인접 float 설정도 반올림으로 같은 태그가 되지 않는다. 현재 프롬프트 버전은 `2026-10-08.7`이고 instructions SHA-256은 `f85c8f8e8ca609cd5a6a2b02eb34fe17a21d080639cff7634a5ce5e384cee825`이다(`tests/test_interview_sufficiency_policy.py`에서 함께 고정).
+결과의 `meta.config_version`은 `provider:model:PROMPT_VERSION` 뒤에 실제 호출 조건을 붙인다: effort를 보냈으면 `:effort=<값>`, Jev는 `:responses:t=<aspect>/<not_applicable>`(+effort) 또는 `:decisions:aspects-<ASPECTS_VERSION>:t=<aspect>/<not_applicable>`로 남긴다(예: `openai:gpt-6-luna:2026-10-08.7:decisions:aspects-2026-10-08.1:t=0.7/0.8`). 임계값은 Python float의 왕복 가능한 표현(`repr`)을 사용하며, 허용되는 인접 float 설정도 반올림으로 같은 태그가 되지 않는다. 현재 프롬프트 버전은 `2026-10-09.171`이고 instructions SHA-256은 `3f7e0b3df124f7e692087d23247dcbf32785a951f247a1ccb738fec10d71c026`이다(`tests/test_interview_sufficiency_policy.py`에서 함께 고정).
 
 실패 평가 행은 `provider.judge_meta()`에 위임한다. E2E의 `RoutedAiProvider`도 Jev를 실제 담당한 fake/live 제공자에 위임하며, Fake는 해당 스레드에서 예약·소비한 Responses/Decisions 백엔드를 기록한다. 작업 실행기는 새 평가 입력을 검증하기 전에 `reset_judge_meta()`로 이전 작업의 상태를 지우며, 실제 AI 진입 전 실패는 현재 큐/handler가 선택할 백엔드로 기록한다. 판단 결과 없이 실패한 OpenAI 호출은 주 모델의 설정된 Jev 경로·effort를 기록한다(fallback 성공 결과의 meta는 Responses 경로다). 한계: 주 모델과 `OPENAI_FALLBACK_MODEL`이 모두 실패하면 행에는 주 모델 이름과 설정 경로가 남고, 마지막에 실제로 실패한 fallback 모델·Responses 경로는 기록되지 않는다(실행 설정 기준 기록 정책). 과거 평가 행의 `t=0.70/0.80`은 덮어쓰지 않는다. 같은 수치 설정의 새 `t=0.7/0.8`과 config별 집계에서 별도 그룹이 되므로 비교할 때 형식 전환을 함께 확인한다.
+
 
 전사 기본값 근거(OpenAI speech-to-text 가이드, 2026-10 확인): `gpt-transcribe`는 녹음 파일 전사의 권장 모델이고 다국어 힌트(`languages`)와 용어 힌트(`keywords`)를 받는다. 지원 형식 mp3·mp4·m4a·wav·webm은 우리 4개 형식을 모두 포함하고 파일 상한 25 MB는 20 MiB보다 크며 길이 제한은 문서에 없다(우리 상한 120초). `gpt-4o-transcribe`·`gpt-4o-mini-transcribe`·`whisper-1`로 바꾸면 `language`/`prompt`로 보낸다. 한국어 합성 음성 실키 테스트로 확인했다.
 
@@ -102,7 +104,7 @@ Responses와 타임아웃 뒤 fallback도 WORK_STRUCTURE의 같은 재확인 정
 - 초안 구성은 검토의 근무조 시간과 기존 근무조·섹션 ID를 보존한다. 검토 단계를 다듬거나 분할하려면 기존 ID를 쓰는 부분과 새 단계 모두 근거를 인용해야 한다. 근거를 못 찾으면 원문만 유지한다. 서버가 무인용 변경을 복원한 섹션의 새 단계가 그 변경이 원문에서 지운 글자를 절반 이상 되풀이하면(분할의 한쪽) 복원된 원문과 중복되므로 `INVALID_OUTPUT`(`uncited_step_change_with_additions`)으로 재시도한다. 무관한 인용 추가와 무인용 다듬기가 함께 있으면 다듬기만 복원하고 추가는 남긴다. 이 비교는 글자 기준이라 놓치면 점주 말의 중복이 남고, 잘못 걸리면 재시도할 뿐 사실을 만들지 않는다. 인용 ID 유효성은 문장의 의미 충실도를 증명하지 않으므로 점주 답·정정·최종 내용을 별도 비교해야 한다.
 - 초안 정정(#118)의 근거는 정정 지시문 자체다(`<correctionId>#<문장번호>`). 바뀐 기존 단계도 같은 ID라는 이유로 면제하지 않는다.
 - 정정(`revise_structure`, 인텐트 정정·초안 정정)은 grounding이 결과를 고치면 적용하지 않는다: 인용 없이 바뀐 기존 단계(복원 대상), 인용 없는 새 단계(제거 대상), 인용 없이 바뀐 근무조 시간(비움 대상)이 하나라도 있으면 출력 전체가 `INVALID_OUTPUT`(`ungrounded_revision`, 재시도 가능)이다. 복원·제거한 채 저장하면 `APPLIED`와 모델 요약이 실제로 반영되지 않은 정정을 성공으로 말하기 때문이다. 정정의 근거에는 정정 지시가 들어 있으므로 충실한 변경은 항상 인용할 수 있다. 자동 재시도가 끝나면 인텐트 검토는 ERROR(마지막 READY 내용·요약·사진 유지, 검토 재시도 가능), 초안 정정은 `AI_PROCESSING_FAILED`(재시도 가능, 초안 내용·revision 그대로)다. 요약·초안 작성은 위의 제거·비움·복원 정책을 그대로 쓴다.
-- 내용 없는 단계(작성 3연산, `validation.drop_contentless_steps`): 서버는 짧은 문장 전체가 모호한 처리 지시 또는 규칙 없음 표현인 경우만 제거한다. 순수한 “상황에 맞게 알아서 처리해요”, “정해진 규칙은 따로 없어요”도 해당한다. 앞에 짧은 주제·주어 명사구(“청소는”, “손님 불만은”, “정해진 순서는”)나 문제 조건(“포스기 고장이 나면”)이 붙어도 같다. 명사구는 한글 단어 1~4개로 목적격 조사·연결/관형 어미·빈도 부사(“매일”)가 없어야 하고, 규칙 없음은 “정해진/정한/특별한” 같은 수식어나 규칙류 명사(규칙·방법·기준·순서·규정 등)가 있어야 한다(“청소 도구는 따로 없어요”는 매장 사실로 남긴다). 명사 목록으로 판정하지 않으며 조건에 맞지 않으면 남겨 점주 검토에 맡긴다. 구체적인 행동을 포함한 혼합 문장·종속절·인용 문장은 그대로 보존한다. 모호한 단계가 모두 빠지면 SECTION/steps 미확정, 규칙 없음만 있던 새 섹션은 삭제한다(검토된 기존 섹션은 비우고 미확정). 정정·초안은 grounding을 먼저 하므로 무근거 교체가 contentless 필터로 원문을 지우지 못한다. 정정에서 원문 그대로인 단계는 건드리지 않는다.
+- 내용 없는 단계(작성 3연산, `validation.drop_contentless_steps`): 서버는 짧은 문장 전체가 모호한 처리 지시 또는 규칙 없음 표현인 경우만 제거한다. 순수한 “상황에 맞게 알아서 처리해요”, “정해진 규칙은 따로 없어요”도 해당한다. 앞에 짧은 주제·주어 명사구(“청소는”, “손님 불만은”, “정해진 순서는”)나 문제 조건(“포스기 고장이 나면”)이 붙어도 같다. 명사구는 한글 단어 1~4개로 목적격 조사·연결/관형 어미·빈도 부사(“매일”)가 없어야 하고, 규칙 없음은 “정해진/정한/특별한” 같은 수식어나 규칙류 명사(규칙·방법·기준·순서·규정 등)가 있어야 한다(“청소 도구는 따로 없어요”는 매장 사실로 남긴다). 명사 목록으로 판정하지 않으며 조건에 맞지 않으면 남겨 점주 검토에 맡긴다. 구체적인 행동을 포함한 혼합 문장·종속절·인용 문장은 그대로 보존한다. 모호한 단계가 모두 빠지면 SECTION/steps 미확정, 규칙 없음만 있던 새 섹션은 삭제한다(검토된 기존 섹션의 확보/미확정 상태 변경은 초안 사실 보존 검사에서 거절). 정정·초안은 grounding을 먼저 하므로 무근거 교체가 contentless 필터로 원문을 지우지 못한다. 정정에서 원문 그대로인 단계는 건드리지 않는다.
 - 해당 없음(`not_applicable`): Decisions와 WORK_STRUCTURE 재확인 정책이 있는 Responses가 같은 임계 gate로 확정한다. 참이면 요약 요청(`IntentSummaryRequest.not_applicable`, 작업 payload 고정)에 실리고 서버가 요약 구조(근무조·섹션·미확정)를 비운다. 다른 인텐트의 Responses는 해당 없음에 관한 작성 프롬프트 규칙을 적용한다.
 - `answer_question`: `ANSWERED`는 인용 1개 이상, `NEEDS_OWNER`는 0개. 인용 섹션·단계는 입력 게시본에 있어야 하고, **발췌(excerpt)는 서버가 해당 단계 원문을 이어 만든다**(최대 1000자). 모델이 쓴 문장을 근거로 저장하지 않는다.
 
@@ -341,3 +343,7 @@ turn.input_method, turn.transcription_id, turn.content = "VOICE", row.id, text
 - MP4는 edit list가 있으면 그 길이를, 없으면 트랙 길이를 쓴다. gapless 메타데이터(iTunSMPB)만 있는 파일은 인코더 패딩(약 0.1초)만큼 길게 계산되어 120초 근처에서 보수적으로 거절될 수 있다.
 - 실행기는 앱 프로세스 안의 스레드다. 장시간 호출 중 프로세스가 죽으면 마지막 heartbeat 뒤 lease(기본 300초)가 지나야 다른 프로세스가 복구하며, 그 호출은 다시 실행된다(at-least-once).
 - 레이트 리밋(429)은 이 범위에서 구현하지 않았다.
+
+Fast mode는 Responses 요청의 `service_tier="fast"`로 지정한다. `priority`는 공식 별칭이며, 프로젝트 설정에 따르려면 `auto`, 표준 처리는 `default`를 명시한다. reasoning effort 기본 `low`와는 별도 설정이다. 근거: [OpenAI Fast mode 가이드](https://developers.openai.com/api/docs/guides/fast-mode).
+
+PR170 통합 시 근거 검색이 실행되어 `evidence=[]`인 초안 요청은 레거시의 근거 미지정 요청과 구분한다. 빈 검색에서도 신규 지시·시간은 인용 검증을 우회하지 못하며, 기존 단계 원문과 검토 시간은 유지한다. 최신 카드·답변 접수 스냅샷·선택 사진 후처리 및 배포된 0042/0043는 그대로 사용한다.

@@ -360,7 +360,7 @@ SUMMARY = {"summary": "요약", "structure": {"shifts": [], "sections": [], "mis
 
 
 def test_each_operation_group_gets_its_effort_timeout_and_config_version():
-    client = StubResponses([{"question": "공통 업무는 무엇인가요?", "guidance": None, "examples": []}, SUMMARY,
+    client = StubResponses([{"question": "공통 업무는 무엇인가요?", "guidance": None, "guidanceCards": []}, SUMMARY,
                             {"outcome": "NEEDS_OWNER", "answer": "확인이 필요해요.", "citations": []}])
     provider = OpenAiProvider(api_key="", model="gpt-6-luna", transcribe_model="gpt-transcribe",
                               timeout_seconds=30, writing_timeout_seconds=90, client=client)
@@ -368,7 +368,7 @@ def test_each_operation_group_gets_its_effort_timeout_and_config_version():
     summary = provider.summarize_intent(IntentSummaryRequest(intent=INTENT, dialogue=(TURN,), needs_detail=True))
     answer = provider.answer_question(QaRequest(question="q", manual=StructureSnapshot()))
     efforts = [(c["reasoning"]["effort"], c["timeout"], c["max_output_tokens"]) for c in client.calls]
-    assert efforts == [("low", 30, 1500), ("medium", 90, 24000), ("low", 30, 8000)]
+    assert efforts == [("low", 30, 8000), ("medium", 90, 16000), ("low", 30, 8000)]
     assert question.meta.config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:effort=low"
     assert summary.meta.config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:effort=medium"
     assert answer.meta.config_version == f"openai:gpt-6-luna:{PROMPT_VERSION}:effort=low"

@@ -33,11 +33,11 @@ from app.ai.contracts import (
     StructureSnapshot,
     SufficiencyRequest,
 )
+from app.ai.errors import AiError
 from app.ai.fake import FakeAiProvider, FakeOutcome, structure_to_raw
 from app.ai.prompts import INSTRUCTIONS
 from app.ai.schemas import RawStructure
 from app.ai.validation import (
-    NO_RULE_STEPS,
     VAGUE_STEPS,
     contentless_kind,
     drop_contentless_steps,
@@ -288,10 +288,11 @@ def test_reviewed_section_is_kept_empty_with_a_missing_entry_in_a_draft(fake):
     raw = structure_to_raw(reviewed)
     raw["missing_information"] = [{"target": "MANUAL", "target_ref": None, "field": "shifts", "description": "근무조 미정"}]
     fake.script("compose_draft", FakeOutcome.ok({"structure": raw}))
-    result = fake.compose_draft(DraftRequest(reviews=(review,), evidence=evidence("없어요.")))
-    assert [(s.id, s.steps) for s in result.structure.sections] == [(S1, ()), (S2, ())]
-    assert {(m.target_id, m.description) for m in result.structure.missing_information if m.target == "SECTION"} == {
-        (S1, NO_RULE_STEPS), (S2, VAGUE_STEPS)}
+    # Current composition preserves the reviewed known/unknown shape; legacy
+    # contentless text requires a review correction, not silent draft mutation.
+    with pytest.raises(AiError) as caught:
+        fake.compose_draft(DraftRequest(reviews=(review,), evidence=evidence("없어요.")))
+    assert caught.value.detail == "draft_changed_reviewed_fact"
 
 
 def test_draft_keeps_reviewed_shift_times_even_against_cited_older_answers(fake, caplog):

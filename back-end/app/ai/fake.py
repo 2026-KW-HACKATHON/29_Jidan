@@ -51,7 +51,7 @@ from app.ai.errors import AiError, AiErrorCode
 from app.ai.provider import JUDGE_BACKENDS, AiProvider
 
 OPERATIONS = (
-    "judge_sufficiency", "generate_question", "summarize_intent", "revise_structure",
+    "suggest_review_photos", "judge_sufficiency", "generate_question", "summarize_intent", "revise_structure",
     "compose_draft", "answer_question", "transcribe", "write_section_from_media",
 )
 
@@ -151,9 +151,9 @@ def _default_decision(body):
 
 def _default_question(data):
     if data["kind"] == "BASE":
-        return {"question": data["intent"]["base_question"], "guidance": None, "examples": []}
+        return {"question": data["intent"]["base_question"], "guidance": None, "guidanceCards": []}
     return {"question": f"{data['missing_aspects'][0]}에 대해 조금 더 자세히 알려 주세요.",
-            "guidance": None, "examples": []}
+            "guidance": None, "guidanceCards": []}
 
 
 def _own_evidence(data) -> list[tuple[str, list[str]]]:
@@ -244,6 +244,7 @@ def _default_media_writing(data):
 DEFAULTS: dict[str, Callable[[Any], Any]] = {
     "judge_sufficiency": _default_judge,
     "generate_question": _default_question,
+    "suggest_review_photos": lambda _data: {"suggestions": []},
     "summarize_intent": _default_summary,
     "revise_structure": _default_revision,
     "compose_draft": _default_draft,

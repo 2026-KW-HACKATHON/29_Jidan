@@ -124,6 +124,7 @@ class TaskHandler:
                                      must preserve any successor's resources
 
     provider_calls: the most AI/STT calls one execute makes in sequence (for the lease check).
+    after_success: optional best-effort hook after primary commit/lock release; no retry guarantee.
     """
 
     kind: str
@@ -135,6 +136,8 @@ class TaskHandler:
     backoff_seconds: tuple[float, ...] = DEFAULT_BACKOFF
     provider_calls: int = 1
     cancel: Callable[[Session, TaskContext], None] | None = None
+
+    after_success: Callable[[TaskContext], None] | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in TASK_KINDS:
@@ -456,6 +459,14 @@ def run_claimed(claimed: ClaimedTask, *, now: datetime | None = None) -> TaskRun
         logger.error("task finalize failed kind=%s task=%s error=%s", ctx.kind, ctx.task_id,
                      type(caught).__name__)
         run = _finalize(claimed, handler, None, caught if error is None else error, now, skip_apply=True)
+    # _finalize has committed and closed its session: optional work holds neither the
+    # primary task lease nor any DB lock. It never changes the primary task outcome.
+    # A process exit here can lose this best-effort hook; it is not durable task work.
+    if run.outcome == "succeeded" and handler.after_success is not None:
+        try:
+            handler.after_success(ctx)
+        except Exception:  # noqa: BLE001 - optional post-commit work cannot fail primary work
+            logger.warning("Optional task post-processing failed (AI_PROCESSING_FAILED)")
     logger.info("task kind=%s task=%s attempt=%d try=%d outcome=%s error=%s ms=%d", ctx.kind,
                 ctx.task_id, ctx.attempt, ctx.tries, run.outcome, run.error_code or "-",
                 int((time.monotonic() - started) * 1000))

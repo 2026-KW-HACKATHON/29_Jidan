@@ -1,4 +1,4 @@
-"""0043 preserves a populated FK graph, generated columns and SQLite enforcement both ways."""
+"""0044 preserves a populated FK graph, generated columns and SQLite enforcement both ways."""
 import uuid
 
 import pytest
@@ -90,14 +90,14 @@ def snapshot(connection):
 
 
 @pytest.mark.parametrize("deferred", [0, 1])
-def test_0043_roundtrip_preserves_existing_media_and_all_references(migration_engine, deferred):
+def test_0044_roundtrip_preserves_existing_media_and_all_references(migration_engine, deferred):
     engine = migration_engine
     seed_graph(engine)
     with engine.connect() as connection:
         before = snapshot(connection)
         connection.commit()
         config = alembic_config(connection)
-        for revision, migrate in (("0042", command.downgrade), ("head", command.upgrade)):
+        for revision, migrate in (("0043", command.downgrade), ("head", command.upgrade)):
             if deferred:
                 if not connection.in_transaction():
                     connection.begin()
@@ -111,17 +111,17 @@ def test_0043_roundtrip_preserves_existing_media_and_all_references(migration_en
             assert snapshot(connection) == before
             connection.commit()  # DROP/restore must not leave deferred violations at COMMIT
             assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0042" if revision == "0042" else "0043")
+                "0043" if revision == "0043" else "0044")
             connection.rollback()
 
 
 @pytest.mark.parametrize("deferred", [0, 1])
-def test_0043_mid_rebuild_failure_rolls_back_and_can_be_retried(migration_engine, deferred):
+def test_0044_mid_rebuild_failure_rolls_back_and_can_be_retried(migration_engine, deferred):
     engine = migration_engine
     seed_graph(engine)
     with engine.connect() as connection:
         config = alembic_config(connection)
-        command.downgrade(config, "0042")
+        command.downgrade(config, "0043")
         connection.commit()
         before = snapshot(connection)
         schema = connection.exec_driver_sql(
@@ -129,7 +129,7 @@ def test_0043_mid_rebuild_failure_rolls_back_and_can_be_retried(migration_engine
         connection.commit()
 
         def fail_second_rebuild(_conn, _cursor, statement, _params, _context, _many):
-            if statement.startswith("ALTER TABLE _0043_interview_intent_reviews RENAME"):
+            if statement.startswith("ALTER TABLE _0044_interview_intent_reviews RENAME"):
                 raise RuntimeError("injected DDL failure")
 
         event.listen(engine, "before_cursor_execute", fail_second_rebuild)
@@ -151,10 +151,10 @@ def test_0043_mid_rebuild_failure_rolls_back_and_can_be_retried(migration_engine
         assert snapshot(connection) == before
         assert connection.exec_driver_sql(
             "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name").all() == schema
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0042"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0043"
         connection.rollback()
         command.upgrade(config, "head")
         connection.commit()
         assert snapshot(connection) == before
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0043"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0044"
