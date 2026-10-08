@@ -186,7 +186,10 @@ class AiProvider(ABC):
     def suggest_review_photos(self, request: PhotoSuggestionsRequest) -> PhotoSuggestions:
         raw = self._structured("suggest_review_photos", request.model_dump(mode="json"))
         suggestions = []
+        section_ids = {section.id for section in request.structure.sections}
         for suggestion in raw.suggestions:
+            if suggestion.sectionId not in section_ids:
+                raise invalid("unknown_photo_section")
             title = clean_text(suggestion.title)
             footer = clean_text(suggestion.footer) if suggestion.footer is not None else None
             if not title or footer == "":

@@ -210,15 +210,22 @@ def test_guidance_semantic_fixtures_detect_grounding_mutants_offline():
         "revision-rename-preserves-id",
     }
     assert set(indexed) == expected_mutants
-    # These are parseable, valid structures with wrong meanings; each must still fail
-    # its critical gold check, rather than merely making the aggregate report fail.
-    for case_id in expected_mutants:
+    # An invented photo section now fails production reference validation before gold.
+    # The remaining nine still require their specific meaning failure; a generic parser
+    # failure would hide a broken oracle (especially the rename identity case below).
+    distorted = indexed["photos-distorted-section"]
+    assert distorted["structure"] == "fail"
+    assert distorted["structure_error_code"] == "invalid_output"
+    assert distorted["gold_status"] == "skipped_structure_failure"
+    assert distorted["critical_gold_failures"] == []
+    for case_id in expected_mutants - {"photos-distorted-section"}:
         case = indexed[case_id]
         assert case["structure"] == "pass", case_id
         assert case["gold_status"] == "fail", case_id
         assert case["critical_gold_failures"] == ["grounded-meaning"], case_id
-    assert mutants["structure_failure_n"] == 0
-    assert mutants["critical_gold_failure_n"] == len(expected_mutants)
+    assert mutants["structure_failure_n"] == 1
+    assert mutants["critical_gold_failure_n"] == 9
+    assert mutants["structure_failure_n"] + mutants["critical_gold_failure_n"] == len(expected_mutants)
 
 
 def test_rename_identity_mutant_fails_the_existing_id_gold_check():

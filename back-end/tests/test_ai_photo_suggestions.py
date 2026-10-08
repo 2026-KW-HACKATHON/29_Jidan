@@ -3,6 +3,7 @@ import pytest
 
 from app.ai.contracts import (
     PhotoSuggestionsRequest,
+    SectionItem,
     StructureSnapshot,
 )
 from app.ai.errors import AiError, AiErrorCode
@@ -12,7 +13,8 @@ from app.ai.schemas import OUTPUTS
 
 
 def photo_request():
-    return PhotoSuggestionsRequest(summary="입구에 열쇠가 있어요.", structure=StructureSnapshot())
+    return PhotoSuggestionsRequest(summary="입구에 열쇠가 있어요.", structure=StructureSnapshot(sections=(
+        SectionItem(id="saved-section", category="COMMON_TASK", title="열쇠 보관"),)))
 
 
 def test_photo_operation_empty_and_grouped_nullable_output():
@@ -43,3 +45,19 @@ def test_photo_operation_fallback_and_operation_registries():
     assert set(OUTPUTS) <= set(OPERATIONS)
 
 
+
+
+@pytest.mark.parametrize("section_id", ["other-session-section", "deleted-section", "missing-section", ""])
+def test_photo_operation_rejects_sections_not_in_persisted_input(section_id):
+    provider = FakeAiProvider().script("suggest_review_photos", FakeOutcome.ok({"suggestions": [{
+        "sectionId": section_id, "title": "사진", "items": [{"label": "위치", "description": None}], "footer": None,
+    }]}))
+    with pytest.raises(AiError):
+        provider.suggest_review_photos(photo_request())
+
+
+def test_photo_operation_timeout_is_classified():
+    provider = FakeAiProvider().script("suggest_review_photos", FakeOutcome.fail(AiErrorCode.TIMEOUT))
+    with pytest.raises(AiError) as caught:
+        provider.suggest_review_photos(photo_request())
+    assert caught.value.code == AiErrorCode.TIMEOUT
