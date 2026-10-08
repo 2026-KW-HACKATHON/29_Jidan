@@ -90,7 +90,7 @@ it('빈 가입 폼에서 신입과 시간을 입력해 확인 및 완료까지 �
  expect(screen.getByLabelText('생년월일 *')).toHaveValue('2000. 03. 01')
  fireEvent.click(screen.getByLabelText('남성'));fireEvent.click(screen.getByRole('button',{name:'다음'}))
  fireEvent.click(screen.getByLabelText('신입'));fireEvent.click(screen.getByRole('button',{name:'다음'}))
- fireEvent.click(screen.getByRole('button',{name:'월 09:00–09:30'}))
+ fireEvent.click(screen.getByRole('button',{name:'월 09:00 – 09:30'}))
  expect(screen.getByText('선택한 시간 · 주 0.5시간')).toBeInTheDocument()
  fireEvent.click(screen.getByRole('button',{name:'입력 내용 확인'}));fireEvent.click(screen.getByRole('button',{name:'프로필 등록 완료'}))
  await screen.findByText('프로필 등록이 완료됐어요')

@@ -61,7 +61,7 @@ export function validateWorker(d: WorkerDraft, step: number, current = today()):
 }
 export const clockText = (minutes: number) => `${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`
 export const daysText = (days: number[]) => [...days].sort((a,b)=>a-b).map(d=>weekdays[d]).join(' · ')
-export const rangeText = (a: Availability) => `${clockText(a.start)}–${a.overnight ? '다음 날 ' : ''}${clockText(a.end)}`
+export const rangeText = (a: Availability) => `${clockText(a.start)} – ${a.overnight ? '다음 날 ' : ''}${clockText(a.end)}`
 export const weekHours = (values: Availability[]) => new Set(values.flatMap(slots)).size / 2
 export function careerPeriod(c: Career) {
   const end = c.current ? today().slice(0,7) : c.end
