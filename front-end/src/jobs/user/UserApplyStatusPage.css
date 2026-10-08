@@ -1,0 +1,26 @@
+/* Figma 506:3929 / 506:3969 / 506:3996. */
+.preview-applications { background: var(--ds-primary-surface); }
+.preview-applications .ds-app-bar h1 { line-height: 26px; }
+.preview-applications .ds-mobile-body { padding: 8px var(--ds-space-6) var(--ds-space-6); }
+.preview-applications .application-content,
+.preview-applications .application-panel,
+.preview-applications .application-list { display: flex; flex-direction: column; gap: var(--ds-space-4); }
+.preview-applications .application-introduction { display: flex; flex-direction: column; gap: var(--ds-space-2); }
+.preview-applications .application-introduction h2 { font-size: 22px; line-height: 33px; font-weight: 700; }
+.preview-applications .application-introduction p { color: var(--ds-secondary); font-size: var(--ds-body); line-height: 23px; }
+.preview-applications .ds-tabs button { border-radius: 6px; line-height: 20px; }
+.preview-applications .application-notice { padding: var(--ds-space-3); border-radius: var(--ds-radius-control); color: var(--ds-secondary); font-size: var(--ds-small); line-height: 20px; }
+.preview-applications .application-card { display: flex; flex-direction: column; gap: var(--ds-space-2); padding: var(--ds-space-4); border-radius: var(--ds-radius-dialog); background: var(--ds-white); box-shadow: var(--ds-shadow); }
+.preview-applications .application-card-header { display: flex; align-items: center; gap: var(--ds-space-2); }
+.preview-applications .application-card-header h3 { flex: 1; min-width: 0; font-size: var(--ds-body); line-height: 23px; font-weight: 700; }
+.preview-applications .application-badge { flex: none; padding: 4px 8px; border-radius: 4px; font-size: var(--ds-small); line-height: 20px; font-weight: 700; }
+.preview-applications .application-badge.is-blue { background: var(--ds-primary-surface); color: var(--ds-primary-strong); }
+.preview-applications .application-badge.is-green { background: #eef6ee; color: #28702f; }
+.preview-applications .application-badge.is-gray { background: var(--ds-surface); color: var(--ds-secondary); }
+.preview-applications .application-description { color: var(--ds-secondary); font-size: var(--ds-body); line-height: 23px; }
+.preview-applications .application-time { color: var(--ds-secondary); font-size: var(--ds-small); line-height: 20px; }
+.preview-applications .application-card { position: relative; }
+.preview-applications .application-open { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.preview-applications .application-open::after { content: ''; position: absolute; inset: 0; border-radius: var(--ds-radius-dialog); }
+.preview-applications .application-open:focus-visible { outline: none; }
+.preview-applications .application-open:focus-visible::after { outline: 2px solid var(--ds-primary-strong); outline-offset: 2px; }

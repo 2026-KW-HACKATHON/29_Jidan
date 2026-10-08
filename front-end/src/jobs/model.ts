@@ -34,7 +34,7 @@ export function jobHours(job: Pick<Job, 'start' | 'end' | 'nextDay'>) {
   const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
   return (minutes(job.end) + (job.nextDay ? 1440 : 0) - minutes(job.start)) / 60
 }
-export function jobTime(job: Pick<Job, 'start' | 'end' | 'nextDay'>) { return `${job.start}–${job.nextDay ? '다음 날 ' : ''}${job.end}` }
+export function jobTime(job: Pick<Job, 'start' | 'end' | 'nextDay'>) { return `${job.start} – ${job.nextDay ? '다음 날 ' : ''}${job.end}` }
 export function jobDate(date: string) { return date.replaceAll('-', '.') }
 export function won(amount: number) { return `${amount.toLocaleString('ko-KR')}원` }
 

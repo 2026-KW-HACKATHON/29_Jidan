@@ -11,7 +11,7 @@ it('검색 결과와 선택한 공고의 원본 데이터를 전달한다',()=>{
   expect(screen.getByRole('status')).toHaveTextContent('공고 1개')
   fireEvent.click(screen.getByRole('button',{name:/야간 매장 관리 대타/}))
   expect(selected).toHaveBeenCalledWith(sampleJobs[2])
-  expect(screen.getByText('9월 30일 / 22:00–다음 날 02:00')).toBeInTheDocument()
+  expect(screen.getByText('9월 30일 / 22:00 – 다음 날 02:00')).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('매장·업무 검색'),{target:{value:'없음'}})
   expect(screen.getByRole('status')).toHaveTextContent('공고 0개')
 })

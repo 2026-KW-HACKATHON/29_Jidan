@@ -43,5 +43,5 @@ function createPreviewService(): OwnerService {
 }
 export default function OwnerRegistrationPreview() {
   const [service]=useState(createPreviewService)
-  return <OwnerRegistration service={service} storage={previewStorage} onBack={() => navigatePreview('/__auth/signup')} onExpired={() => navigatePreview('/__auth/signup')} />
+  return <OwnerRegistration service={service} storage={previewStorage} onBack={() => navigatePreview('/__preview/signup')} onExpired={() => navigatePreview('/__preview/signup')} />
 }
