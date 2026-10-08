@@ -1,22 +1,16 @@
 import os
 
-import pymysql
+from sqlalchemy import text
+
+from app.db import get_health_engine
 
 
 def database_status(environment: str) -> str:
-    values = {key: os.getenv(f"DB_{key.upper()}") for key in ("host", "name", "user", "password")}
-    if environment == "local" and not any(values.values()):
+    if environment == "local" and not any(
+        os.getenv(f"DB_{key}") for key in ("HOST", "NAME", "USER", "PASSWORD")
+    ):
         return "not_configured"
-    if not all(values.values()):
-        raise ValueError("Incomplete database configuration")
-    port = int(os.getenv("DB_PORT", "3306"))
-    if not 1 <= port <= 65535:
-        raise ValueError("Invalid database port")
-    with pymysql.connect(
-        host=values["host"], port=port, user=values["user"], password=values["password"],
-        database=values["name"], connect_timeout=3, read_timeout=3, write_timeout=3,
-    ) as connection, connection.cursor() as cursor:
-        cursor.execute("SELECT 1")
-        if cursor.fetchone() != (1,):
+    with get_health_engine().connect() as connection:
+        if connection.execute(text("SELECT 1")).scalar() != 1:
             raise ValueError("Unexpected database response")
     return "ok"

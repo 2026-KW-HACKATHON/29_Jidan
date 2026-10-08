@@ -1,0 +1,5 @@
+# OAuth 브라우저 이동의 성공 응답은 302. 두 redirect operation만 2XX 규칙에서 제외.
+../openapi.yaml:
+  operation-2xx-response:
+    - '#/paths/~1api~1auth~1google/get/responses'
+    - '#/paths/~1api~1auth~1google~1callback/get/responses'

@@ -2,3 +2,7 @@
 ruff
 pytest
 httpx
+jsonschema[format]
+PyYAML
+aiosmtpd
+time-machine

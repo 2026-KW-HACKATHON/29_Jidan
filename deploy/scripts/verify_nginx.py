@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Verify checked-in proxy configs and callback query privacy in disposable Nginx."""
+import json
+import subprocess
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+IMAGE = "nginx:1.28-alpine"
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def docker(*args):
+    return subprocess.run(["docker", *args], text=True, check=True,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.strip()
+
+
+def verify():
+    with tempfile.TemporaryDirectory(prefix="jidan-nginx-") as directory:
+        config = Path(directory)
+        for environment in ("dev", "production"):
+            (config / f"{environment}.conf").write_text((ROOT / "deploy/nginx" / f"{environment}.conf").read_text())
+        # The dev upstream responds; the production upstream refuses connections. Both
+        # success and proxy-error callback requests must suppress their query logs.
+        (config / "upstream.conf").write_text("server { listen 3021; access_log off; error_log /dev/null crit; client_max_body_size 0; location / { return 200 'ok'; } }\n")
+        mount = f"{config}:/etc/nginx/conf.d:ro"
+        docker("run", "--rm", "--volume", mount, IMAGE, "nginx", "-t")
+        container = docker("run", "--detach", "--publish", "127.0.0.1::80", "--volume", mount, IMAGE)
+        try:
+            port = json.loads(docker("inspect", container))[0]["NetworkSettings"]["Ports"]["80/tcp"][0]["HostPort"]
+            def request(host, path):
+                req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers={"Host": host})
+                try:
+                    with urllib.request.urlopen(req, timeout=3) as response:
+                        return response.status
+                except urllib.error.HTTPError as exc:
+                    return exc.code
+            for _ in range(30):
+                try:
+                    assert request("dev-jidan.leehyowon14.dev", "/api/health?control=LOG_CONTROL") == 200
+                    break
+                except (OSError, AssertionError):
+                    time.sleep(0.1)
+            else:
+                raise RuntimeError("Nginx did not become ready")
+            for host, status in (("dev-jidan.leehyowon14.dev", 200), ("jidan.leehyowon14.dev", 502)):
+                assert request(host, "/api/auth/google/callback?code=CALLBACK_SECRET&state=STATE_SECRET") == status
+            def upload(path, size):
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{port}{path}", data=b"\0" * size, method="POST",
+                    headers={"Host": "dev-jidan.leehyowon14.dev", "Content-Type": "application/octet-stream"})
+                try:
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        return response.status
+                except urllib.error.HTTPError as exc:
+                    return exc.code
+            # Media uploads may carry a 20 MiB recording; every other request keeps the 10 MiB cap.
+            big = 20 * 1024 * 1024 + 64 * 1024
+            assert upload("/api/stores/s/manual/media", big) == 200
+            assert upload("/api/stores/s/manual/qa/media", big) == 200
+            assert upload("/api/stores/s/manual/media", 22 * 1024 * 1024) == 413
+            assert upload("/api/stores/s/manual/transcriptions", 11 * 1024 * 1024) == 413
+            logs = docker("logs", container)
+            assert "LOG_CONTROL" in logs, "control access log missing; privacy check would be vacuous"
+            assert "CALLBACK_SECRET" not in logs and "STATE_SECRET" not in logs, "callback query leaked"
+            print("Nginx dev/production syntax, callback query privacy and upload limits verified")
+        finally:
+            docker("rm", "--force", container)
+
+
+if __name__ == "__main__":
+    verify()

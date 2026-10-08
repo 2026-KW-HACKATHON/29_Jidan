@@ -1,0 +1,1875 @@
+{
+  "approvedRemoteSha": "5fd6896955ca9133c5b8967485438dd86eceefc4",
+  "localVersion": "0.11.0",
+  "policy": "Preserve all remote response declarations; user approved 25 additions, 2026-10-07",
+  "schemasHash": "d4e140653eb6d6fee72fc827e177879cd3d66a83ff9c927200aaa489b4435790",
+  "operations": [
+    {
+      "operationId": "startGoogleLogin",
+      "path": "/api/auth/google",
+      "method": "get",
+      "approvedResponses": [
+        "302",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "52c5afb205d5c9780c2038d883f5bce22844e383d1319507ce29d8ba4d0e7306",
+      "successResponseHash": "13a76bade1db4b83141d273c71af18c75b79024d9c062b1aa6a4ebbb180730a1"
+    },
+    {
+      "operationId": "completeGoogleLogin",
+      "path": "/api/auth/google/callback",
+      "method": "get",
+      "approvedResponses": [
+        "302",
+        "400",
+        "401",
+        "403",
+        "429",
+        "500",
+        "502"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "00d807a3bcf1a42368b30a79084af87bc01d81ea6eb56be3a7cacad1121ae7c4",
+      "successResponseHash": "13a76bade1db4b83141d273c71af18c75b79024d9c062b1aa6a4ebbb180730a1"
+    },
+    {
+      "operationId": "getRegistrationContext",
+      "path": "/api/auth/registration",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "4dca721159f1e183098484f34d55707ca3a68d848eda0d8a2dd283efc23c3294",
+      "successResponseHash": "d574eaf83ca92add5f491340c104e599dace12656b412fb6862e87562d028306"
+    },
+    {
+      "operationId": "registerWorker",
+      "path": "/api/auth/registrations/workers",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "400",
+        "401",
+        "403",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "7c23df4c737af9f8f48c6443907c814a873590c53c14e828244c2acba28fd002",
+      "successResponseHash": "73e155809a64c55f110b9d4cca2ea280477ad18dc26a31862633b459258bdbfd"
+    },
+    {
+      "operationId": "registerOwner",
+      "path": "/api/auth/registrations/owners",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "400",
+        "401",
+        "403",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "054c2bf459862124ea9f37f926c7417277fc6c4f526e7fc6500bd1c6b7ba50b3",
+      "successResponseHash": "73e155809a64c55f110b9d4cca2ea280477ad18dc26a31862633b459258bdbfd"
+    },
+    {
+      "operationId": "getCurrentSession",
+      "path": "/api/auth/session",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "successResponseHash": "6c0d4dd6b96b37baa7a5d3301f549a1d66da9d3897bd6167ea22131b1c81ebbb"
+    },
+    {
+      "operationId": "getCsrfToken",
+      "path": "/api/auth/csrf",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "8c403bba99ed0feb88f1c88a0d66d5fb543fb55d5e78cb37556e7a3ad17bdba1",
+      "successResponseHash": "e0165abec105c64a617250d02ae0a6324e01f24fe3a052afaa7496b64a4f272c"
+    },
+    {
+      "operationId": "logout",
+      "path": "/api/auth/logout",
+      "method": "post",
+      "approvedResponses": [
+        "204",
+        "403",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "1476609252fc5db9c2d50c5b64484bdae0575d132a5dded457836d21b33d4d76",
+      "successResponseHash": "06b0e4c21be6cc28cf0ddb213b7d0e7365722260c2bbcdac0eb6431dd9c863a4"
+    },
+    {
+      "operationId": "searchStoreApprovalRequests",
+      "path": "/api/admin/store-approval-requests/search",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "7f6562aa1d8a6070606b3d0c627af35601432b0b3ad0c48df9c11e21e2aa757a",
+      "successResponseHash": "be5b5151fb0076b1325ed241043acbdfb8aad90efca8f03d485cd0f780c0f247"
+    },
+    {
+      "operationId": "approveStoreApprovalRequest",
+      "path": "/api/admin/store-approval-requests/{requestId}/approve",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "86511c8cd2974ea0b8ca534602560c2a34eab7ce74ef4e5efca1aa3ae00077ab",
+      "successResponseHash": "72cf722b965061161e832cddd0b9fe4d5484bbe8b682d7c323708e1b43ca3e98"
+    },
+    {
+      "operationId": "getMyWorkerProfile",
+      "path": "/api/users/me/profile",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "6f9d1e21e820799061ed84187e04d4f89066878c8a11bedcd594c9f9ae082863",
+      "successResponseHash": "02cdb9c23c411de3bc3870b5a8d6cc6b74e85ee2ab6768cd02c20b281922d7cb"
+    },
+    {
+      "operationId": "updateMyWorkerBasicProfile",
+      "path": "/api/users/me/profile/basic",
+      "method": "patch",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "208d713dcab1c5f1ef7a24324944b6eed5fe5b73ed1b435a0e6a60fddb34b0b0",
+      "successResponseHash": "02cdb9c23c411de3bc3870b5a8d6cc6b74e85ee2ab6768cd02c20b281922d7cb"
+    },
+    {
+      "operationId": "replaceMyWorkerCareers",
+      "path": "/api/users/me/profile/careers",
+      "method": "put",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "3e4ab2ac3e1079bc1ffbeaf4f4f547b4bbe0f028cebc12c155916101717a217a",
+      "successResponseHash": "02cdb9c23c411de3bc3870b5a8d6cc6b74e85ee2ab6768cd02c20b281922d7cb"
+    },
+    {
+      "operationId": "replaceMyWorkerAvailabilities",
+      "path": "/api/users/me/profile/availabilities",
+      "method": "put",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "8461d1881c7fa5c11e6956f1b399ed4d64625e290c7781c83cd87bbcc0c3c26b",
+      "successResponseHash": "02cdb9c23c411de3bc3870b5a8d6cc6b74e85ee2ab6768cd02c20b281922d7cb"
+    },
+    {
+      "operationId": "listMyOwnerStores",
+      "path": "/api/owners/me/stores",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "a0ed07e6b1ec6e4d0ae86e0707e7ad38aa49510e5d5f3b3e5a7c298ee83a05da",
+      "successResponseHash": "4064adf97c27232af5d5c164e8b78e028f7101fc8175abeeba03680a01bc803c"
+    },
+    {
+      "operationId": "getMyOwnerStore",
+      "path": "/api/stores/{storeId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "9e584dd043fb8920d80af9fa27069208ad0646d4d495518b78080579cc4f424f",
+      "successResponseHash": "5eb858a7555954f86a22a949c5948cfb3705550a0591580be36daa29ed2b94dd"
+    },
+    {
+      "operationId": "createMyOwnerStore",
+      "path": "/api/stores",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "400",
+        "401",
+        "403",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "077b7e1c9fd9888eeb0d93afec15d87d004a57418a032e8527bc2a4066f901db",
+      "successResponseHash": "7db5344919b2239d04d996bcfdd1b217078ce773fcd8b5a760373ac3b61b6066"
+    },
+    {
+      "operationId": "createStoreInvitation",
+      "path": "/api/stores/{storeId}/invitations",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "b8d50060652c679efab729c964f63cfd8ace11b88a3f8cc620d899d12adaea9a",
+      "successResponseHash": "d3e32b7ac8dbcc89188aaf75777f3da43d2f83cba8ae49cf857ceca6359d714a"
+    },
+    {
+      "operationId": "listStoreInvitations",
+      "path": "/api/stores/{storeId}/invitations",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "cf6e23ba9134af4f6e040c023831ba98617f94d2f84c25a2a8a663a403701ad7",
+      "successResponseHash": "486962918868e80d28589a00009fffc075aa86057aead16c6a4528b6ef0d112c"
+    },
+    {
+      "operationId": "resendStoreInvitation",
+      "path": "/api/stores/{storeId}/invitations/{invitationId}/resend",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "410",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "26081eb6dc9fb69f71bd84638d7dd805cbb5f82a6d1365df8e63856f7f518654",
+      "successResponseHash": "67a7c586bb63b1310d35db72c70bb8dc425d639e73fd34cd0115ed276dd183ed"
+    },
+    {
+      "operationId": "cancelStoreInvitation",
+      "path": "/api/stores/{storeId}/invitations/{invitationId}/cancel",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "410",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "28740b937d413f0d08bfb100e332774799448101a7c7334e57a282b6a4a0edcc",
+      "successResponseHash": "a8b7b4d9adfefef49bb42aa160f308c1cfad2576f9253877e5e3e013c346fe67"
+    },
+    {
+      "operationId": "previewStoreInvitation",
+      "path": "/api/store-invitations/preview",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "410",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "c63c9403a472ebaa0d73b9f4e08cda5f4a79ed28cd83e8d1cef1298c7d43126a",
+      "successResponseHash": "ffb5e190695e177d8ab505ecd713446095d9230ae550fb1cf81582e90c0b96b2"
+    },
+    {
+      "operationId": "acceptStoreInvitation",
+      "path": "/api/store-invitations/accept",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "410",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "204a78a4c5cbcdd14a50cae1fb444fd45e2b332c5f232dd7b24d26a913b7cd97",
+      "successResponseHash": "237914c99b98942a38780f9ab581243bc57fd4023eedc1c09a4d8de6c4612a29"
+    },
+    {
+      "operationId": "declineStoreInvitation",
+      "path": "/api/store-invitations/decline",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "410",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "204a78a4c5cbcdd14a50cae1fb444fd45e2b332c5f232dd7b24d26a913b7cd97",
+      "successResponseHash": "6be4956a74c6e35733b7d595d641a0aca27f46178cdef10ccb41fc64c2a9fc16"
+    },
+    {
+      "operationId": "listStoreWorkers",
+      "path": "/api/stores/{storeId}/workers",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "7b69f3fcffcb62b621e3a9fb0e05eef20a8d08e684d781beea3342be28153198",
+      "successResponseHash": "23ba8573d9e8e533ea953045dfc4a4e986c746e1e312142cd5d0260cb8b83c8a"
+    },
+    {
+      "operationId": "getStoreWorker",
+      "path": "/api/stores/{storeId}/workers/{workerId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "91dcc84c84884b345c50a424620a779b40afbc49e2e6cdaaedda3c83a34f17f6",
+      "successResponseHash": "8ea9cc750dcf7929bdf0c8a967c02b2150f70ee35d9a660af1a561352fb335c2"
+    },
+    {
+      "operationId": "revokeStoreWorkerAccess",
+      "path": "/api/stores/{storeId}/workers/{workerId}/access",
+      "method": "delete",
+      "approvedResponses": [
+        "204",
+        "400",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "1b9a9451d8afec4f1aad77ff770d596ce8c90cf5b7fdb5db8b20c4552bdcb21c",
+      "successResponseHash": "6ad85bbc638382abe71c454c0eb6ec3d91171ae6b0b8789cbf9c928c99687508"
+    },
+    {
+      "operationId": "getStoreManagementSummary",
+      "path": "/api/stores/{storeId}/management-summary",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "9e584dd043fb8920d80af9fa27069208ad0646d4d495518b78080579cc4f424f",
+      "successResponseHash": "77e9a3704b519c2943139ac129184d24631484b16dded8b74c92dcf567de7b2a"
+    },
+    {
+      "operationId": "getOwnerManualState",
+      "path": "/api/stores/{storeId}/manual",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "719bc15522e465e95a4843af4182f0363403c366f18d504b8444e55c7c614430",
+      "successResponseHash": "4af2af6ea09995aca21c984cf55643abeb31cffcb342f73cca7218fcbca4ae39"
+    },
+    {
+      "operationId": "getManualDraft",
+      "path": "/api/stores/{storeId}/manual/draft",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "719bc15522e465e95a4843af4182f0363403c366f18d504b8444e55c7c614430",
+      "successResponseHash": "d0e2ead240631a1d46e2d67337549a57fbd9208513f613ce4c269dec864a9bb5"
+    },
+    {
+      "operationId": "uploadManualMedia",
+      "path": "/api/stores/{storeId}/manual/media",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "413",
+        "415",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "6b69ff566c7bed354209d84dfd3e8f246766906367d2b0961a3dab8254f9126f",
+      "successResponseHash": "1223897c4f7a34efd26c5ee96e3a25a6796875e71ca9de38fc7a8c1649f37653"
+    },
+    {
+      "operationId": "deleteUnusedManualMedia",
+      "path": "/api/stores/{storeId}/manual/media/{mediaId}",
+      "method": "delete",
+      "approvedResponses": [
+        "204",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "a820c2e57daae518cdf02f1cc2a0b9ae713e9fa849cd80919feac9030ba5b5db",
+      "successResponseHash": "6ad85bbc638382abe71c454c0eb6ec3d91171ae6b0b8789cbf9c928c99687508"
+    },
+    {
+      "operationId": "readManualPhoto",
+      "path": "/api/stores/{storeId}/manual/media/{mediaId}/content",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "50189979dae2d140b47d2429c9ce64e8db42e80988a0f834f4aeb05dfa9b6b51",
+      "successResponseHash": "fcd1c4b00b6d8368f4cb84218be9e1005c4736e8be0692ae25cddc89f436b3de"
+    },
+    {
+      "operationId": "createManualTranscription",
+      "path": "/api/stores/{storeId}/manual/transcriptions",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "202",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "ab8124c225c102dbe360c042ec3044e76b6ef21c4fd1110a906764d3e0e41da4",
+      "successResponseHash": "e8b29527c295f3e284ac5cbeed71ef966f3c595d2f22c6c7da02824372bb81c3"
+    },
+    {
+      "operationId": "getManualTranscription",
+      "path": "/api/stores/{storeId}/manual/transcriptions/{transcriptionId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "39c05608c8f704d8f666ed486d4ac18bb24aaf4ffd8da75eb24b8ab90a682edc",
+      "successResponseHash": "1dccb4dba6d59bde452ed65cfb70065093683fe4e92d60a6c27d66a4e657f097"
+    },
+    {
+      "operationId": "startManualInterview",
+      "path": "/api/stores/{storeId}/manual/interviews",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "93c54d3cfafb019f6590071bdbcbb14519c0425e2b5d25499a6d1cb3faa52f72",
+      "successResponseHash": "b66369627edeb91d10bc97f250c5ca3329c4e72d41cc8f5c50775f7c36111c58"
+    },
+    {
+      "operationId": "getManualInterview",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "ac118199e3f1727207a4ce3cdf2943b0894d398ab433419df13fd48dc07a1eb5",
+      "successResponseHash": "7bf56fc7d89cad8ffe66da960f487201ba192a47fd788b43f5248a805a4f74cb"
+    },
+    {
+      "operationId": "getManualInterviewTurns",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/turns",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "81a1960f87324256c1a7dcd40eaab043aa940993c255b0b430cce02603762d50",
+      "successResponseHash": "7075f2fbacab2a510425ddd853eb627b0d922cce9fde6a37b9c510fea5910535"
+    },
+    {
+      "operationId": "answerManualInterviewQuestion",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/answers",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "01e1519603eebf8ccca3b1696b3dad271045862e2cd6955838e232ffb3d89be7",
+      "successResponseHash": "067ca37768e4764c1c47a84e68cae27b486936795b67d716f1e4fb627522f384"
+    },
+    {
+      "operationId": "generateManualDraft",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/completion",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "13a8ded9d2d3c5ee136c7adac7d5471debb6fdac0a9a7f2fb23a3aa790a5d25c",
+      "successResponseHash": "067ca37768e4764c1c47a84e68cae27b486936795b67d716f1e4fb627522f384"
+    },
+    {
+      "operationId": "retryManualInterviewProcessing",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/retries",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "5579a2f47ea5c86a899ca86f7f372ba0d08b2b59f8f9410a052819a871fd7196",
+      "successResponseHash": "067ca37768e4764c1c47a84e68cae27b486936795b67d716f1e4fb627522f384"
+    },
+    {
+      "operationId": "replaceManualDraftContent",
+      "path": "/api/stores/{storeId}/manual/draft/content",
+      "method": "put",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "6220ba9caaefd7a6614e2a33a0d7c3a5c0b1d3d4f0b6b4ba08664a2150c47225",
+      "successResponseHash": "d0e2ead240631a1d46e2d67337549a57fbd9208513f613ce4c269dec864a9bb5"
+    },
+    {
+      "operationId": "previewManualForWorker",
+      "path": "/api/stores/{storeId}/manual/draft/preview",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "719bc15522e465e95a4843af4182f0363403c366f18d504b8444e55c7c614430",
+      "successResponseHash": "c742ea70fc99f710eb40f287366cba9add61fa46c46d458afa633073a41c6485"
+    },
+    {
+      "operationId": "acknowledgeManualIssues",
+      "path": "/api/stores/{storeId}/manual/draft/acknowledgements",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "1192f1839c6fb9cbeac485302191d2a34acc1267e87b15e7a905629bda5412c8",
+      "successResponseHash": "d0e2ead240631a1d46e2d67337549a57fbd9208513f613ce4c269dec864a9bb5"
+    },
+    {
+      "operationId": "publishManualDraft",
+      "path": "/api/stores/{storeId}/manual/draft/publication",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "943d6df0aff3945384560c58bd2c4a78ce4632ef785c6d6541bcc3dd29e7798a",
+      "successResponseHash": "46eab52bd3bdc014227640fb21c55e63d0a173cabf72d971cc7f91430db39042"
+    },
+    {
+      "operationId": "getPublishedManual",
+      "path": "/api/stores/{storeId}/manual/published",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "5bb82ff3cbdfec169336d07fe5d4f98421a267ced5c5350e57a9d2f1ee05e16b",
+      "successResponseHash": "c4f7ad3481a453dedfd449123e1e014ee1a69405d3ba5f7fcec1572bfc1d1926"
+    },
+    {
+      "operationId": "getPublishedManualSection",
+      "path": "/api/stores/{storeId}/manual/published/sections/{sectionId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "af8ec3ca8c58792534cd862b93ca5a7197eb3e658b55d844a33888f6f69216a6",
+      "successResponseHash": "e20e003f557cc8b9a5ab4a53681c5b418b6b6043728c592a7138087b7fb98ff9"
+    },
+    {
+      "operationId": "confirmManualInterviewUnderstanding",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/intents/{intentId}/review/confirmations",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "9fe757fedbb65e8a9b6839654b4e93de5db8bcdd09379867328e4c0b40d6f452",
+      "successResponseHash": "67941e1fe78e2fe8f2ec0a8090519d6a8d6c7cdd5452f2e33b6eab7b81b62820"
+    },
+    {
+      "operationId": "correctManualInterviewUnderstanding",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/intents/{intentId}/review/corrections",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "0790b3800e26d40105586b39ef0105f08162c139157497953abb449563a82e14",
+      "successResponseHash": "57f385b2564ad19a206cf1fdd412aa560eaf33fdc6a31dd4935a060b3380217d"
+    },
+    {
+      "operationId": "listManualIntentReviews",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/reviews",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "ac118199e3f1727207a4ce3cdf2943b0894d398ab433419df13fd48dc07a1eb5",
+      "successResponseHash": "6b840c50716a14a301a1bdd85f605b329e293ad09e796c6c02325a4a85881a27"
+    },
+    {
+      "operationId": "getManualIntentReview",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/intents/{intentId}/review",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "f403bc383fe856986589573d4dffe7404797683f20172350c1e44ec07552565c",
+      "successResponseHash": "67941e1fe78e2fe8f2ec0a8090519d6a8d6c7cdd5452f2e33b6eab7b81b62820"
+    },
+    {
+      "operationId": "retryManualIntentReview",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/intents/{intentId}/review/retries",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "6a5e013d2dffa117d9be96e21a29449631c077fe3a57828b86db3bddca4e072e",
+      "successResponseHash": "57f385b2564ad19a206cf1fdd412aa560eaf33fdc6a31dd4935a060b3380217d"
+    },
+    {
+      "operationId": "replaceManualInterviewReviewPhotos",
+      "path": "/api/stores/{storeId}/manual/interviews/{sessionId}/intents/{intentId}/review/photos",
+      "method": "put",
+      "approvedResponses": [
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "5dd7fe1401b4385670fcf0caa45b742b5b4e6b7b9bf1ede0f8e745b892917dc8",
+      "successResponseHash": "67941e1fe78e2fe8f2ec0a8090519d6a8d6c7cdd5452f2e33b6eab7b81b62820"
+    },
+    {
+      "operationId": "getOwnerJobPosting",
+      "path": "/api/stores/{storeId}/job-postings/{jobId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "c54dd85f8aa542efa253ae105beed914bbf892cceb636628af77c2a27c94a550",
+      "successResponseHash": "50079b19a5197c3f42182e82528445f972d12fa6c462a7fc9816c939398d7b9d"
+    },
+    {
+      "operationId": "closeJobPosting",
+      "path": "/api/stores/{storeId}/job-postings/{jobId}/closure",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "c34bd613ba4883005c459e4cead62b5f8c72717ce0ea659095c5c35aaef2f5df",
+      "successResponseHash": "50079b19a5197c3f42182e82528445f972d12fa6c462a7fc9816c939398d7b9d"
+    },
+    {
+      "operationId": "createJobPosting",
+      "path": "/api/stores/{storeId}/job-postings",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "58f132a2833695913a8c74c1645a695b34de3c1f70afe033ff16e845a1b95910",
+      "successResponseHash": "0bf51535843c095fa768d950ac9de5a73ffa541b134f61bd1a0925f97656074b"
+    },
+    {
+      "operationId": "listOwnerJobPostings",
+      "path": "/api/stores/{storeId}/job-postings",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "10aaa10c9309a3f9033aab1fe6a70e40ba9b4a8b83888ce7c4c33fcabb2bbf40",
+      "successResponseHash": "350291e486aaeaa018bb39ae6ad261971a2f006bc83fd34651346e1afc18156f"
+    },
+    {
+      "operationId": "searchJobPostings",
+      "path": "/api/job-postings",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "88f24e4cb75cdf2f9ec01c1aeed7f1df94835d83dfdec83dbaf2a7c6a90bee94",
+      "successResponseHash": "b22543b686d9b71f2ddf0ea7d6c24f0fa778542d65f78ae2e9d177b42e753106"
+    },
+    {
+      "operationId": "getJobPosting",
+      "path": "/api/job-postings/{jobId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "f24563654629312d914a04bdfc4f6a4b39bd0768229db1398cfffee5538bb1b3",
+      "successResponseHash": "87ca70efe1082a926bd621f14b06654b28346c88d51aa754c108a701bc3a6bd5"
+    },
+    {
+      "operationId": "getMyJobApplication",
+      "path": "/api/users/me/applications/{applicationId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "97b6bc5f517548d8e99bd7a8390d541bb353b87f04f32fa87be88442b57ed79a",
+      "successResponseHash": "d5d3de69d5ab47a8213028cf7cc67ed42fe028aa964125398ce0d854ea0e0204"
+    },
+    {
+      "operationId": "withdrawJobApplication",
+      "path": "/api/users/me/applications/{applicationId}/withdrawal",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "f76bac3f87a50a349d4919fada3bab98c9cbf3daa0d6590853ef98f86426c9ac",
+      "successResponseHash": "d5d3de69d5ab47a8213028cf7cc67ed42fe028aa964125398ce0d854ea0e0204"
+    },
+    {
+      "operationId": "applyForJobPosting",
+      "path": "/api/job-postings/{jobId}/applications",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "b3f5c0475773be9c05df4003916d61e7e881bc21b126f4473bb00f22b491aaf0",
+      "successResponseHash": "706af4ad6147b1129d184012f6770ada6edf67da89d57cafebea08a12f95ab9f"
+    },
+    {
+      "operationId": "listMyJobApplications",
+      "path": "/api/users/me/applications",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "339fee07b1b606b2aff8e92a4240223b9e8fbe4dd901317194203a5a27e3398d",
+      "successResponseHash": "59149a18a39e6ad425efd88e5df1ac0c2ca9a92d3f462bdd11329d9758d4d8e5"
+    },
+    {
+      "operationId": "listJobApplicants",
+      "path": "/api/stores/{storeId}/job-postings/{jobId}/applications",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "e7d219c2ff3f42b0cd11e55c4d4d0f7bff6d6d3c78b3cfdee38dbea9962726ec",
+      "successResponseHash": "64f6069409e56a4153c60c675f74b29f61548afd34742544af4d3671bd8e7e8a"
+    },
+    {
+      "operationId": "getJobApplicant",
+      "path": "/api/stores/{storeId}/job-postings/{jobId}/applications/{applicationId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "d13aa1d36c83b96118359e074b5653a22bfd06a603e4ec180947cb7024ae47d8",
+      "successResponseHash": "6ff16e162729f7ef931bf6ab5d3e827466f65bc1f1c78e86ef60bb02af8d2993"
+    },
+    {
+      "operationId": "getMyWorkRequest",
+      "path": "/api/users/me/work-requests/{requestId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "7cd6ce06326e51087d6c5bd59d79b8e0d5eca8c3a195550a0c001370a91392a3",
+      "successResponseHash": "1a30153a4a9df37a98e87ee4b658b3c397be4ec6d6d20b8468c0d7570fc1a40b"
+    },
+    {
+      "operationId": "listMyWorkRequests",
+      "path": "/api/users/me/work-requests",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "55430c39b0e93b66a00f4016a054e6f18cde85465d9e9ce0dc3b06a2853706ba",
+      "successResponseHash": "39602466438a51349c4245a9f44a4c0a6d48465e9151aedee8ec0917b5983935"
+    },
+    {
+      "operationId": "listOwnerWorkRequests",
+      "path": "/api/stores/{storeId}/job-postings/{jobId}/work-requests",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "5f669ef660bf6ed8d16a7ff00cd0b2c3d164584b912e03b51c03701c4d3a443c",
+      "successResponseHash": "39602466438a51349c4245a9f44a4c0a6d48465e9151aedee8ec0917b5983935"
+    },
+    {
+      "operationId": "getConfirmedWorkerOnboarding",
+      "path": "/api/stores/{storeId}/job-postings/{jobId}/onboarding",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "c54dd85f8aa542efa253ae105beed914bbf892cceb636628af77c2a27c94a550",
+      "successResponseHash": "0bcd3adeca12a343c238e3664b444f7a74f8198e30aeabafbe8d3b4d2cd764d6"
+    },
+    {
+      "operationId": "respondToWorkRequest",
+      "path": "/api/users/me/work-requests/{requestId}/response",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "115c3e0b71fd9d028454642d75213c6172fa78dea1abe55a89404cbc1b977260",
+      "successResponseHash": "1a30153a4a9df37a98e87ee4b658b3c397be4ec6d6d20b8468c0d7570fc1a40b"
+    },
+    {
+      "operationId": "requestApplicantWork",
+      "path": "/api/stores/{storeId}/job-postings/{jobId}/applications/{applicationId}/work-requests",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "d276a059449b618aca78c781fc40723a4726de41fa893a0f939a14348cfde179",
+      "successResponseHash": "cf858ea162b71e9dcbd5ac9009e37cd1783b32bbc764ba588704d9b3b0b3cb58"
+    },
+    {
+      "operationId": "getReceivedStoreInvitation",
+      "path": "/api/users/me/store-invitations/{invitationId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "ac9766852691655137692e92ec3e895be93cecf66e95b77842c6323382d177cd",
+      "successResponseHash": "792931ee46b1e8d38d94a2840aa50c5276d3678dda164d5bcd2d3f964069be27"
+    },
+    {
+      "operationId": "listReceivedStoreInvitations",
+      "path": "/api/users/me/store-invitations",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "55430c39b0e93b66a00f4016a054e6f18cde85465d9e9ce0dc3b06a2853706ba",
+      "successResponseHash": "be9cc51e8069c9eef06c1abe435b058a09e508e7c1cda46a0cda25c9c475f469"
+    },
+    {
+      "operationId": "respondToReceivedStoreInvitation",
+      "path": "/api/users/me/store-invitations/{invitationId}/response",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "59ac5ba9e86e9f303b2711c2107a17bb50d87e6a35ff8240df8b539a72aa881a",
+      "successResponseHash": "a72db4ace3d6c98bff9328e64c45cfbc469c7ec58955fbde80b1270153ea2737"
+    },
+    {
+      "operationId": "markNotificationRead",
+      "path": "/api/users/me/notifications/{notificationId}/read",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "a2f9aa4566fc17d9b6d8e0c75b18c5b13fb052c8fac4dcf2b9c4b0c64cb6cf80",
+      "successResponseHash": "33e9d3bd1188befb30dabb4a40700c498a37fe4136f5c741b8c7dd9d1ebfe601"
+    },
+    {
+      "operationId": "listMyNotifications",
+      "path": "/api/users/me/notifications",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "94aed97dab210d5233dff085d5bf910f94696c2a0e8c6c982e56bacb45338608",
+      "successResponseHash": "e46b0aaa53c45cabba6d6fb9e4758931ad181bf8ae14b02975c2c803653b3c2e"
+    },
+    {
+      "operationId": "listMyAccessibleStores",
+      "path": "/api/users/me/stores",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "030b024a854c0ecf12e67edd2782ee33b85a054cd27eb4d6021c1bca46a51f43",
+      "successResponseHash": "84118bb2ea97a9c089b86ba6568c6deb8aef71d92a3c19c96748f8a55aeee52e"
+    },
+    {
+      "operationId": "getMyStoreAccess",
+      "path": "/api/users/me/stores/{storeId}/access",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "719bc15522e465e95a4843af4182f0363403c366f18d504b8444e55c7c614430",
+      "successResponseHash": "25d1a21227b92072dfeedc759c742d5cb5fa7483255894ebd733d12d1c688ae3"
+    },
+    {
+      "operationId": "getMyWorkCalendarMonth",
+      "path": "/api/users/me/calendar/events",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "b4eddd763a97b095f4b6b304e9b7ef33500ac9952fa5b9e1bc6702172016ca83",
+      "successResponseHash": "dca3f89773024e1f236ffe5272f58b80534de8eadeba29df7a638088804a0df1"
+    },
+    {
+      "operationId": "saveFavoriteStore",
+      "path": "/api/users/me/favorite-stores/{storeId}",
+      "method": "put",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "bf9e93cfefbead23909762300154a94462ccc8a4d038ea92e489526e1ec4bc9e",
+      "successResponseHash": "fb0a5a5037fada83b7390c54dc8109e3147b54f747100a4068a9bfbad2518994"
+    },
+    {
+      "operationId": "removeFavoriteStore",
+      "path": "/api/users/me/favorite-stores/{storeId}",
+      "method": "delete",
+      "approvedResponses": [
+        "204",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "965a717a65d007350cc98f79f98e6ef0194bda0d12e24d839bdf7ff3ba0bf6c4",
+      "successResponseHash": "6ad85bbc638382abe71c454c0eb6ec3d91171ae6b0b8789cbf9c928c99687508"
+    },
+    {
+      "operationId": "listMyFavoriteStores",
+      "path": "/api/users/me/favorite-stores",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "030b024a854c0ecf12e67edd2782ee33b85a054cd27eb4d6021c1bca46a51f43",
+      "successResponseHash": "1fe7209c3fc14936c98389e2588de7757d149f20c9b4d6ae399b0521ec7045ba"
+    },
+    {
+      "operationId": "getOwnerHome",
+      "path": "/api/owners/me/home",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "dc5113505d3ec6e80a6a58abc51f9a00e50a1e7c6058672dced5c223aa102040",
+      "successResponseHash": "90b16051b4fb3d205943ee6824abf1c443461e1af377a885c5d60fa21a50a004"
+    },
+    {
+      "operationId": "getWorkerHome",
+      "path": "/api/users/me/home",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "b66413292ea2740f5047156eeea1adf1df350e8ffeabf3cc65b9bd1020bb0209",
+      "successResponseHash": "65e41f7c3f89bfeaaab0562a4373c59f77ccd09c9265b81dc1eb2f2cee65bfbb"
+    },
+    {
+      "operationId": "retryQAQuestionTranscription",
+      "path": "/api/stores/{storeId}/manual/qa/transcriptions/{transcriptionId}/retries",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "401",
+        "403",
+        "404",
+        "409",
+        "410",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400",
+        "503"
+      ],
+      "requestSecurityHash": "63626759dcfc99e0fdab86b6e02e9c8adf8299b38ce3efdaf45551bafbe56678",
+      "successResponseHash": "44250b9a0c857d1239f655121245a4868f331ed335913322df182e2a904dd453"
+    },
+    {
+      "operationId": "deleteQAUnattachedMedia",
+      "path": "/api/stores/{storeId}/manual/qa/media/{mediaId}",
+      "method": "delete",
+      "approvedResponses": [
+        "204",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "072d170f6779e1b6771ddfab66f33c927c6d145cd3255f50de663cd15c935902",
+      "successResponseHash": "6ad85bbc638382abe71c454c0eb6ec3d91171ae6b0b8789cbf9c928c99687508"
+    },
+    {
+      "operationId": "uploadQAQuestionMedia",
+      "path": "/api/stores/{storeId}/manual/qa/media",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "401",
+        "403",
+        "404",
+        "409",
+        "413",
+        "415",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "503"
+      ],
+      "requestSecurityHash": "509d264ca9e49067e6f58d1f70b973ff059c3214083cfebaefa794a8d405bb36",
+      "successResponseHash": "a4164180131543145d73d59b62eee7ed74857aecb314caa2475763cf0bb73b0a"
+    },
+    {
+      "operationId": "transcribeQAQuestionAudio",
+      "path": "/api/stores/{storeId}/manual/qa/transcriptions",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "401",
+        "403",
+        "404",
+        "409",
+        "410",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400",
+        "503"
+      ],
+      "requestSecurityHash": "bfe86bcbf20dc6604ced93cf35bad205f51751031a1518f19e5e66301c1c6c34",
+      "successResponseHash": "44250b9a0c857d1239f655121245a4868f331ed335913322df182e2a904dd453"
+    },
+    {
+      "operationId": "getQAQuestionMediaContent",
+      "path": "/api/stores/{storeId}/manual/qa/media/{mediaId}/content",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "410",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "fb0092621fd454b91ff13a89230761331b129d899cdf3887a65083935230eff9",
+      "successResponseHash": "cb6e1e65ba5b9e590df558f25bac167bbeb991f26c654e467d06f8aa381aa45a"
+    },
+    {
+      "operationId": "getQAQuestionTranscription",
+      "path": "/api/stores/{storeId}/manual/qa/transcriptions/{transcriptionId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "39c05608c8f704d8f666ed486d4ac18bb24aaf4ffd8da75eb24b8ab90a682edc",
+      "successResponseHash": "1dccb4dba6d59bde452ed65cfb70065093683fe4e92d60a6c27d66a4e657f097"
+    },
+    {
+      "operationId": "createQAConversation",
+      "path": "/api/stores/{storeId}/manual/qa/conversations",
+      "method": "post",
+      "approvedResponses": [
+        "201",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "0e1e4fe64fd3522a219d3471f81093225d6642df8e4452877011e47a055d4f21",
+      "successResponseHash": "01ced69fd79f638ee9d62a16f6ecc74059ba3d4a984e85e807f8fd6fdfc22480"
+    },
+    {
+      "operationId": "listMyQAConversations",
+      "path": "/api/stores/{storeId}/manual/qa/conversations",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "c7c6787e2b9ca3aba08f01a14be22182442b6bf3b0fe27ca75bf9966ca5e715b",
+      "successResponseHash": "ba149b82b0dc0bcce3b89cbd72e6de9126252764a1553be1986c27f9b63cfe5a"
+    },
+    {
+      "operationId": "retryManualQuestion",
+      "path": "/api/stores/{storeId}/manual/qa/conversations/{conversationId}/questions/{questionId}/retries",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "401",
+        "403",
+        "404",
+        "409",
+        "410",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400",
+        "503"
+      ],
+      "requestSecurityHash": "2e1238ba42ef5fe3083edfadec667b0c379ffc6a4ca0bdd449c832ebbe662c77",
+      "successResponseHash": "5acc7cdc2afbd093e8050c9140a0f984893848f3fd13bc01806245eab49f1fb7"
+    },
+    {
+      "operationId": "askManualQuestion",
+      "path": "/api/stores/{storeId}/manual/qa/conversations/{conversationId}/questions",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400",
+        "503"
+      ],
+      "requestSecurityHash": "383682349abf8c796b4a14c5c3ea43e9b9d617f42e69725f866c8a8fe0aa0104",
+      "successResponseHash": "5acc7cdc2afbd093e8050c9140a0f984893848f3fd13bc01806245eab49f1fb7"
+    },
+    {
+      "operationId": "getManualQuestionResult",
+      "path": "/api/stores/{storeId}/manual/qa/conversations/{conversationId}/questions/{questionId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "ae3c9e5a3955895b76fc17da6887b5996bc65e2c6555ec799228f8c88507a45c",
+      "successResponseHash": "62fee99990b3ede60cb2d51db81d34032ce02a7dbc8222905c9830eed898bdb4"
+    },
+    {
+      "operationId": "getQAConversation",
+      "path": "/api/stores/{storeId}/manual/qa/conversations/{conversationId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "f9adae24af41a8ddd2abd82abc3787ec3a968ba408bb0e1b0bdbd921a403f52f",
+      "successResponseHash": "9daada37f63258a40172fe3a4d2a838d0476c8c5f71c60d2275062482c59be07"
+    },
+    {
+      "operationId": "withdrawOwnerWorkRequest",
+      "path": "/api/stores/{storeId}/job-postings/{jobId}/work-requests/{requestId}/withdrawal",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "a0d6fd54f654404d416b2452c25fa626ab18a8b745ed0c13647bc8dc37009b04",
+      "successResponseHash": "1a30153a4a9df37a98e87ee4b658b3c397be4ec6d6d20b8468c0d7570fc1a40b"
+    },
+    {
+      "operationId": "withdrawWorkConfirmation",
+      "path": "/api/stores/{storeId}/job-postings/{jobId}/work-requests/{requestId}/confirmation-withdrawal",
+      "method": "post",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "400"
+      ],
+      "requestSecurityHash": "a0d6fd54f654404d416b2452c25fa626ab18a8b745ed0c13647bc8dc37009b04",
+      "successResponseHash": "1a30153a4a9df37a98e87ee4b658b3c397be4ec6d6d20b8468c0d7570fc1a40b"
+    },
+    {
+      "operationId": "getOwnerWorkCalendarMonth",
+      "path": "/api/owners/me/calendar/events",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "ed5370c80756219e10c6ad444380b7b23de6f3c40628c8439f7cf725ec496ec8",
+      "successResponseHash": "dca3f89773024e1f236ffe5272f58b80534de8eadeba29df7a638088804a0df1"
+    },
+    {
+      "operationId": "createManualDraftCorrection",
+      "path": "/api/stores/{storeId}/manual/draft/corrections",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "503"
+      ],
+      "requestSecurityHash": "80ae0255e4217d97f39afe5e9d52b8ce78b639ec0ea071241386c7cf23a9ae15",
+      "successResponseHash": "69fdf38fa891026e170d465ca94dc3a12dcb757c3a55d6c348e0417bbaa101d7"
+    },
+    {
+      "operationId": "getManualDraftCorrection",
+      "path": "/api/stores/{storeId}/manual/draft/corrections/{correctionId}",
+      "method": "get",
+      "approvedResponses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [],
+      "requestSecurityHash": "86d413bab59a0a0d1d6e69de811e8edff94eff95ef629dc4e98143f5fa39d433",
+      "successResponseHash": "299cbab380ec628d7e330c88011a5b9774dbeb7ce652981ca5b3f824c77e1e31"
+    },
+    {
+      "operationId": "retryManualDraftCorrection",
+      "path": "/api/stores/{storeId}/manual/draft/corrections/{correctionId}/retries",
+      "method": "post",
+      "approvedResponses": [
+        "202",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500"
+      ],
+      "approvedAdditions": [
+        "503"
+      ],
+      "requestSecurityHash": "880748e7b87f8348b8f3e9d64cfca462123e31188c1bc255fbfa840f606877de",
+      "successResponseHash": "69fdf38fa891026e170d465ca94dc3a12dcb757c3a55d6c348e0417bbaa101d7"
+    }
+  ]
+}

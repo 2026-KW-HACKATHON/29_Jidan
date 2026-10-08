@@ -7,6 +7,11 @@ services:
         format: raw
     environment:
       FORWARDED_ALLOW_IPS: "*"
+      # Uploaded photos and recordings: on the per-environment volume, never in the container
+      # layer that the next deployment replaces. Overrides any MEDIA_ROOT in runtime.env.
+      MEDIA_ROOT: /var/lib/jidan/media
+    volumes:
+      - media:/var/lib/jidan/media
     ports:
       - "127.0.0.1:${APP_PORT:?APP_PORT is required}:8000"
     networks:
@@ -19,6 +24,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+volumes:
+  media:
+    name: ${MEDIA_VOLUME:?MEDIA_VOLUME is required}
 networks:
   shared-db:
     external: true
