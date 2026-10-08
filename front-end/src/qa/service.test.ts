@@ -53,7 +53,7 @@ it('타임아웃·취소·Retry-After 경계를 처리한다',async()=>{
  expect([null,'NaN','-1','0','3','999999'].map(retryDelay)).toEqual([2000,2000,2000,2000,3000,60000])
 })
 
-it('필수 요청 body 누락과 다른 질문의 정상 응답을 거절한다',async()=>{
+it('필수 요청 body 누락을 거절한다',async()=>{
  const transport=vi.fn(),service=createQaService(store,transport)
  await expect(service.call('createQAConversation',undefined as never,{signal:signal(),key:'k'})).rejects.toThrow()
  expect(transport).not.toHaveBeenCalled()
