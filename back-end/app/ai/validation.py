@@ -247,6 +247,16 @@ def check_revision_scope(current: StructureSnapshot, revised: StructureSnapshot,
         if revised_sections.get(section.id) != section:
             raise invalid("revision_outside_target")
 
+    # Missing descriptions are content too, including outside a correction target.
+    def outside_missing(snapshot):
+        return {(item.target, item.target_id, item.field): item.description
+                for item in snapshot.missing_information
+                if (item.target, item.target_id) != (kind, target_id)}
+    revised_missing = outside_missing(revised)
+    if any(revised_missing.get(key) != value for key, value in outside_missing(current).items()):
+        raise invalid("revision_outside_target")
+
+
 
 def dangling_shift_references(snapshot: StructureSnapshot, external_shift_ids: Iterable[str] = ()) -> bool:
     shift_ids = {shift.id for shift in snapshot.shifts} | set(external_shift_ids)

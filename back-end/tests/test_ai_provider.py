@@ -471,3 +471,26 @@ def test_timeout_settings_accept_boundaries_and_default(monkeypatch, name, defau
 
     monkeypatch.setenv(name, value)
     assert _seconds(name, default) == (default if expected is None else expected)
+
+
+def test_targeted_correction_preserves_unrelated_missing_description(fake_ai):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    raw["missing_information"][0]["description"] = "무관한 변경"
+    with expect_error(AiErrorCode.INVALID_OUTPUT) as caught:
+        revise(fake_ai, current, raw, "SECTION", current.sections[0].id)
+    assert caught.value.detail == "revision_outside_target"
+
+
+def test_targeted_correction_can_add_new_section_with_missing_steps(fake_ai):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    raw["sections"].append({"ref": "new-1", "category": "COMMON_TASK", "shift_ref": None,
+                            "title": "정산", "steps": []})
+    raw["missing_information"].append({"target": "SECTION", "target_ref": "new-1", "field": "steps",
+                                       "description": "정산 순서를 확인해야 해요."})
+    result = revise(fake_ai, current, raw, "SECTION", current.sections[0].id)
+    assert result.outcome == "APPLIED"
+    assert result.structure.sections[:-1] == current.sections
+    assert result.structure.missing_information[:-1] == current.missing_information
+    assert result.structure.missing_information[-1].target_id == result.structure.sections[-1].id

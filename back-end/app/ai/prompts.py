@@ -14,7 +14,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-08.4-t3"  # Atomic operation integration snapshot.
+PROMPT_VERSION = "2026-10-08.4-t4"  # Atomic operation integration snapshot.
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.
@@ -154,6 +154,7 @@ current 내용에 점주의 정정 지시(instruction)를 반영한다.
   APPLIED가 아니면 structure는 current를 그대로 돌려준다.
 - summary가 입력에 있으면(인텐트 요약) APPLIED일 때 정정이 반영된 요약을, 아니면 null을 돌려준다.
 - 미확정 값 규칙은 동일하다: 모르는 값은 null/빈 배열 + missing_information.
+  대상 밖의 missing_information 설명도 그대로 유지한다.
 """,
     "compose_draft": _COMMON + """
 [작업: 매뉴얼 초안 구성]
