@@ -4,8 +4,12 @@
 structured output, parses it with the strict schema's pydantic model, re-validates it against
 the request (`app.ai.validation`) and returns a typed result from `app.ai.contracts`. Backends
 (`OpenAiProvider`, `FakeAiProvider` in `app.ai.fake`) only implement `_complete` (raw JSON text
-candidates) and `_transcribe` (raw text), so the fake exercises exactly the production parsing
-and validation path.
+candidates), `_decide` (a raw Decisions API response) and `_transcribe` (raw text), so the fake
+exercises exactly the production parsing and validation path.
+
+`judge_sufficiency` (Jev) asks the Decisions API one predicate per atomic aspect
+(`app.ai.decisions`, `judge_backend = "decisions"`, the default) or, with
+`judge_backend = "responses"`, the structured-output judgement of the Jev prompt.
 
 All methods are blocking and must be called outside a DB transaction (from the task runner).
 Failures are `AiError`s; nothing else escapes (provider exceptions are classified and chained
@@ -22,6 +26,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.ai.aspects import aspects_for
 from app.ai.contracts import (
     CallMeta,
     DraftComposition,
@@ -46,12 +51,14 @@ from app.ai.contracts import (
     TranscriptionRequest,
     clean_text,
 )
+from app.ai.decisions import Thresholds, build_request, config_tag, decide, not_applicable_outcome
 from app.ai.errors import AiError, AiErrorCode
 from app.ai.prompts import INSTRUCTIONS, PROMPT_VERSION, data_message
 from app.ai.schemas import (
     OUTPUTS,
     RawDraft,
     RawJudgement,
+    RawMissing,
     RawQa,
     RawQuestion,
     RawRevision,
@@ -59,17 +66,26 @@ from app.ai.schemas import (
     parse_question,
 )
 from app.ai.validation import (
+    SHIFT_FIELDS,
+    UNGROUNDED_TIME,
     build_citations,
     check_draft_facts,
     check_revision_scope,
     dangling_shift_references,
+    drop_contentless_steps,
+    empty_structure,
+    ground_structure,
     invalid,
     known_ids,
     materialize_structure,
+    repeats_removed_text,
     same_content,
 )
 
 logger = logging.getLogger("jidan.ai")
+
+JUDGE_BACKENDS = ("decisions", "responses")
+SHIFT_TIME_ATTRIBUTES = tuple(SHIFT_FIELDS.values())  # start_time, end_time, ends_next_day
 
 
 @dataclass(frozen=True)
@@ -89,12 +105,42 @@ def _structure_payload(snapshot: StructureSnapshot) -> dict[str, Any]:
     return snapshot.model_dump(mode="json")
 
 
+def _ground(operation: str, raw_structure, evidence, *, strict: bool = False, **exempt):
+    """`ground_structure` against the request's evidence; logs counts only (never text).
+
+    `strict` (corrections): anything grounding would restore, drop or clear fails the whole
+    output as INVALID_OUTPUT instead. A correction's evidence holds the owner's instruction, so a
+    faithful change can always cite it; an altered result would no longer be what the outcome
+    and the model's summary describe (e.g. "APPLIED, changed X" with X silently restored)."""
+    structure, grounding = ground_structure(raw_structure, (chunk.id for chunk in evidence), **exempt)
+    if grounding.dropped_steps or grounding.cleared_shifts:
+        logger.info("ai grounding op=%s dropped_steps=%d dropped_in_kept_sections=%d cleared_shifts=%d",
+                    operation, grounding.dropped_steps, grounding.dropped_in_kept_sections,
+                    grounding.cleared_shifts)
+    if grounding.restored_steps:
+        logger.info("ai reviewed_steps op=%s restored=%d", operation, grounding.restored_steps)
+    if strict and (grounding.dropped_steps or grounding.cleared_shifts or grounding.restored_steps):
+        raise invalid("ungrounded_revision")
+    return structure
+
+
+def _contentless(operation: str, raw_structure, **options):
+    """`drop_contentless_steps` (vague / "no rule" steps); logs counts only (never text)."""
+    structure, dropped = drop_contentless_steps(raw_structure, **options)
+    if dropped.vague_steps or dropped.no_rule_steps:
+        logger.info("ai contentless op=%s vague_steps=%d no_rule_steps=%d removed_sections=%d", operation,
+                    dropped.vague_steps, dropped.no_rule_steps, dropped.removed_sections)
+    return structure
+
+
 class AiProvider(ABC):
     """Every AI/STT operation the manual and Q&A features use. See module docstring."""
 
     provider_name: str = "abstract"
     model: str = ""
     transcribe_model: str = ""
+    judge_backend: str = "decisions"
+    judge_thresholds: Thresholds = Thresholds()
 
     @property
     def config_version(self) -> str:
@@ -106,12 +152,35 @@ class AiProvider(ABC):
         The task runner checks leases against it (`app.tasks.validate_task_leases`)."""
         return 0.0
 
-    def meta(self, *, transcription: bool = False) -> CallMeta:
+    def effort_for(self, operation: str) -> str | None:
+        """Reasoning effort a structured-output call of `operation` uses (None: not sent)."""
+        return None
+
+    def meta(self, operation: str | None = None, *, transcription: bool = False,
+             backend: str = "responses") -> CallMeta:
+        """`config_version` = provider:model:PROMPT_VERSION, then what shaped this call: for Jev
+        the backend (`decisions:aspects-<version>:t=<aspect>/<not_applicable>` or `responses`),
+        and the reasoning effort when one was sent (`effort=<value>`)."""
         model = self.transcribe_model if transcription else self.model
-        return CallMeta(
-            provider=self.provider_name, model=model,
-            config_version=f"{self.provider_name}:{model}:{PROMPT_VERSION}",
-        )
+        parts = [self.provider_name, model, PROMPT_VERSION]
+        if backend == "decisions":
+            parts.append(config_tag(self.judge_thresholds))
+        elif operation is not None:
+            if operation == "judge_sufficiency":
+                parts.append(f"responses:{self.judge_thresholds.tag}")
+            effort = self.effort_for(operation)
+            if effort:
+                parts.append(f"effort={effort}")
+        return CallMeta(provider=self.provider_name, model=model, config_version=":".join(parts))
+
+    def judge_meta(self) -> CallMeta:
+        """The meta of a Jev call on this provider's configured backend, for an evaluation that
+        failed before any judgement (the evaluation row still records backend and effort)."""
+        backend = self.judge_backend if self._supports_decisions() else "responses"
+        return self.meta("judge_sufficiency", backend=backend)
+
+    def reset_judge_meta(self) -> None:
+        """Start a new evaluation before input validation; discard per-thread prior-call state."""
 
     # --- backend hooks ----------------------------------------------------------------------
 
@@ -121,6 +190,17 @@ class AiProvider(ABC):
     ) -> list[str]:
         """Raw JSON text candidates for `operation` (several when a backend returns several
         message items); raise AiError on failure."""
+
+    def _decide(self, body: dict[str, Any]) -> Any:
+        """The raw (JSON-decoded) Decisions API response for `body` (`app.ai.decisions`); raise
+        AiError on failure. The caller re-validates every answer.
+
+        Not abstract: a backend that only implements `_complete` (the offline eval replay,
+        delegating wrappers) has no Decisions call and judges on the Responses path instead."""
+        raise NotImplementedError
+
+    def _supports_decisions(self) -> bool:
+        return type(self)._decide is not AiProvider._decide
 
     @abstractmethod
     def _transcribe(self, request: TranscriptionRequest) -> "str | RawTranscript":
@@ -152,14 +232,63 @@ class AiProvider(ABC):
                 int((time.monotonic() - started) * 1000),
             )
 
+    def _judge_backend(self, request: SufficiencyRequest) -> str:
+        return self.judge_backend if self._supports_decisions() else "responses"
+
     # --- operations -------------------------------------------------------------------------
 
     def judge_sufficiency(self, request: SufficiencyRequest) -> SufficiencyJudgement:
         # The probe count stays with the server (it ends an intent at depth 5): the model judges
         # the dialogue alone, so "asked often enough" can never read as "known".
+        if self._judge_backend(request) == "decisions":
+            return self._judge_by_decisions(request)
+        return self._judge_by_responses(request)
+
+    def _judge_by_decisions(self, request: SufficiencyRequest) -> SufficiencyJudgement:
+        body, labels = build_request(request, model=self.model)
+        started = time.monotonic()
+        outcome = "ok"
+        try:
+            raw = self._decide(body)
+            result = decide(body, labels, raw, self.judge_thresholds,
+                            confirmation_label=aspects_for(request.intent).confirmation_label)
+            not_applicable = result.not_applicable
+        except AiError as error:
+            outcome = error.code.value
+            raise
+        finally:
+            logger.info(
+                "ai call op=judge_sufficiency backend=decisions model=%s outcome=%s ms=%d", self.model,
+                outcome, int((time.monotonic() - started) * 1000),
+            )
+        return SufficiencyJudgement(
+            sufficient=result.sufficient, probability=result.probability,
+            missing_aspects=result.missing_aspects, not_applicable=not_applicable,
+            meta=self.meta("judge_sufficiency", backend="decisions"),
+        )
+
+    def _judge_by_responses(self, request: SufficiencyRequest) -> SufficiencyJudgement:
         payload = request.model_dump(mode="json", exclude={"depth"})
+        table = aspects_for(request.intent)
+        if table.confirmation:
+            payload["not_applicable_rule"] = table.not_applicable
+            payload["not_applicable_confirmation_rule"] = table.confirmation
         raw: RawJudgement = self._structured("judge_sufficiency", payload)
         aspects = tuple(dict.fromkeys(a for a in (clean_text(x) for x in raw.missing_aspects) if a))
+        if table.confirmation:
+            if raw.not_applicable_probability is None or raw.not_applicable_confirmed_probability is None:
+                raise invalid("missing_not_applicable_confirmation")
+            na = raw.not_applicable_probability
+            confirmed = raw.not_applicable_confirmed_probability
+            result = not_applicable_outcome(
+                na, confirmed, self.judge_thresholds, probability=min(na, confirmed),
+                confirmation_label=table.confirmation_label)
+            if result is not None:
+                return SufficiencyJudgement(
+                    sufficient=result.sufficient, probability=result.probability,
+                    missing_aspects=result.missing_aspects, not_applicable=result.not_applicable,
+                    meta=self.meta("judge_sufficiency"),
+                )
         if (raw.probability >= 0.5) != raw.sufficient:
             raise invalid("inconsistent_sufficiency_probability")
         if raw.sufficient and aspects:
@@ -168,19 +297,24 @@ class AiProvider(ABC):
             raise invalid("insufficient_without_aspects")
         return SufficiencyJudgement(
             sufficient=raw.sufficient, probability=raw.probability,
-            missing_aspects=() if raw.sufficient else aspects, meta=self.meta(),
+            missing_aspects=() if raw.sufficient else aspects, meta=self.meta("judge_sufficiency"),
         )
 
     def generate_question(self, request: QuestionRequest) -> GeneratedQuestion:
         if request.kind == "PROBE" and not request.missing_aspects:
             raise ValueError("a PROBE question needs the missing aspects from the judgement")
-        raw: RawQuestion = self._structured("generate_question", request.model_dump(mode="json"))
+        payload = request.model_dump(mode="json")
+        if request.kind == "PROBE":
+            # The one aspect this probe asks, named on its own: Jev lists the missing aspects in
+            # table order (core first), and the model must not pick a later one instead.
+            payload["target_aspect"] = request.missing_aspects[0]
+        raw: RawQuestion = self._structured("generate_question", payload)
         text = clean_text(raw.question)
         if not text:
             raise invalid("blank_question")
         return GeneratedQuestion(
             text=text, guidance=(clean_text(raw.guidance) or None) if raw.guidance else None,
-            guidance_cards=tuple(card.model_dump() for card in raw.guidanceCards), meta=self.meta(),
+            guidance_cards=tuple(card.model_dump() for card in raw.guidanceCards), meta=self.meta("generate_question"),
         )
 
     def suggest_review_photos(self, request: PhotoSuggestionsRequest) -> PhotoSuggestions:
@@ -203,19 +337,31 @@ class AiProvider(ABC):
                 items.append(PhotoSuggestionItem(label=label, description=description))
             suggestions.append(PhotoSuggestion(section_id=suggestion.sectionId, title=title,
                                                items=tuple(items), footer=footer))
-        return PhotoSuggestions(suggestions=tuple(suggestions), meta=self.meta())
+        return PhotoSuggestions(suggestions=tuple(suggestions), meta=self.meta("suggest_review_photos"))
 
     def summarize_intent(self, request: IntentSummaryRequest) -> IntentSummary:
-        raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json"))
+        # With evidence the model sees the retrieved owner sentences (with their questions)
+        # instead of the whole dialogue; without it, the request is sent as before.
+        exclude = {"dialogue"} if request.evidence else None
+        raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json", exclude=exclude))
+        written = raw.structure
+        if request.not_applicable:
+            # The owner said the intent does not apply: the summary says so, and nothing becomes
+            # manual content (a "no rules" section would reach the draft as a rule).
+            if written.shifts or written.sections or written.missing_information:
+                logger.info("ai not_applicable op=summarize_intent removed_shifts=%d removed_sections=%d "
+                            "removed_missing=%d", len(written.shifts), len(written.sections),
+                            len(written.missing_information))
+            written = empty_structure()
         structure = materialize_structure(
-            raw.structure,
+            _ground("summarize_intent", _contentless("summarize_intent", written), request.evidence),
             known_shift_ids=[shift.id for shift in request.available_shifts],
             external_shifts=request.available_shifts,
         )
         summary = clean_text(raw.summary)
         if not summary:
             raise invalid("blank_summary")
-        return IntentSummary(summary=summary, structure=structure, meta=self.meta())
+        return IntentSummary(summary=summary, structure=structure, meta=self.meta("summarize_intent"))
 
     def revise_structure(self, request: StructureRevisionRequest) -> StructureRevision:
         target = request.target
@@ -228,13 +374,22 @@ class AiProvider(ABC):
         if target.kind == "SECTION" and target.target_id not in ids["section"]:
             raise ValueError("target section is not part of the current content")
         raw: RawRevision = self._structured("revise_structure", request.model_dump(mode="json"))
-        meta = self.meta()
+        meta = self.meta("revise_structure")
         if raw.outcome in ("CLARIFICATION_REQUIRED", "REFERENCE_CONFLICT", "NO_CHANGE"):
             return StructureRevision(outcome=raw.outcome, meta=meta)
         external_ids = {shift.id for shift in request.external_shifts}
         try:
+            existing_steps = {step.id: step.instruction for section in current.sections for step in section.steps}
+            grounded = _ground(
+                "revise_structure", raw.structure, request.evidence, strict=True,
+                grounded_steps=existing_steps,
+                grounded_shifts={shift.id: (shift.start_time, shift.end_time, shift.ends_next_day)
+                                 for shift in current.shifts},
+            )
+            grounded = _contentless("revise_structure", grounded, kept_section_refs=ids["section"],
+                                    existing_steps=existing_steps)
             structure = materialize_structure(
-                raw.structure,
+                grounded,
                 known_shift_ids=ids["shift"] | external_ids,
                 known_section_ids=ids["section"], known_step_ids=ids["step"],
                 external_shifts=request.external_shifts,
@@ -265,14 +420,59 @@ class AiProvider(ABC):
         section_ids: set[str] = set()
         step_ids: set[str] = set()
         previous = []
+        reviewed_shifts: dict[str, tuple] = {}
+        reviewed_steps: dict[str, str] = {}
         for review in request.reviews:
+            reviewed_shifts.update({s.id: (s.start_time, s.end_time, s.ends_next_day) for s in review.structure.shifts})
             ids = known_ids(review.structure)
             shift_ids |= ids["shift"]
             section_ids |= ids["section"]
             step_ids |= ids["step"]
+            reviewed_steps.update({step.id: step.instruction for section in review.structure.sections
+                                   for step in section.steps})
             previous.extend(review.structure.missing_information)
+        # Reviewed shift times are what the owner confirmed or corrected in the review; evidence
+        # holds earlier answers too, so a draft must not move them back (a cited change would pass
+        # grounding). They are restored as reviewed, unknown ones included (unknown stays unknown).
+        reviewed_missing = {(m.target_id, m.field): m.description for m in previous if m.target == "SHIFT"}
+        shifts, missing, restored = [], list(raw.structure.missing_information), 0
+        for shift in raw.structure.shifts:
+            reviewed = reviewed_shifts.get(shift.ref)
+            if reviewed is not None and (shift.start_time, shift.end_time, shift.ends_next_day) != reviewed:
+                restored += 1
+                shift = shift.model_copy(update=dict(zip(SHIFT_TIME_ATTRIBUTES, reviewed, strict=True)))
+                # An unknown time keeps the review's own entry (same ID via previous_missing).
+                missing.extend(
+                    RawMissing(target="SHIFT", target_ref=shift.ref, field=field,
+                               description=reviewed_missing.get((shift.ref, field), UNGROUNDED_TIME))
+                    for field, value in zip(SHIFT_FIELDS, reviewed, strict=True) if value is None
+                )
+            shifts.append(shift)
+        written = raw.structure
+        if restored:
+            logger.info("ai reviewed_shift_times op=compose_draft restored=%d", restored)
+            written = written.model_copy(update={"shifts": shifts, "missing_information": missing})
+        # The ID identifies the reviewed action, not permission to invent facts while polishing.
+        # Ground before contentless filtering so an unsupported replacement cannot erase it.
+        restored = _ground("compose_draft", written, request.evidence,
+                           require_evidence="evidence" in request.model_fields_set,
+                           grounded_steps=reviewed_steps, grounded_shifts=reviewed_shifts)
+        grounded = _contentless("compose_draft", restored, kept_section_refs=section_ids)
+        # An uncited rewrite is restored above. If it was half of a split ("A하고 B해요" ->
+        # "A해요" + new "B해요"), the new part would repeat what the restored original already
+        # says: retry instead of keeping both. A new step that repeats none of the removed words
+        # (an unrelated cited addition beside harmless polishing) is kept.
+        rewrites: dict[str, list[tuple[str, str]]] = {}
+        for section, after in zip(written.sections, restored.sections, strict=True):
+            kept = {step.ref: step.instruction for step in after.steps}
+            rewrites[section.ref] = [(reviewed_steps[step.ref], step.instruction) for step in section.steps
+                                     if step.ref in reviewed_steps and kept.get(step.ref) != step.instruction]
+        if any(repeats_removed_text(original, rewritten, step.instruction)
+               for section in grounded.sections for step in section.steps if step.ref not in reviewed_steps
+               for original, rewritten in rewrites.get(section.ref, ())):
+            raise invalid("uncited_step_change_with_additions")
         structure = materialize_structure(
-            raw.structure, known_shift_ids=shift_ids, known_section_ids=section_ids,
+            grounded, known_shift_ids=shift_ids, known_section_ids=section_ids,
             known_step_ids=step_ids, previous_missing=previous, require_manual_level=True,
         )
         # Photos hang on section IDs, so every reviewed shift and section must survive.
@@ -295,7 +495,7 @@ class AiProvider(ABC):
             raise invalid("answered_without_citation")
         if raw.outcome == "NEEDS_OWNER":
             citations = ()
-        return QaAnswer(outcome=raw.outcome, text=text, citations=citations, meta=self.meta())
+        return QaAnswer(outcome=raw.outcome, text=text, citations=citations, meta=self.meta("answer_question"))
 
     def transcribe(self, request: TranscriptionRequest) -> Transcript:
         started = time.monotonic()
@@ -336,6 +536,17 @@ class FallbackAiProvider(AiProvider):
         self.provider_name = primary.provider_name
         self.model = primary.model
         self.transcribe_model = primary.transcribe_model
+        self.judge_backend = primary.judge_backend
+        self.judge_thresholds = primary.judge_thresholds
+
+    def judge_meta(self) -> CallMeta:
+        # The configured path (the primary's); a failure after the fallback is still recorded
+        # against the configuration the task was run with.
+        return self.primary.judge_meta()
+
+    def reset_judge_meta(self) -> None:
+        self.primary.reset_judge_meta()
+        self.fallback.reset_judge_meta()
 
     @property
     def max_call_seconds(self) -> float:
@@ -343,6 +554,9 @@ class FallbackAiProvider(AiProvider):
         return self.primary.max_call_seconds + self.fallback.max_call_seconds
 
     def _complete(self, *args, **kwargs):  # pragma: no cover - operations are delegated
+        raise NotImplementedError
+
+    def _decide(self, body):  # pragma: no cover - operations are delegated
         raise NotImplementedError
 
     def _transcribe(self, request):  # pragma: no cover - operations are delegated
@@ -388,6 +602,9 @@ class UnconfiguredAiProvider(AiProvider):
     provider_name = "unconfigured"
 
     def _complete(self, *_args, **_kwargs):
+        raise AiError(AiErrorCode.NOT_CONFIGURED)
+
+    def _decide(self, _body):
         raise AiError(AiErrorCode.NOT_CONFIGURED)
 
     def _transcribe(self, _request):

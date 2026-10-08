@@ -30,14 +30,16 @@ def test_schema_is_strict_mode_compatible(operation):
 
 
 SAMPLES = {
-    "judge_sufficiency": {"sufficient": False, "probability": 0.3, "missing_aspects": ["마감 순서"]},
+    "judge_sufficiency": {"sufficient": False, "probability": 0.3, "missing_aspects": ["마감 순서"],
+                          "not_applicable_probability": None, "not_applicable_confirmed_probability": None},
     "generate_question": {"question": "기계는 어떤 순서로 닦나요?", "guidance": None, "guidanceCards": []},
     "suggest_review_photos": {"suggestions": []},
     "summarize_intent": {"summary": "요약", "structure": {
         "shifts": [{"ref": "new-1", "name": "오전", "start_time": "09:00", "end_time": None,
-                    "ends_next_day": None}],
+                    "ends_next_day": None, "evidence_ids": ["t1#1"]}],
         "sections": [{"ref": "new-2", "category": "SHIFT_TASK", "shift_ref": "new-1", "title": "오픈",
-                      "steps": [{"ref": "new-3", "instruction": "불을 켜요", "checklist_item": True}]}],
+                      "steps": [{"ref": "new-3", "instruction": "불을 켜요", "checklist_item": True,
+                                 "evidence_ids": ["t1#2"]}]}],
         "missing_information": [{"target": "SHIFT", "target_ref": "new-1", "field": "endTime",
                                  "description": "종료 시간 미정"}],
     }},

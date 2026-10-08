@@ -66,14 +66,60 @@ def test_mutants_separate_structure_failures_and_critical_gold_failures():
         ("qa-valid-citation-wrong-time", "exact-spoken-time-and-count"),
         ("revision-ambiguous", "correction-outcome"),
         ("summary-cafe", "spoken-step"),
-        ("draft-restaurant", "spoken-step"),
+        ("summary-cafe", "cites-evidence"),  # the invented step had no citation
+        ("summary-restaurant", "cites-evidence"),
     ]:
         assert indexed[case_id]["structure"] == "pass"
         assert check_id in indexed[case_id]["critical_gold_failures"]
+    # A same-ID uncited mutation keeps the reviewed original in a draft, even in old
+    # empty-evidence captures; a valid citation's semantics are checked separately. A correction
+    # cannot report a restored original as applied, so there it is a structure failure (retried).
+    assert indexed["draft-restaurant"]["structure"] == "pass"
+    assert indexed["draft-restaurant"]["gold_status"] == "pass"
+    assert indexed["draft-restaurant"]["critical_gold_failures"] == []
     assert indexed["revision-specific"]["structure"] == "fail"
+    assert indexed["revision-specific"]["structure_error_code"] == "invalid_output"
     assert report["structure_failure_n"] > 0
     assert report["critical_gold_failure_n"] > 0
     assert report["failed"] is True
+
+
+@pytest.mark.parametrize("citation", ["owner#1", "unknown#1"])
+def test_draft_citation_validity_and_semantic_gold_are_independent(tmp_path, citation):
+    case = next(row for row in rows("gold.jsonl") if row["id"] == "draft-restaurant")
+    case["request"]["evidence"] = [{"id": "owner#1", "intent_key": "EQUIPMENT",
+                                  "text": "그릇을 선반에 종류별로 쌓아요."}]
+    captured = next(row for row in rows("mutants.jsonl") if row["case_id"] == case["id"])
+    raw = json.loads(captured["raw_output"])
+    raw["structure"]["sections"][0]["steps"][0]["evidence_ids"] = [citation]
+    captured["raw_output"] = json.dumps(raw, ensure_ascii=False)
+    report = evaluate(write_rows(tmp_path, "gold.jsonl", [case]),
+                      write_rows(tmp_path, "captured.jsonl", [captured]))
+    [result] = report["cases"]
+    if citation == "owner#1":
+        assert result["structure"] == "pass"
+        assert result["critical_gold_failures"] == ["spoken-step"]  # real ID, wrong factual action
+    else:
+        assert result["structure"] == "fail" and result["structure_error_code"] == "invalid_output"
+        assert result["gold_status"] == "skipped_structure_failure"
+    assert report["failed"] and report["model_quality_verified"] is False
+    assert result["human_review"] == "pending"
+
+
+def test_citation_does_not_permit_a_revision_outside_the_selected_target(tmp_path):
+    case = next(row for row in rows("gold.jsonl") if row["id"] == "revision-specific")
+    case["request"]["evidence"] = [{"id": "owner#1", "intent_key": "WORK_STRUCTURE",
+                                  "text": case["request"]["instruction"]}]
+    captured = next(row for row in rows("mutants.jsonl") if row["case_id"] == case["id"])
+    raw = json.loads(captured["raw_output"])
+    raw["structure"]["shifts"][0]["evidence_ids"] = ["owner#1"]
+    raw["structure"]["sections"][0]["steps"][0]["evidence_ids"] = ["owner#1"]
+    captured["raw_output"] = json.dumps(raw, ensure_ascii=False)
+    report = evaluate(write_rows(tmp_path, "gold.jsonl", [case]),
+                      write_rows(tmp_path, "captured.jsonl", [captured]))
+    [result] = report["cases"]
+    assert result["structure"] == "fail" and result["structure_error_code"] == "invalid_output"
+    assert result["gold_status"] == "skipped_structure_failure" and report["failed"]
 
 
 @pytest.mark.parametrize("mutation", [
@@ -89,6 +135,20 @@ def test_gold_contract_rejects_unknown_or_incomplete_checks(mutation):
     mutation(case)
     with pytest.raises(ValidationError):
         Case.model_validate(case)
+
+
+def test_evidence_check_needs_a_grounded_case_with_evidence():
+    grounded = next(case for case in rows("gold.jsonl") if case["id"] == "summary-cafe")
+    Case.model_validate(grounded)
+    without = json.loads(json.dumps(grounded))
+    without["request"].pop("evidence")
+    jev = rows("gold.jsonl")[0]
+    jev["expected"]["checks"].append({"id": "cites", "kind": "evidence_cited"})
+    bad_value = json.loads(json.dumps(grounded))
+    bad_value["expected"]["checks"][-1]["value"] = "t1#1"
+    for case in (without, jev, bad_value):
+        with pytest.raises(ValidationError):
+            Case.model_validate(case)
 
 
 def test_duplicate_case_and_response_ids_are_rejected(tmp_path):

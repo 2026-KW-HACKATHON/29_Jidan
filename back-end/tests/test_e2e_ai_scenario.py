@@ -5,6 +5,7 @@ import pytest
 
 from app.ai.contracts import (
     DialogueTurn,
+    EvidenceChunk,
     IntentBrief,
     IntentSummaryRequest,
     PhotoSuggestionsRequest,
@@ -74,7 +75,8 @@ def test_pos_questions_cite_the_pos_section_and_others_need_the_owner(fake):
 
 def test_revision_rewrites_the_last_step_or_moves_the_first_shift(fake):
     revised = fake.revise_structure(StructureRevisionRequest(current=manual(POS), instruction="사진을 보내요.",
-                                                             require_manual_level=False))
+                                                             require_manual_level=False, evidence=(
+        EvidenceChunk(id="c#1", intent_key="COMMON_TASKS", text="사진을 보내요."),)))
     assert [s.instruction for s in revised.structure.sections[0].steps] == ["정산을 눌러요.", "사진을 보내요."]
     assert revised.summary is None
     shifts = StructureSnapshot.model_validate({"shifts": [{"id": "h-1", "name": "오픈조", "start_time": "09:00",

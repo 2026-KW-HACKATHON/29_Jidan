@@ -88,6 +88,81 @@ docker compose -p <남은-jidan-e2e-프로젝트> -f back-end/testing/compose.ym
 
 GitHub Actions `backend CI/CD`는 전체 Python 및 HTTP·MySQL E2E를 실행하지 않고 정적 검사와 이미지 빌드·배포를 진행한다. 배포 후 에이전트가 실제 서버를 검증하고, 격리 회귀가 필요하면 `back-end/testing/run-e2e.sh` 또는 수동 `Backend HTTP E2E`를 실행한다. 수동 워크플로우의 XML과 로그는 artifact로 7일 보관한다. 이 하네스의 DB 초기화·실패 주입은 테스트 DB에만 적용하며 배포 서버 DB에 실행하지 않는다.
 
+## 매뉴얼 인터뷰 실호출 평가 (수동, 유료)
+
+실제 서버(`e2e.serve` → `app.main`, 백그라운드 작업 실행기)에 카페 점주 페르소나(`e2e/owner_persona.py`, 오픈조 07:00-15:00·마감조 15:00-22:30)가 인터뷰 전체를 답하고, 인터뷰의 모든 AI 연산을 OpenAI로 보낸 뒤 사람이 읽을 평가 리포트를 남긴다. 점주 답은 (인텐트, 깊이)로만 정해지는 고정 문장이다(LLM 아님). 대부분의 인텐트는 처음엔 모호하게 답해 PROBE를 끌어내고 후속 질문에서 구체화한다. RULES는 "해당 없음", EXCEPTIONS는 끝까지 모호하게 답해 depth 5 → NEEDS_DETAIL로 끝난다.
+
+```bash
+# 일회용 MySQL(수동 sandbox·운영 DB와 무관). 이미 *_test DB가 있으면 그것을 쓴다.
+docker run -d --name jidan-eval-mysql -p 127.0.0.1:13399:3306 --tmpfs /var/lib/mysql \
+  -e MYSQL_ROOT_PASSWORD=rootpw -e MYSQL_DATABASE=jidan_e2e_test -e MYSQL_USER=jidan -e MYSQL_PASSWORD=jidanpw \
+  mysql:8.4 --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+cd back-end
+export APP_ENV=local DB_HOST=127.0.0.1 DB_PORT=13399 DB_NAME=jidan_e2e_test DB_USER=jidan DB_PASSWORD=jidanpw
+.venv/bin/alembic upgrade head
+JIDAN_E2E_OPENAI=1 .venv/bin/python -m e2e.interview_eval --ai live --env-file ~/Downloads/ssh_key/api.env
+docker rm -f jidan-eval-mysql   # 끝나면 정리
+```
+
+- `--env-file`은 파일의 `OPENAI_*` 줄만 이 프로세스 환경에 넣는다(키를 출력하지 않음, shell `source`가 막힌 환경용). 이미 `OPENAI_API_KEY`가 환경에 있으면 생략한다. `JIDAN_E2E_OPENAI=1`과 키가 없으면 실행을 거부한다.
+- 실호출 연산: `--ai-live-ops`(또는 `E2E_AI_LIVE_OPS`) 기본 `interview` = `judge_sufficiency`(Decisions)·`generate_question`(low)·`summarize_intent`·`revise_structure`·`compose_draft`(medium, 근거 인용). 프리셋 `default`(데모 기본), `all`(전사·Q&A 포함)과 연산 이름을 쉼표로 섞을 수 있다. `e2e.demo_scenario --ai-live-ops`도 같은 프리셋을 받는다.
+- 호출 상한: `--ai-call-limit`(또는 `E2E_AI_CALL_LIMIT`) 기본 80 = 6개 인텐트가 모두 depth 5까지 가는 최악(72) + 요약 6 + 정정 1 + 초안 1. 넘으면 그 호출은 NOT_CONFIGURED로 실패한다(재시도 없음).
+- 예상 호출 수: Jev가 페르소나와 일치하면 42회(질문 17 + 판단 17 + 요약 6 + 정정 1 + 초안 1). `--skip-depth5`(또는 `E2E_SKIP_DEPTH5=1`)는 EXCEPTIONS를 depth 1에서 구체화해 34회.
+- 소요·비용: 2026-10-08 실측 1회 42회 호출, 전체 약 105초(AI 대기 합계 123초, 초안 23초). 토큰 입력 약 11.7만(캐시 1.75만 포함)·출력 약 9,800(추론 2,950). 리포트는 연산별 토큰을 보여 주며 `E2E_AI_PRICE_PER_1M=<입력 USD>,<출력 USD>`를 주면 추정 비용도 쓴다(가격은 하네스가 가정하지 않는다).
+- 리포트: `back-end/.e2e-reports/interview-eval-<UTC시각>-<run>.md`(gitignore) 또는 `--report <경로>`/`E2E_REPORT_PATH`. 단계가 실패해도 그때까지의 내용으로 작성한다. 인텐트별 질문 원문·점주 답·Jev 판단(충분 여부·확률·부족 aspect)·도달 깊이, 검토 요약·정정 전후 근무조, 최종 초안 구조(근무조·섹션·단계·미확정·이슈), 근거 통계(근거 조각 수, 근거 없어 제거된 단계·비운 근무조 시간 개수), 연산별 지연·실호출 수·토큰, 자동 관찰 포인트(페르소나 기대와 다른 깊이, 모호한 답을 충분으로/구체적인 답을 불충분으로 본 판단, 반복 질문, 실패 호출, "해당 없음"인데 섹션 생성 등)를 담는다. 키·prompt·provider 원문은 남기지 않는다(근거 제거는 서버 로그의 개수만 집계). 리포트에는 점주 답과 모델이 쓴 매뉴얼 문장이 들어 있으니 공유 범위에 유의한다.
+- 검증은 구조만 본다: 인텐트 순서, depth 0 BASE → PROBE +1, depth ≤ 5, 모든 검토 READY, needsDetail = depth 5에서도 불충분, 정정 후 revision 증가, 초안 READY·단계 1개 이상·섹션의 근무조 참조 유효, NEEDS_DETAIL 인텐트는 초안 이슈, 모든 응답의 OpenAPI 검증.
+- 키 없이 같은 흐름: `--ai fake`(페르소나 판단을 따르는 fake Jev, 깊이까지 정확히 검사). MySQL 회귀는 `tests/test_e2e_interview_eval.py`의 `mysql` 테스트가 같은 흐름을 실행한다.
+- 실행이 만든 계정은 `python -m e2e.demo_scenario --cleanup`으로 지운다.
+
+### 음성 → 구조화 → commit 검증 (`--voice`)
+
+`--voice`는 기존 전체 인터뷰에 COMMON_TASKS depth 1의 구체적인 답을 음성으로 제출한다. live 모드에서는 기존 `e2e.manual_scenario.speech`의 macOS `say -v Yuna`와 `afconvert`로 **기존 owner_persona 사실만** 녹음한다. 실제 미디어 업로드·전사 API에서 READY를 받은 뒤 `{method: "VOICE", transcriptionId: ...}`를 제출한다. 인식된 원문을 TEXT로 대체하지 않는다. COMMON_TASKS가 depth 0에서 끝나 depth 1 질문이 없으면 실패로 보고하므로, 성공 리포트에는 실제 VOICE 제출이 반드시 있다.
+
+- live 연산은 모든 `interview` 연산을 요구하며 `transcribe`를 자동으로 추가한다. 기본 상한은 기존 80 + 전사 1 = **81회**, 기대 호출은 43회(`--skip-depth5`: 35회)다. 직접 지정한 `--ai-call-limit` 또는 `E2E_AI_CALL_LIMIT`은 그대로 존중한다. 재시도도 상한에 포함한다.
+- `--voice --env-file`은 `OPENAI_KEY` 또는 `OPENAI_API_KEY`만 읽어 표준 `OPENAI_API_KEY`로 설정한다(둘 다 있으면 명시한 `OPENAI_API_KEY` 우선). 파일의 모델·timeout·기타 설정은 무시하여 실행자가 환경에서 지정한 설정을 보존한다. 음성 옵션을 생략하면 기존 `OPENAI_*` 설정 파일 동작을 유지한다.
+- 드라이버의 별도 DB 연결과 API 재조회로 READY 전사·media/store/인증된 owner·실제 오디오 byte hash, 제출한 question/session, 단 하나의 VOICE 답변·전사 ID·원문 복사·불변성을 대조한다. 전사 완료만으로 답변이 자동 저장되지 않는지도 회귀로 확인한다.
+- 여섯 READY review의 commit/revision/content, 정정 후 마감조 **23:00**, 생성 시 고정한 최신 review 및 실제 음성 답변의 근거 chunk ID/문장, COMPLETED 인터뷰·READY draft의 normalized shift/section/step 행·내용·순서와 API 재조회를 검사한다.
+- COMMON_TASK 단계에서 POS 주문·결제, 레시피 카드, 픽업·주문 번호, 테이블 정리·행주 닦기의 어휘 anchor와 원문에 없는 숫자 수량을 검사한다. 이는 의미 정확성·모든 추가 절차의 근거를 자동 증명하지 않는다. 독립 Claude 검토가 원음, 실제 전사, 전체 원문 대화와 구조화 결과를 대조해야 하며 자동 리포트에는 의미 검토를 **PENDING**으로 표시한다.
+- 리포트 옆에 `<이름>.json`과 `<이름>.voice.m4a`(fake는 `.wav`)를 남긴다. JSON에는 실제 전사·저장 답변·review·초안·DB 검증·생성 입력의 source evidence를 보존하고 Markdown에는 사람이 대조할 실제 원문과 구조화 내용을 표시한다. 임시 server 미디어 디렉터리를 지운 뒤에도 원음 artifact는 남는다. 키·쿠키·시스템 prompt·provider 원문은 기록하지 않는다.
+- fake 모드에서는 Linux에서도 무음 WAV + 고정 persona 전사를 사용한다. 이 optional fake는 기존 외부 AI boundary의 responder만 설정하며 모든 실제 API·task·validation·commit은 그대로 거친다. summary 단계도 실제 제출한 frozen source evidence에서만 문장을 만들며, RULES의 '해당 없음'과 모호한 EXCEPTIONS를 가짜 절차로 채우지 않는다. 실제 STT·AI 의미 검증으로 해석하지 않는다. `--voice`를 생략한 기본 실행은 기존 동작을 유지한다.
+
+다음은 실행마다 새로 만드는 폐기용 MySQL에서의 검증 순서다. 개발·운영·공유 DB에는 실행하지 않는다. API 키 파일은 실행 프로세스에만 전달하며 내용을 출력하거나 shell에 source하지 않는다. readiness 대기가 끝나기 전에 migration을 실행하지 않는다.
+
+```bash
+cd back-end
+eval_python=/Users/gim-uhyeon/Documents/projectfolder/2025-2026/jidan/jidan-backend-pr-20261007/back-end/.venv/bin/python
+eval_mysql=jidan-pr170-voice-$(date +%s)-$$
+docker run -d --name "$eval_mysql" -p 127.0.0.1::3306 --tmpfs /var/lib/mysql \
+  -e MYSQL_ROOT_PASSWORD=voice-root-only -e MYSQL_DATABASE=jidan_e2e_test \
+  -e MYSQL_USER=jidan -e MYSQL_PASSWORD=voice-test-only \
+  mysql:8.4 --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+# 준비 여부를 확인한 뒤 계속한다(아직 실패하면 같은 명령을 다시 실행).
+docker exec "$eval_mysql" mysqladmin ping -h 127.0.0.1 -uroot -pvoice-root-only --silent
+export APP_ENV=local DB_HOST=127.0.0.1 DB_NAME=jidan_e2e_test DB_USER=jidan DB_PASSWORD=voice-test-only
+export DB_PORT=$(docker port "$eval_mysql" 3306/tcp | sed 's/.*://')
+"$eval_python" -m alembic upgrade head
+# 먼저 fake 전체 runner: 실제 TCP HTTP + 별도 MySQL 연결, 기본/음성 × depth5 포함/생략.
+JIDAN_REQUIRE_MYSQL=1 "$eval_python" -m pytest tests/test_e2e_interview_eval.py \
+  tests/test_e2e_interview_voice.py -q -m 'not openai'
+# 유료 실행은 검토 후 별도로 실행하며 macOS Yuna/afconvert가 필요하다.
+JIDAN_E2E_OPENAI=1 "$eval_python" -m e2e.interview_eval --ai live --voice \
+  --env-file /Users/gim-uhyeon/Downloads/ssh_key/api.env \
+  --report .e2e-reports/pr170-voice-live.md
+# 독립 의미 검토: pr170-voice-live.md, .json, .voice.m4a를 함께 확인한다.
+docker rm -f "$eval_mysql"
+```
+
+DB 없이 가능한 focused 검사(유료 호출·MySQL 초기화 없음)는 아래와 같다. 첫 명령은 MySQL cases를 명시적으로 제외하며 MySQL 검증 완료로 보고하지 않는다. 새 음성 테스트 파일과 `--voice` 전체 실행의 MySQL 매개변수는 `testing/run-e2e.sh`의 기본 `checks` 전체 Python 단계에도 수집된다.
+
+```bash
+env -u DB_HOST -u DB_NAME -u DB_USER -u DB_PASSWORD "$eval_python" -m pytest \
+  tests/test_e2e_interview_eval.py tests/test_e2e_interview_voice.py -q -m 'not mysql'
+"$eval_python" -m ruff check e2e/interview_eval.py e2e/interview_report.py \
+  tests/test_e2e_interview_eval.py tests/test_e2e_interview_voice.py
+```
+
+추가 회귀는 빈/공백/null/잘못된 STT 출력·provider 실패와 잘못된 transcription UUID의 거부, 답변·평가·revision 보존, READY 재사용 및 자동 답변 방지, DB에 저장된 TEXT 치환·다른 답변 내용·review/초안 row 변조 검출, fake 경로의 macOS 비의존성, 실제 전사/답변/스크립트의 리포트 구분을 검사한다. 실제 오디오의 STT 성공 및 모든 구조화 문장의 의미 정확성은 위 live 실행과 독립 의미 검토로 따로 판단한다.
+
 ## 검증 범위
 
 독립 재점검 후 로컬 전체 실행에서 도구 테스트 43개, 전체 Python 테스트 1,331개, 실제 HTTP E2E 148개가 통과했으며 실패·오류·skip은 모두 0개였다. 전체 Python에는 `mysql` 표시 테스트 502개가 포함된다. 이 표시 중 등록 트랜잭션 테스트의 2개 매개변수는 SQLite이므로 표시 개수를 실제 MySQL 실행 수로 해석하지 않는다. 실행 결과는 JUnit 및 pytest 요약으로 확인하며 테스트 수는 구현 추가에 따라 달라질 수 있다.

@@ -12,7 +12,13 @@ Configuration (environment):
     OPENAI_SERVICE_TIER              default fast (auto|default|fast|priority)
     OPENAI_REASONING_EFFORT          default low (none|low|medium|high|xhigh|max, or empty)
     OPENAI_TIMEOUT_SECONDS           default 60 (per LLM call)
+    OPENAI_WRITING_TIMEOUT_SECONDS   default 120 (per manual-writing call, medium effort)
     OPENAI_TRANSCRIBE_TIMEOUT_SECONDS default 120
+
+Every operation uses OPENAI_MODEL (and OPENAI_FALLBACK_MODEL after a retryable failure); there is
+no per-operation model, so a fallback always replaces one model with one other. The fallback
+model judges sufficiency on the responses backend (structured-output Jev, OPENAI_REASONING_EFFORT)
+whatever OPENAI_JUDGE_BACKEND says, because the Decisions API is not served for every model.
 """
 
 import logging
@@ -20,8 +26,9 @@ import math
 import os
 import threading
 
+from app.ai.decisions import thresholds_from_env
 from app.ai.errors import AiError, AiErrorCode
-from app.ai.provider import AiProvider, FallbackAiProvider, UnconfiguredAiProvider
+from app.ai.provider import JUDGE_BACKENDS, AiProvider, FallbackAiProvider, UnconfiguredAiProvider
 
 DEFAULT_MODEL = "gpt-6-luna"
 DEFAULT_TRANSCRIBE_MODEL = "gpt-transcribe"
@@ -42,14 +49,33 @@ def _seconds(name: str, default: float) -> float:
     return value
 
 
+def _effort(name: str, default: str) -> str | None:
+    effort = os.getenv(name, default).strip().lower() or None
+    if effort is not None and effort not in REASONING_EFFORTS:
+        raise ValueError(f"{name} is not a supported value")
+    return effort
+
+
+def _judge_backend() -> str:
+    backend = os.getenv("OPENAI_JUDGE_BACKEND", "").strip().lower() or "decisions"
+    if backend not in JUDGE_BACKENDS:
+        raise ValueError("OPENAI_JUDGE_BACKEND must be decisions or responses")
+    return backend
+
+
 def build_provider_from_env() -> AiProvider:
     kind = os.getenv("AI_PROVIDER", "openai").strip().lower() or "openai"
+    judge_backend = _judge_backend()
+    thresholds = thresholds_from_env()
     if kind == "fake":
         if os.getenv("APP_ENV", "local") == "production":
             raise ValueError("AI_PROVIDER=fake is not allowed in production")
         from app.ai.fake import FakeAiProvider
 
-        return FakeAiProvider(timeout_seconds=_seconds("OPENAI_TIMEOUT_SECONDS", 60.0))
+        fake = FakeAiProvider(timeout_seconds=_seconds("OPENAI_TIMEOUT_SECONDS", 60.0),
+                              judge_backend=judge_backend)
+        fake.judge_thresholds = thresholds
+        return fake
     if kind != "openai":
         raise ValueError("AI_PROVIDER must be openai or fake")
     from app.ai.openai_provider import SERVICE_TIERS, OpenAiProvider
@@ -61,22 +87,28 @@ def build_provider_from_env() -> AiProvider:
     if not api_key:
         logger.warning("OPENAI_API_KEY is not set; AI and transcription requests will fail")
         return UnconfiguredAiProvider()
-    effort = os.getenv("OPENAI_REASONING_EFFORT", "low").strip().lower() or None
-    if effort is not None and effort not in REASONING_EFFORTS:
-        raise ValueError("OPENAI_REASONING_EFFORT is not a supported value")
-    def make(model: str) -> AiProvider:
+    effort = _effort("OPENAI_REASONING_EFFORT", "low")
+    question_effort = _effort("OPENAI_QUESTION_REASONING_EFFORT", "low")
+    writing_effort = _effort("OPENAI_WRITING_REASONING_EFFORT", "medium")
+
+    def make(model: str, *, judge_backend: str = judge_backend) -> AiProvider:
         return OpenAiProvider(
             api_key=api_key, model=model,
             transcribe_model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "").strip() or DEFAULT_TRANSCRIBE_MODEL,
-            reasoning_effort=effort, service_tier=service_tier,
+            reasoning_effort=effort, question_effort=question_effort, writing_effort=writing_effort,
+            service_tier=service_tier,
             timeout_seconds=_seconds("OPENAI_TIMEOUT_SECONDS", 60.0),
+            writing_timeout_seconds=_seconds("OPENAI_WRITING_TIMEOUT_SECONDS", 120.0),
             transcribe_timeout_seconds=_seconds("OPENAI_TRANSCRIBE_TIMEOUT_SECONDS", 120.0),
+            judge_backend=judge_backend, judge_thresholds=thresholds,
         )
 
     primary = make(os.getenv("OPENAI_MODEL", "").strip() or DEFAULT_MODEL)
     fallback_model = os.getenv("OPENAI_FALLBACK_MODEL", "").strip()
     if fallback_model and fallback_model != primary.model:
-        return FallbackAiProvider(primary, make(fallback_model))
+        # The Decisions API serves only some models (gpt-6-luna); a fallback model judges on
+        # the structured-output Jev instead of failing every evaluation as NOT_CONFIGURED.
+        return FallbackAiProvider(primary, make(fallback_model, judge_backend="responses"))
     return primary
 
 

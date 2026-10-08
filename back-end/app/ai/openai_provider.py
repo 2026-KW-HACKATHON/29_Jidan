@@ -1,6 +1,16 @@
-"""OpenAI backend: Responses API with strict JSON Schema output, and audio transcriptions.
+"""OpenAI backend: Responses API with strict JSON Schema output, the Decisions API for Jev, and
+audio transcriptions.
 
-* `store=False`: interview answers and worker questions are not kept by the provider.
+* `store=False`: interview answers and worker questions are not kept by the provider. The
+  Decisions request schema has no `store` (or any other retention) option at all
+  (`additionalProperties: false` over model/input/questions/safety_identifier), so nothing is
+  sent for it there.
+* Reasoning effort per operation group: questions `question_effort` (default low), manual writing
+  (`summarize_intent`, `compose_draft`, `revise_structure`) `writing_effort` (default medium,
+  with the longer `writing_timeout_seconds`), everything else `reasoning_effort`. Decisions takes
+  no effort.
+* The installed SDK has no Decisions method, so `_decide` uses the client's low-level `post`:
+  same auth, base URL, timeout handling and exception types, hence the same `classify`.
 * `max_retries=0` on the client: retries and backoff belong to the task runner, which records
   every attempt; the SDK must not multiply calls behind its back.
 * Every SDK exception is classified into an `AiError` and re-raised `from None`; the provider's
@@ -17,13 +27,17 @@
 """
 
 import base64
+import json
 from collections.abc import Sequence
+from typing import Any
 
+import httpx
 import openai
 
 from app.ai.contracts import ImageInput, TranscriptionRequest
+from app.ai.decisions import Thresholds
 from app.ai.errors import AiError, AiErrorCode
-from app.ai.provider import AiProvider, RawTranscript
+from app.ai.provider import JUDGE_BACKENDS, AiProvider, RawTranscript
 from app.ai.schemas import OUTPUTS
 from app.ai.silence import pcm_wav_is_silent
 
@@ -37,6 +51,8 @@ MAX_OUTPUT_TOKENS = {
     "compose_draft": 32000,
     "answer_question": 8000,
 }
+WRITING_OPERATIONS = frozenset({"summarize_intent", "compose_draft", "revise_structure"})
+QUESTION_OPERATIONS = frozenset({"generate_question"})
 SERVICE_TIERS = ("auto", "default", "fast", "priority")
 AUDIO_EXTENSIONS = {"audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/webm": "webm", "audio/wav": "wav"}
 
@@ -74,29 +90,51 @@ class OpenAiProvider(AiProvider):
         model: str,
         transcribe_model: str,
         reasoning_effort: str | None = "low",
+        question_effort: str | None = "low",
+        writing_effort: str | None = "medium",
         service_tier: str = "fast",
         timeout_seconds: float = 60.0,
+        writing_timeout_seconds: float | None = None,
         transcribe_timeout_seconds: float = 120.0,
+        judge_backend: str = "decisions",
+        judge_thresholds: Thresholds | None = None,
         client: openai.OpenAI | None = None,
     ):
         if not api_key and client is None:
             raise ValueError("OpenAI API key is required")
+        if judge_backend not in JUDGE_BACKENDS:
+            raise ValueError("judge_backend must be decisions or responses")
         if service_tier not in SERVICE_TIERS:
             raise ValueError("OPENAI_SERVICE_TIER is not a supported value")
         self.service_tier = service_tier
         self.model = model
         self.transcribe_model = transcribe_model
         self.reasoning_effort = reasoning_effort
+        self.question_effort = question_effort
+        self.writing_effort = writing_effort
         self.timeout_seconds = timeout_seconds
+        self.writing_timeout_seconds = writing_timeout_seconds or timeout_seconds
         self.transcribe_timeout_seconds = transcribe_timeout_seconds
+        self.judge_backend = judge_backend
+        self.judge_thresholds = judge_thresholds or Thresholds()
         self._client = client or openai.OpenAI(api_key=api_key, max_retries=0, timeout=timeout_seconds)
 
     @property
     def max_call_seconds(self) -> float:
-        return max(self.timeout_seconds, self.transcribe_timeout_seconds)
+        return max(self.timeout_seconds, self.writing_timeout_seconds, self.transcribe_timeout_seconds)
 
     def __repr__(self) -> str:  # never show the client (it holds the key)
         return f"OpenAiProvider(model={self.model!r}, transcribe_model={self.transcribe_model!r})"
+
+    def effort_for(self, operation: str) -> str | None:
+        if operation in QUESTION_OPERATIONS:
+            return self.question_effort
+        if operation in WRITING_OPERATIONS:
+            return self.writing_effort
+        return self.reasoning_effort
+
+    def _timeout_for(self, operation: str) -> float:
+        return self.writing_timeout_seconds if operation in WRITING_OPERATIONS else self.timeout_seconds
 
     def _complete(
         self, operation: str, instructions: str, message: str, images: Sequence[ImageInput],
@@ -110,8 +148,9 @@ class OpenAiProvider(AiProvider):
                 "detail": "auto",
             })
         options = {}
-        if self.reasoning_effort:
-            options["reasoning"] = {"effort": self.reasoning_effort}
+        effort = self.effort_for(operation)
+        if effort:
+            options["reasoning"] = {"effort": effort}
         try:
             response = self._client.responses.create(
                 model=self.model,
@@ -121,7 +160,7 @@ class OpenAiProvider(AiProvider):
                 text={"format": {"type": "json_schema", "name": name, "schema": schema, "strict": True}},
                 max_output_tokens=MAX_OUTPUT_TOKENS[operation],
                 store=False,
-                timeout=self.timeout_seconds,
+                timeout=self._timeout_for(operation),
                 **options,
             )
         except openai.OpenAIError as error:
@@ -142,6 +181,19 @@ class OpenAiProvider(AiProvider):
                 raise AiError(AiErrorCode.REFUSED)
             raise AiError(AiErrorCode.INVALID_OUTPUT, detail=f"no_output:{response.status}")
         return candidates
+
+    def _decide(self, body: dict[str, Any]) -> Any:
+        try:
+            response = self._client.post(
+                "/decisions", cast_to=httpx.Response, body=body,
+                options={"timeout": self.timeout_seconds},
+            )
+        except openai.OpenAIError as error:
+            raise classify(error) from None
+        try:
+            return json.loads(response.content)
+        except ValueError:
+            raise AiError(AiErrorCode.INVALID_OUTPUT, detail="decision_not_json") from None
 
     def _transcribe(self, request: TranscriptionRequest) -> str | RawTranscript:
         if request.mime_type == "audio/wav" and pcm_wav_is_silent(request.audio):

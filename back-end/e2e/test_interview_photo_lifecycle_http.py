@@ -23,11 +23,13 @@ from app.ai.errors import AiError, AiErrorCode
 from app.ai.fake import FakeAiProvider, structure_to_raw
 from app.db import utcnow
 from app.db.models import (
+    BackgroundTask,
     InterviewIntentReview,
     InterviewSession,
     ManualMedia,
     ManualMediaSnapshotRef,
     ManualPhotoAttachment,
+    ManualShift,
     ManualVersion,
     Store,
     StoreAccessGrant,
@@ -514,8 +516,7 @@ def build_generation_time_failure_provider():
     return build_generation_failure_provider("time")
 
 
-@pytest.mark.parametrize("factory", ["build_generation_failure_provider", "build_generation_category_failure_provider",
-                                     "build_generation_time_failure_provider"])
+@pytest.mark.parametrize("factory", ["build_generation_failure_provider", "build_generation_category_failure_provider"])
 def test_generation_rejects_replaced_section_ids_and_retry_preserves_frozen_photo_snapshot(real_db, tmp_path, factory):
     with (
         scenario_server(tmp_path, f"e2e.test_interview_photo_lifecycle_http:{factory}") as origin,
@@ -559,6 +560,52 @@ def test_generation_rejects_replaced_section_ids_and_retry_preserves_frozen_phot
         assert draft["content"]["sections"] == frozen_sections
         assert draft["content"]["shifts"] == [shift for review in frozen["reviews"]
                                                for shift in review["content"]["shifts"]]
+
+
+def test_generation_restores_frozen_times_and_commits_ordered_photos_without_retry(real_db, tmp_path):
+    with (
+        scenario_server(tmp_path, "e2e.test_interview_photo_lifecycle_http:build_generation_time_failure_provider") as origin,
+        interview_case(real_db, origin) as case,
+    ):
+        sid, listing = finish_answers(case)
+        review = review_with_section(listing)
+        section_id = review["content"]["sections"][0]["id"]
+        expected = [photo(upload(case), "첫 사진", "먼저 볼 위치"), photo(upload(case), "둘째 사진", "다음 위치")]
+        linked = link(case, sid, review, section_id, expected)
+        assert linked.status_code == 200, linked.text
+        listing = get(case, case.url(sid, "/reviews"))
+        expected_shifts = [shift for item in listing["items"] for shift in item["content"]["shifts"]]
+        assert expected_shifts and expected_shifts[0]["startTime"] != "08:00"
+        accepted = case.post(case.url(sid, "/completion"), {
+            "expectedRevision": listing["sessionRevision"], "reviewRevisions": [
+                {"intentId": item["intentId"], "revision": item["revision"]} for item in listing["items"]]})
+        assert accepted.status_code == 202, accepted.text
+        case.wait(sid, lambda value: value["phase"] == "COMPLETED")
+        draft = get(case, manual(case, "/draft"))
+        assert draft["generationStatus"] == "READY" and draft["revision"] == 1
+        assert draft["content"]["shifts"] == expected_shifts
+        assert section(draft, section_id)["photos"] == expected
+        assert_draft_photos_commit(case, draft["versionId"], section_id, expected)
+        with Session(case.engine) as db:
+            version = db.get(ManualVersion, draft["versionId"])
+            assert version.status == "DRAFT" and version.generation_status == "READY"
+            frozen = version.generation_input_snapshot
+            assert [shift for item in frozen["reviews"] for shift in item["content"]["shifts"]] == expected_shifts
+            frozen_section = next(item for item in (
+                section for review in frozen["reviews"] for section in review["content"]["sections"])
+                if item["id"] == section_id)
+            assert frozen_section["photos"] == expected
+            stored_shifts = {row.id: row for row in db.scalars(select(ManualShift).where(
+                ManualShift.version_id == version.id))}
+            for shift in expected_shifts:
+                saved = stored_shifts[shift["id"]]
+                assert (saved.start_time.strftime("%H:%M") if saved.start_time else None) == shift["startTime"]
+                assert (saved.end_time.strftime("%H:%M") if saved.end_time else None) == shift["endTime"]
+                assert saved.ends_next_day == shift["endsNextDay"]
+            [task] = list(db.scalars(select(BackgroundTask).where(
+                BackgroundTask.subject_id == sid, BackgroundTask.kind == "DRAFT_GENERATION")))
+            assert task.status == "SUCCEEDED" and task.attempt == task.tries == 1
+        assert get(case, manual(case, "/draft"))["content"] == draft["content"]
 
 
 def test_section_deletion_and_photo_link_race_does_not_move_or_delete_media(lifecycle):

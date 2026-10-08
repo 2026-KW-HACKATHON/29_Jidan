@@ -11,6 +11,7 @@ interview. Jev and draft failures make the session ERROR; summary/correction fai
 that review ERROR. Each keeps its stored input for the retry endpoints.
 """
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.ai import get_ai_provider
 from app.ai.contracts import (
+    EvidenceChunk,
     GeneratedQuestion,
     IntentSummary,
     IntentSummaryRequest,
@@ -30,6 +32,7 @@ from app.ai.contracts import (
 from app.db import session_scope, utcnow
 from app.db.models import (
     InterviewEvaluation,
+    InterviewIntent,
     InterviewIntentReview,
     InterviewSession,
     InterviewTurn,
@@ -38,6 +41,7 @@ from app.interview import drafting
 from app.interview.cards import normalize_question_cards
 from app.interview.common import lock_review, lock_session_row
 from app.interview.content import content_from_structure, photo_ids, snapshot_from_content
+from app.interview.evidence import correction_evidence
 from app.interview.flow import (
     apply_judgement,
     available_shifts,
@@ -51,6 +55,8 @@ from app.interview.flow import (
 from app.interview.photos import suggest_current_question_photos
 from app.media.references import replace_snapshot_refs
 from app.tasks import TaskContext, TaskDeferred, TaskHandler, register_handler, task_error_code
+
+logger = logging.getLogger(__name__)
 
 PUBLIC_FAILURE = "AI_PROCESSING_FAILED"
 FALLBACK_SOURCE = "fallback:template"
@@ -106,7 +112,9 @@ def _question_fail(db: Session, ctx: TaskContext, _error: Exception) -> None:
 
 
 def _evaluation_execute(ctx: TaskContext) -> SufficiencyJudgement:
-    return get_ai_provider().judge_sufficiency(SufficiencyRequest.model_validate(ctx.payload["request"]))
+    provider = get_ai_provider()
+    provider.reset_judge_meta()
+    return provider.judge_sufficiency(SufficiencyRequest.model_validate(ctx.payload["request"]))
 
 
 def _evaluation_row(session: InterviewSession, ctx: TaskContext, **values: Any) -> InterviewEvaluation:
@@ -130,15 +138,16 @@ def _evaluation_apply(db: Session, ctx: TaskContext, judgement: SufficiencyJudge
         missing_aspects=list(judgement.missing_aspects), applied_at=now,
     ))
     db.flush()  # the (session, intent, applied_depth) UNIQUE rejects a second applied result
-    apply_judgement(db, session, judgement.sufficient, judgement.missing_aspects, now)
+    apply_judgement(db, session, judgement.sufficient, judgement.missing_aspects, now,
+                    not_applicable=judgement.not_applicable)
 
 
 def _evaluation_fail(db: Session, ctx: TaskContext, error: Exception) -> None:
     session = _failing_session(db, ctx)
-    provider = get_ai_provider()
+    meta = get_ai_provider().judge_meta()  # per-operation: backend (and effort) included
     db.add(_evaluation_row(
-        session, ctx, evaluation_config_version=provider.config_version[:200],
-        provider=provider.provider_name[:32], status="FAILED", error_code=task_error_code(error),
+        session, ctx, evaluation_config_version=meta.config_version[:200],
+        provider=meta.provider[:32], status="FAILED", error_code=task_error_code(error),
     ))
     _set_error(session)
 
@@ -190,23 +199,33 @@ def _understanding_apply(db: Session, ctx: TaskContext, summary: IntentSummary) 
     ))
 
 
-def correction_request(db: Session, session_id: str, intent_id: str, turn_id: str) -> StructureRevisionRequest:
+def correction_request(db: Session, session_id: str, intent_id: str, turn_id: str,
+                       frozen_evidence: list[dict[str, Any]] | None = None) -> StructureRevisionRequest:
     """The review's last READY content (unchanged while the correction is PROCESSING), the
-    correction turn's text, the other reviews' shifts and the store wording context."""
+    correction turn's text, the other reviews' shifts, the store wording context and the
+    owner's words up to this correction as evidence (app.interview.evidence). The evidence is the
+    one frozen in the task payload when the correction was accepted; tasks queued before it was
+    frozen there rebuild it (same turns, same review content, so the same chunks)."""
     review = db.get(InterviewIntentReview, (session_id, intent_id))
     content = review.ready_content
     session = db.get(InterviewSession, session_id)
+    turn = db.get(InterviewTurn, turn_id)
+    current = snapshot_from_content(content)
+    if frozen_evidence is None:
+        evidence = correction_evidence(db, session_id, db.get(InterviewIntent, intent_id).intent_key, turn, current)
+    else:
+        evidence = tuple(EvidenceChunk.model_validate(chunk) for chunk in frozen_evidence)
     return StructureRevisionRequest(
-        current=snapshot_from_content(content), summary=content["summary"],
-        instruction=db.get(InterviewTurn, turn_id).content,
+        current=current, summary=content["summary"], instruction=turn.content,
         external_shifts=tuple(available_shifts(db, session_id, intent_id)),
-        store=store_context(store_of(db, session)),
+        store=store_context(store_of(db, session)), evidence=evidence,
     )
 
 
 def _correction_execute(ctx: TaskContext) -> StructureRevision:
     with session_scope() as db:
-        request = correction_request(db, ctx.subject_id, ctx.payload["intentId"], ctx.payload["correctionTurnId"])
+        request = correction_request(db, ctx.subject_id, ctx.payload["intentId"], ctx.payload["correctionTurnId"],
+                                     ctx.payload.get("evidence"))
     return get_ai_provider().revise_structure(request)
 
 

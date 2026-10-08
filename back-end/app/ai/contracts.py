@@ -38,6 +38,8 @@ MAX_QA_IMAGES = 3
 MAX_DIALOGUE_TURNS = 40
 MAX_CONTEXT_NOTES = 50
 MAX_ASPECTS = 5
+MAX_EVIDENCE = 200
+MAX_EVIDENCE_IDS = 20  # citations per step / shift
 
 
 def clean_text(value: str) -> str:
@@ -135,6 +137,21 @@ class ContextNote(_Model):
     summary: str = Field(min_length=1, max_length=10000)
 
 
+class EvidenceChunk(_Model):
+    """One retrievable piece of what the owner said in this interview (app.ai.retrieval).
+
+    `id` is stable: the owner turn's ID plus the sentence number (`<turnId>#<n>`), so the same
+    stored turns always yield the same IDs. `text` is the owner's own words and the only
+    citable fact; `question` is the question it answered (context, not a fact) and is set on
+    the first selected chunk of a turn only. Chunks always come from the same session.
+    """
+
+    id: str = Field(min_length=1, max_length=80)
+    intent_key: str = Field(min_length=1, max_length=100)
+    question: str | None = Field(default=None, max_length=2000)
+    text: str = Field(min_length=1, max_length=10000)
+
+
 # --- requests ---------------------------------------------------------------------------------
 
 
@@ -178,6 +195,12 @@ class IntentSummaryRequest(_Model):
     missing_aspects: tuple[str, ...] = Field(default=(), max_length=MAX_ASPECTS)
     available_shifts: tuple[ShiftItem, ...] = Field(default=(), max_length=MAX_SHIFTS)
     store: StoreContext | None = None
+    # Grounding (RAG). Empty keeps the pre-grounding behaviour (no citation check).
+    evidence: tuple[EvidenceChunk, ...] = Field(default=(), max_length=MAX_EVIDENCE)
+    # Jev judged that the owner clearly said the whole intent does not apply to the store
+    # (SufficiencyJudgement.not_applicable). The summary then states that and writes no
+    # structure: "there are no store rules" is not a manual section.
+    not_applicable: bool = False
 
 
 class RevisionTarget(_Model):
@@ -200,6 +223,7 @@ class StructureRevisionRequest(_Model):
     external_shifts: tuple[ShiftItem, ...] = Field(default=(), max_length=MAX_SHIFTS)
     require_manual_level: bool = False  # True for drafts (ManualContent rules)
     store: StoreContext | None = None
+    evidence: tuple[EvidenceChunk, ...] = Field(default=(), max_length=MAX_EVIDENCE)
 
 
 class ReviewForDraft(_Model):
@@ -215,6 +239,7 @@ class DraftRequest(_Model):
 
     reviews: tuple[ReviewForDraft, ...] = Field(min_length=1, max_length=50)
     store: StoreContext | None = None
+    evidence: tuple[EvidenceChunk, ...] = Field(default=(), max_length=MAX_EVIDENCE)
 
 
 class ImageInput(_Model):
@@ -245,6 +270,10 @@ class SufficiencyJudgement(_Model):
     probability: float = Field(ge=0.0, le=1.0)  # confidence that the information is sufficient
     missing_aspects: tuple[str, ...] = Field(default=(), max_length=MAX_ASPECTS)
     meta: CallMeta
+    # Sufficient because the owner clearly said the whole intent does not apply (the Decisions
+    # `not_applicable` predicate at or above its threshold). WORK_STRUCTURE Responses applies
+    # the same gate and additionally requires the owner's actual reconfirmation.
+    not_applicable: bool = False
 
     @property
     def needs_follow_up(self) -> bool:

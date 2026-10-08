@@ -127,7 +127,8 @@ def test_base_and_probe_questions(fake_ai):
 
 
 def test_blank_question_after_cleanup_is_invalid(fake_ai):
-    fake_ai.script("generate_question", FakeOutcome.ok({"question": "\u0000\u0007  "}))
+    fake_ai.script("generate_question", FakeOutcome.ok({"question": "\u0000\u0007  ", "guidance": None,
+                                                         "examples": []}))
     with expect_error(AiErrorCode.INVALID_OUTPUT):
         fake_ai.generate_question(QuestionRequest(kind="BASE", intent=INTENT, depth=0))
 
@@ -484,9 +485,13 @@ def test_draft_cannot_change_frozen_review_facts(fake_ai, mutation):
     elif mutation == "category":
         raw["sections"][1]["category"] = "EQUIPMENT"
     fake_ai.script("compose_draft", FakeOutcome.ok({"structure": raw}))
-    with expect_error(AiErrorCode.INVALID_OUTPUT) as caught:
-        fake_ai.compose_draft(DraftRequest(reviews=(review(current),)))
-    assert caught.value.detail == "draft_changed_reviewed_fact"
+    if mutation == "category":
+        with expect_error(AiErrorCode.INVALID_OUTPUT) as caught:
+            fake_ai.compose_draft(DraftRequest(reviews=(review(current),)))
+        assert caught.value.detail == "draft_changed_reviewed_fact"
+    else:
+        result = fake_ai.compose_draft(DraftRequest(reviews=(review(current),)))
+        assert result.structure.shifts == current.shifts
 
 
 def test_draft_can_polish_wording_and_reorder_without_resolving_gaps(fake_ai):

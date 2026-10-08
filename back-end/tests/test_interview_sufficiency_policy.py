@@ -20,6 +20,7 @@ JEV = INSTRUCTIONS["judge_sufficiency"]
 # Every prompt text change needs a new PROMPT_VERSION (it is part of the stored config version).
 # Add the new version and its digest here together with the change.
 PINNED_PROMPTS = {
+    "2026-10-09.170": "fdc970f983d7e2660c25401bfcea004c1f8744de970fe6a0fede5a98b0f84e3d",
     "2026-10-06.5": "c968d26430875d78de6cbb82abdf9d1ed71f19fc680fa18bf8fd721e6fe19ec2",
     "2026-10-06.6": "c968d26430875d78de6cbb82abdf9d1ed71f19fc680fa18bf8fd721e6fe19ec2",
     "2026-10-07.1": "1fd2f47f685d014d1c6032ffddf248c4e6be2bdf6ed69b7cdcd05bef5e12678d",

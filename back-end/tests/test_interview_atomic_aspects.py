@@ -153,8 +153,8 @@ def test_jev_aspect_rule_keeps_the_b04_policy():
 
 
 def test_probe_asks_the_first_aspect_one_sub_item_and_skips_answered_ones():
-    assert "missing_aspects의 첫 항목 하나만" in QUESTION
-    assert "업무 하나의 하위 항목 하나" in QUESTION and "두 업무를 한 질문에 묻지 않는다" in QUESTION
+    assert "target_aspect(missing_aspects의 첫 항목) 하나만" in QUESTION
+    assert "질문 하나는 하위 항목 하나다" in QUESTION and "\"각각\"을 쓰거나 업무 이름을 \"와/과\"로 나열하지 않는다" in QUESTION
     assert "이미 답한 하위 항목" in QUESTION and "다시 묻지 않는다" in QUESTION
     # The bad examples the instruction shows are exactly what the detector flags.
     assert is_compound_question("어떤 순서로 하고 언제 끝났다고 판단하나요?")
