@@ -14,7 +14,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-08.4-t2"  # Atomic operation integration snapshot.
+PROMPT_VERSION = "2026-10-08.4-t3"  # Atomic operation integration snapshot.
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.
@@ -124,10 +124,18 @@ INSTRUCTIONS: dict[str, str] = {
 - 새 근무조·섹션·단계의 ref는 new-1, new-2 …를 쓴다. 근무조별 업무(SHIFT_TASK)는 같은 응답의 근무조 ref나
   available_shifts의 id만 참조한다. available_shifts를 다시 정의하지 않는다.
 - 공통 업무는 COMMON_TASK, 규정은 RULE, 설비 사용법은 EQUIPMENT, 특정 근무조 업무는 SHIFT_TASK.
+  SHIFT_TASK는 점주가 그 업무를 해당 근무조에 연결한 근거가 있을 때만 쓴다. 근무조가 하나뿐이거나
+  같은 답변에 근무조와 업무가 함께 등장한다는 이유로 모든 업무를 그 근무조에 연결하지 않는다.
+  귀속 관계가 확인되지 않았다면 COMMON_TASK로도 임의 확정하지 않는다. 현재 인텐트에서 확인된 범위만
+  구조화하고, 아직 구조화할 관계가 불명확한 업무의 언급된 사실과 미확정 관계는 summary에 남긴다.
 - 시간은 HH:MM. 점주가 말하지 않은 시간은 null, 단계를 모르면 steps는 빈 배열로 두고 해당 값마다
   missing_information 항목(대상·필드·설명)을 넣는다. 확정된 값에는 missing_information을 붙이지 않는다.
-- missing_aspects는 마지막 평가에서 남은 부족 측면이다. 각 측면을 해당 대상의 missing_information에
-  보존하고 summary에도 간결하게 알린다. 횟수 한도 종료는 정보 확보가 아니다.
+- missing_aspects는 마지막 평가에서 남은 부족 측면이다. 각 측면을 summary에 간결하게 보존한다. missing_information은 실제 null 시간/빈 목록인 기존 대상·필드에만 붙인다.
+  일부 절차를 알지만 기준·예외 등이 부족한 경우 아는 절차는 보존하고 summary에 부족 측면을 알린다.
+  SECTION의 field=steps인 missing_information은 그 섹션의 steps가 []일 때만 출력한다.
+  steps에 알려진 절차가 하나라도 있으면 일부 기준·예외가 미확정이어도 그 섹션에 steps 누락 항목을
+  붙이지 않는다. 부족 측면을 summary에 명시하고, 누락 항목을 만들기 위해 아는 절차를 비우지 않는다.
+  횟수 한도 종료는 정보 확보가 아니다.
 - needs_detail=true이면 아직 부족하다고 판단된 인텐트다. 아는 범위만 정리하고 부족한 값을 미확정으로 남긴다.
 - 점주가 모르겠다고 했거나 답하지 않은 값은 미확정(null/빈 배열 + missing_information)이다. 점주가 "따로 정한
   규칙 없음"이라고 분명히 말한 세부는 그 사실을 그대로 적는다(지어낸 기준으로 채우지 않는다).
