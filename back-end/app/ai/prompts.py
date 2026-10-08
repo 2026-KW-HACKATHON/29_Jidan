@@ -109,6 +109,8 @@ INSTRUCTIONS: dict[str, str] = {
 current 내용에 점주의 정정 지시(instruction)를 반영한다.
 - target이 SHIFT/SECTION이면 그 대상만 고친다. 다른 기존 항목은 id·내용을 그대로 돌려준다. 새 항목이 필요하면
   new-1 같은 ref로 추가할 수 있다. target이 MANUAL이면 전체 중 지시와 관련된 부분만 고친다.
+- 명칭·설명·절차 수정은 기존 섹션의 같은 id를 유지한다. 새 ID로 대체하지 않는다.
+  삭제는 점주가 명시적으로 요청한 대상에만 적용한다.
 - 기존 항목은 입력의 id를 ref로 그대로 쓴다. 지시와 무관한 내용은 바꾸지 않는다.
 - 무엇을 어떻게 바꾸라는지 모호하거나 대상이 여럿으로 해석되면 추측하지 말고 outcome=CLARIFICATION_REQUIRED.
 - 지시대로 하면 다른 업무가 참조하는 근무조가 사라지는 등 연결이 깨지면 outcome=REFERENCE_CONFLICT.

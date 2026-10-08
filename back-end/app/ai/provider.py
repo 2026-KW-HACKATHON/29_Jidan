@@ -61,6 +61,7 @@ from app.ai.schemas import (
 from app.ai.validation import (
     build_citations,
     check_revision_scope,
+    check_section_identity,
     dangling_shift_references,
     invalid,
     known_ids,
@@ -244,6 +245,7 @@ class AiProvider(ABC):
                 return StructureRevision(outcome="REFERENCE_CONFLICT", meta=meta)
             raise
         check_revision_scope(current, structure, target.kind, target.target_id)
+        check_section_identity(current, structure, request.instruction, target.kind, target.target_id)
         if dangling_shift_references(structure, external_ids):
             return StructureRevision(outcome="REFERENCE_CONFLICT", meta=meta)
         summary = None

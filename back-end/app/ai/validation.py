@@ -284,3 +284,37 @@ def build_citations(raw: list[RawCitation], manual: StructureSnapshot) -> tuple[
             step_ids=tuple(step.id for step in cited), excerpt=excerpt,
         ))
     return tuple(citations)
+
+
+def check_section_identity(current: StructureSnapshot, revised: StructureSnapshot,
+                           instruction: str, kind: str, target_id: str | None) -> None:
+    """Reject omitted sections except a finite, whole-instruction deletion command.
+
+    This intentionally narrow command recognizer is not semantic intent inference. Mixed,
+    quoted, negated or ambiguous prose cannot authorize deletion. Existing task retry/error
+    handling keeps the prior content when the model drops an ID without that authority.
+    """
+    before = {section.id for section in current.sections}
+    after = {section.id for section in revised.sections}
+    removed = before - after
+    if not removed:
+        return
+    # A deletion command cannot authorize a replacement or unrelated additions.
+    if after - before:
+        raise invalid("revision_replaced_section_id")
+    command = clean_text(instruction)
+    verb = r"(?:삭제(?:해\s*주세요|해줘|해요|하세요)|없애\s*주세요|지워\s*주세요)"
+    suffix = r"(?:\s*(?:업무|섹션))?(?:을|를|은|는)?\s*"
+    authorized = set()
+    for section in current.sections:
+        if kind == "SECTION" and section.id != target_id:
+            continue
+        if kind not in ("MANUAL", "SECTION"):
+            continue
+        unique_title = sum(item.title == section.title for item in current.sections) == 1
+        named = unique_title and re.fullmatch(re.escape(section.title) + suffix + verb + r"[.!]?", command)
+        targeted = kind == "SECTION" and re.fullmatch(r"(?:이 (?:업무|섹션)(?:을|를)?\s*)?" + verb + r"[.!]?", command)
+        if named or targeted:
+            authorized.add(section.id)
+    if removed != authorized:
+        raise invalid("revision_dropped_section_without_explicit_command")
