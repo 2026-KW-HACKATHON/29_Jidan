@@ -16,7 +16,7 @@ function type(s){
  for(const [key,join]of [['allOf',' & '],['oneOf',' | '],['anyOf',' | ']])if(s[key])base=(base==='unknown'?'':base+' & ')+`(${s[key].map(type).join(join)})`
  return base
 }
-const header=`// Generated from deployed OpenAPI ${spec.info.version}. Regenerate with scripts/generate-api-contract.mjs.\n`
+const header=`// Generated from backend OpenAPI ${spec.info.version}. Regenerate with scripts/generate-qa-contract.mjs.\n`
 let types=header+[...used].sort().map(n=>`export type ${n} = ${type(spec.components.schemas[n])}\n`).join('')
 types+='export type Operations = {\n'+Object.entries(operations).map(([n,o])=>` ${n}: {input: ${o.multipart?'FormData':Object.keys(o.input).length?type(o.input):'undefined'}; output: ${o.blob?'Blob':o.output?type(o.output):'void'}}`).join('\n')+'\n}\n'
 const keys=new Set(['$ref','type','const','enum','properties','required','items','minItems','maxItems','minLength','maxLength','minimum','maximum','pattern','format','additionalProperties','uniqueItems','oneOf','anyOf','allOf','if','then','else','not','contains'])

@@ -1,4 +1,4 @@
-// Generated from deployed OpenAPI 0.11.0. Regenerate with scripts/generate-api-contract.mjs.
+// Generated from backend OpenAPI 0.11.0. Regenerate with scripts/generate-qa-contract.mjs.
 export type ManualPublicProcessingError = { "code": "AI_PROCESSING_FAILED" | "TRANSCRIPTION_FAILED"; "message": string; "retryable": true }
 export type ManualTranscription = { "id": string; "mediaId": string; "status": "RUNNING" | "READY" | "ERROR"; "text": string | null; "error": (ManualPublicProcessingError | null); "createdAt": string; "completedAt": string | null } & ({ "status": "RUNNING"; "text": null; "error": null; "completedAt": null } | { "status": "READY"; "text": string; "error": null; "completedAt": string } | { "status": "ERROR"; "text": null; "error": ManualPublicProcessingError; "completedAt": string })
 export type QAAnswer = { "outcome": "ANSWERED" | "NEEDS_OWNER"; "text": string; "citations": Array<QACitation> } & ({ "outcome": "ANSWERED"; "citations": unknown } | { "outcome": "NEEDS_OWNER"; "citations": unknown })
