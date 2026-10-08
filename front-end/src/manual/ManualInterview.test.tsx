@@ -27,7 +27,92 @@ it('모든 요약을 차례로 확인해야 최종 검토로 진행한다',async
  for(let i=0;i<initial.intents.length;i++){await waitFor(()=>expect(screen.getByRole('button',{name:'네, 맞아요'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'네, 맞아요'}));await act(async()=>{await Promise.resolve()})}
  await waitFor(()=>expect(screen.getByRole('button',{name:'최종 검토로'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'최종 검토로'}));expect(onFinal).toHaveBeenCalledWith(initial)
 })
-it.each(['review','review-error','depth5','ready'])('모의 상태 %s는 OpenAPI 세션과 검토 응답 제약을 따른다',async scenario=>{
+it.each(['review','review-error','depth5','ready','review-photo'])('모의 상태 %s는 OpenAPI 세션과 검토 응답 제약을 따른다',async scenario=>{
  const service=createManualPreviewService(true,scenario),signal=new AbortController().signal;const session=(await service.call('getManualInterview',{sessionId:interviewFixture.id},undefined,{signal})).data;const reviews=(await service.call('listManualIntentReviews',{sessionId:session.id},undefined,{signal})).data
  expect(matches(schemas.ManualInterviewSession,session,schemas)).toBe(true);expect(matches(schemas.ManualIntentReviewList,reviews,schemas)).toBe(true)
+})
+
+it('다음 질문의 이전 요약 사진 추천은 이해 확인 중 보이고 생략은 요약으로 돌아온다',async()=>{
+ const service=createManualPreviewService(true,'review'),original=service.call.bind(service),signal=new AbortController().signal
+ const initial=(await original('getManualInterview',{sessionId:interviewFixture.id},undefined,{signal})).data
+ const sectionId=crypto.randomUUID(),cardId=crypto.randomUUID(),intentId=initial.intents[0].id
+ const card={id:cardId,type:'PHOTO_SUGGESTIONS' as const,title:'이 요약의 추천 사진',items:[{id:crypto.randomUUID(),label:'열쇠 위치'}],attachmentTarget:{intentId,target:'SECTION' as const,sectionId}}
+ initial.questions[0].guidanceCards=[card]
+ const call=vi.spyOn(service,'call').mockImplementation(async(...args)=>{
+  const result=await original(...args)
+  if(args[0]==='getManualInterview')return {...result,data:{...initial}} as typeof result
+  if(args[0]==='listManualIntentReviews'){
+   const data=result.data as import('./types').ManualIntentReviewList
+   return {...result,data:{...data,items:data.items.map(review=>({...review,content:{...review.content!,sections:[{id:sectionId,category:'COMMON_TASK',shiftId:null,title:'열쇠 보관',steps:[],photos:[]}]}}))}} as typeof result
+  }
+  return result
+ })
+ render(<ManualInterview initial={initial} service={service} onBack={vi.fn()}/>)
+ await screen.findByText('이 요약의 추천 사진')
+ expect(screen.getByRole('heading',{name:'이렇게 이해했어요'})).toBeVisible()
+ expect(screen.queryByText('모두가 하는 일은 무엇인가요?')).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'사진 첨부하기'}))
+ expect(screen.getByRole('heading',{name:'이해한 내용에 사진을 더해주세요'})).toBeVisible()
+ fireEvent.click(screen.getByRole('button',{name:'사진 없이 계속하기'}))
+ expect(screen.getByRole('heading',{name:'이렇게 이해했어요'})).toBeVisible()
+ expect(call.mock.calls.some(([name])=>['answerManualInterviewQuestion','replaceManualInterviewReviewPhotos','confirmManualInterviewUnderstanding'].includes(name))).toBe(false)
+ fireEvent.click(screen.getByRole('button',{name:'네, 맞아요'}))
+ await screen.findByText('모두가 하는 일은 무엇인가요?')
+ expect(screen.queryByRole('heading',{name:'이해한 내용에 사진을 더해주세요'})).toBeNull()
+})
+
+it('마지막 인텐트는 질문 없이 기존 수동 사진 관리를 열고 기존 사진을 보존한다',async()=>{
+ const {call,initial}=await setup('ready')
+ for(let i=0;i<initial.intents.length-1;i++){
+  await waitFor(()=>expect(screen.getByRole('button',{name:'네, 맞아요'})).toBeEnabled())
+  fireEvent.click(screen.getByRole('button',{name:'네, 맞아요'}));await act(async()=>{await Promise.resolve()})
+ }
+ await screen.findByText('화장실 이용')
+ expect(initial.phase).toBe('READY_TO_GENERATE');expect(initial.questions).toEqual([])
+ expect(screen.queryByRole('button',{name:'테스트 음성 제출'})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:/사진 (첨부하기|관리)/}))
+ await screen.findByRole('heading',{name:'업무를 사진으로 보여주세요'})
+ const before=call.mock.calls.filter(([name])=>name==='replaceManualInterviewReviewPhotos').length
+ fireEvent.click(screen.getByRole('button',{name:/첨부 완료|사진 없이 돌아가기/}))
+ expect(screen.getByRole('heading',{name:'이렇게 이해했어요'})).toBeVisible()
+ expect(call.mock.calls.filter(([name])=>name==='replaceManualInterviewReviewPhotos')).toHaveLength(before)
+ expect(call.mock.calls.some(([name])=>name==='answerManualInterviewQuestion')).toBe(false)
+})
+
+it('요약을 떠난 뒤 늦게 도착한 추천은 사진 화면이나 이전 요약으로 강제 이동하지 않는다',async()=>{
+ vi.useFakeTimers({shouldAdvanceTime:true})
+ const service=createManualPreviewService(true,'review'),original=service.call.bind(service),signal=new AbortController().signal
+ const initial=(await original('getManualInterview',{sessionId:interviewFixture.id},undefined,{signal})).data
+ let late=false
+ vi.spyOn(service,'call').mockImplementation(async(...args)=>{
+  const result=await original(...args)
+  if(args[0]==='getManualInterview'&&late){
+   const data=result.data as import('./types').ManualInterviewSession
+   return {...result,data:{...data,revision:data.revision+1,questions:data.questions.map(question=>({...question,guidanceCards:[{id:crypto.randomUUID(),type:'PHOTO_SUGGESTIONS',title:'늦은 추천',items:[{id:crypto.randomUUID(),label:'참고 위치'}],attachmentTarget:{intentId:initial.intents[0].id,target:'SECTION',sectionId:crypto.randomUUID()}}]}))}} as typeof result
+  }
+  return result
+ })
+ render(<ManualInterview initial={initial} service={service} onBack={vi.fn()}/>)
+ fireEvent.click(await screen.findByRole('button',{name:'네, 맞아요'}))
+ await screen.findByText('모두가 하는 일은 무엇인가요?')
+ late=true;await act(()=>vi.advanceTimersByTimeAsync(2100))
+ expect(screen.getByText('늦은 추천')).toBeVisible()
+ expect(screen.queryByRole('heading',{name:'이렇게 이해했어요'})).toBeNull()
+ expect(screen.queryByRole('button',{name:'사진 없이 계속하기'})).toBeNull()
+})
+
+it('사진 요청에서 돌아간 뒤 늦은 검토 조회가 사진 편집 화면을 다시 열지 않는다',async()=>{
+ const service=createManualPreviewService(true,'photo-request'),original=service.call.bind(service),signal=new AbortController().signal
+ const initial=(await original('getManualInterview',{sessionId:interviewFixture.id},undefined,{signal})).data
+ let finish:()=>void=()=>{};const deferred=new Promise<void>(resolve=>{finish=resolve})
+ const call=vi.spyOn(service,'call').mockImplementation(async(...args)=>{if(args[0]==='getManualIntentReview')await deferred;return original(...args)})
+ render(<ManualInterview initial={initial} service={service} onBack={vi.fn()}/>)
+ fireEvent.click(await screen.findByRole('button',{name:'사진 첨부하기'}))
+ fireEvent.click(screen.getByRole('button',{name:'사진 첨부하기'}))
+ await waitFor(()=>expect(call.mock.calls.some(([name])=>name==='getManualIntentReview')).toBe(true))
+ fireEvent.click(screen.getByRole('button',{name:'뒤로 가기'}))
+ await act(async()=>{finish();await deferred})
+ expect(screen.queryByRole('heading',{name:'업무를 사진으로 보여주세요'})).toBeNull()
+ expect(screen.queryByRole('button',{name:'사진 없이 계속하기'})).toBeNull()
+ expect(screen.getByText(initial.questions[0].text.replace('\n',' '))).toBeVisible()
 })
