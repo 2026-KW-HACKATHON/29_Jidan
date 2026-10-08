@@ -1,3 +1,12 @@
+FROM node:22-bookworm-slim AS swagger
+WORKDIR /build/docs
+COPY docs/package.json docs/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY docs/ ./
+COPY openapi.yaml /build/openapi.yaml
+ARG DOCS_REVISION=uncommitted
+RUN npm run check && DOCS_REVISION="$DOCS_REVISION" npm run build -- /swagger-static
+
 FROM python:3.12-slim AS dependencies
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
@@ -8,11 +17,21 @@ FROM dependencies AS test
 COPY requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 COPY . .
-RUN python -m ruff check . && python -m pytest
+COPY --from=swagger /swagger-static ./swagger-static
+RUN python -m ruff check .
+
+# The shared pipeline uses the test target for static checks only. Functional tests and HTTP
+# E2E run separately after deployment; the runtime image excludes their code and fixtures.
+FROM python:3.12-slim AS runtime-source
+COPY . /src
+RUN rm -rf /src/tests /src/e2e /src/testing
 
 FROM dependencies AS runtime
-RUN useradd --create-home --uid 10001 app
-COPY --chown=app:app . .
+RUN useradd --create-home --uid 10001 app \
+  && install -d -o app -g app -m 700 /var/lib/jidan/media
+# Docker copies this owner and mode into a new empty named volume mounted here (compose.yml).
+COPY --from=runtime-source --chown=app:app /src ./
+COPY --from=swagger --chown=app:app /swagger-static ./swagger-static
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=5s --timeout=3s --start-period=20s --retries=24 \

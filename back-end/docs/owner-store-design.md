@@ -1,0 +1,30 @@
+# 점주 매장 관리 API 설계
+
+[Figma](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=0-1)의 점주 홈과 매장 관리 화면을 위한 계약과 구현 설명이다. 실제 API·DB 처리는 `app/stores.py`, 회귀 검증은 `tests/test_owner_stores.py`와 `tests/test_store_adoption.py`에 있다.
+
+## 관리 매장 조회
+
+- `GET /api/owners/me/stores`: 세션 점주의 모든 관리 매장을 생성 시각/ID 내림차순으로 페이지 조회한다. 승인 대기 매장도 포함한다.
+- `GET /api/stores/{storeId}`: 해당 점주의 매장 기본 정보와 승인 상태·신청 ID·권한을 조회한다. 매장 ID와 승인 신청 ID는 구분한다.
+
+근거: 점주 홈(192:5168), 승인 대기 홈(335:1008). 점주 정보나 매장 소유자를 요청으로 지정하지 않는다. 가입 완료 ACTIVE OWNER의 회원 세션을 요구하고 다른 점주의 매장과 없는 매장은 동일한 404다. 승인 대기에는 READ_STORE_STATUS만, 승인 완료에는 기존 StoreAccess의 운영 권한을 반환한다. 응답은 UI 힌트이고 서버가 매 요청 소유권과 승인 상태를 재확인한다.
+
+페이지 기본 0/20, 최대 100이며 응답에 asOf 시각을 반환한다. 빈 결과/페이지 이후는 200의 빈 items다. 목록·건수는 한 DB 읽기 스냅샷을 사용하며 페이지 사이의 데이터 변경은 가능하다. 응답은 no-store다. 매장 정보 수정/삭제와 소유권 이전 화면은 확인되지 않아 이번 명세에 추가하지 않는다.
+
+Schema로 상태/승인 시각/권한 일치, 형식·페이지 경계·응답 예시를 검증한다. 실제 점주 인가와 DB 스냅샷 조회는 `tests/test_owner_stores.py`에서 검증한다.
+
+## 매장 추가 신청
+
+`POST /api/stores`
+
+근거: 점주 홈의 ‘매장 추가’(192:5168), 점주 가입 매장 정보(220:401). 가입의 StoreRegistrationInput을 그대로 사용하며 소유자·승인 상태·권한은 입력받지 않는다. 기존 승인 매장이 없어도 가입 완료 OWNER는 신청할 수 있다. 서버가 월계1동 소재지를 주소 데이터로 확인하고 사업자 번호 중복을 검사한다. 중복은 409 STORE_ALREADY_REGISTERED이며 권한 자동 부여는 없다.
+
+회원 세션·CSRF·허용 Origin과 UUID Idempotency-Key가 필요하다. 매장·승인 신청·key 결과를 같은 트랜잭션에 저장해 201의 PENDING 매장을 반환한다. 관리자 조회와 다음 회원 세션/관리 매장 조회에 반영한다. 24시간 내 동일 key/body는 최초 201을 재현하고 다른 body는 409 IDEMPOTENCY_KEY_REUSED다. 실제 DB UNIQUE와 상태/권한 반영·동시성·rollback은 `tests/test_owner_stores.py`, `tests/test_store_adoption.py`에서 검증한다.
+
+## 매장 관리 카드 요약
+
+`GET /api/stores/{storeId}/management-summary`
+
+매장 관리 홈(192:5218)의 수락 대기 초대 수·현재 근무자 수·만료 예정 근무자 수를 한 읽기 스냅샷/asOf로 반환한다. 승인된 소유 매장만 가능하다. 초대 건수는 초대 목록 ACTIVE와 같으며, 현재 근무자 수는 유효 자료 접근이 있는 ACTIVE WORKER workerId의 서로 다른 개수다. 정지 계정은 현재·만료 예정 건수 모두에서 제외한다. 만료 예정은 모든 유효 접근이 24시간 이내 끝나는 근무자의 개수로 현재 근무자 수의 부분집합이다. 여러 접근이 있는 사람을 중복 계산하지 않는다.
+
+공고 모집/지원 승인과 캘린더 화면은 후속 도메인 범위다. 그 건수는 아직 이번 응답에 넣지 않는다. 실제 시간 경계·distinct 집계·스냅샷 일치는 서버 통합 검증 대상이며 Schema로 비음수 건수·UUID·시각 형식과 빈 결과를 확인한다.

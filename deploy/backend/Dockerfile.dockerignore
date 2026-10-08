@@ -10,3 +10,10 @@ htmlcov
 .env
 .env.*
 *.log
+
+# Dependencies and artifacts are built inside CI stages.
+docs/node_modules
+swagger-static
+
+# Test stages require testing/ and e2e/; runtime-source removes tests/, testing/ and e2e/ before the runtime COPY.
+.media

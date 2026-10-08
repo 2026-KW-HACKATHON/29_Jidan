@@ -6,6 +6,7 @@ on:
     paths:
       - 'back-end/**'
       - 'deploy/backend/**'
+      - 'deploy/nginx/**'
       - 'deploy/scripts/**'
       - 'deploy/tests/**'
       - '.github/workflows/component.yml'
@@ -15,11 +16,17 @@ on:
     paths:
       - 'back-end/**'
       - 'deploy/backend/**'
+      - 'deploy/nginx/**'
       - 'deploy/scripts/**'
       - 'deploy/tests/**'
       - '.github/workflows/component.yml'
       - '.github/workflows/backend.yml'
   workflow_dispatch:
+    inputs:
+      skip_ci:
+        description: Skip checks already run locally (dev deployment only)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,6 +41,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/back-end/dev'
     uses: ./.github/workflows/component.yml
     with:
+      skip_ci: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/back-end/dev' && inputs.skip_ci }}
       component: backend
       source: back-end
       environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}

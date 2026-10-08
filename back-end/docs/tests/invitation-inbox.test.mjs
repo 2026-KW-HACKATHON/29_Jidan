@@ -1,0 +1,4 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {spec,validator} from './helpers/owner-contract.mjs';
+const p='/api/users/me/store-invitations';
+test('받은 초대: 유한/무기한 접근 종료와 토큰 비노출',()=>{const x=spec.paths[p+'/{invitationId}'].get.responses['200'].content['application/json'].example;const v=validator('ReceivedInvitation');assert.ok(v(x));assert.ok(v({...x,accessExpiresAt:'2026-10-26T15:00:00Z'}));assert.equal(v({...x,token:'secret'}),false);assert.equal(v({...x,email:'worker@example.com'}),false);});
+test('받은 초대 응답: 주체·이메일은 서버 결정',()=>{const v=validator('ReceivedInvitationResponse');assert.ok(v({decision:'ACCEPT'}));assert.ok(v({decision:'DECLINE'}));assert.equal(v({decision:'ACCEPT',email:'other@example.com'}),false);assert.equal(v({decision:'EXPIRED'}),false);assert.match(spec.paths[p+'/{invitationId}/response'].post.description,/검증 이메일/);assert.match(spec.paths[p+'/{invitationId}/response'].post.description,/같은 key/);});
