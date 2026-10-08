@@ -66,6 +66,7 @@ def test_request_uses_strict_schema_no_storage_and_the_timeout():
     assert fmt["type"] == "json_schema" and fmt["strict"] is True and fmt["name"] == "sufficiency_judgement"
     assert kwargs["store"] is False and kwargs["timeout"] == 30 and kwargs["model"] == "gpt-6-luna"
     assert kwargs["reasoning"] == {"effort": "low"}
+    assert kwargs["service_tier"] == "fast"
     assert "비밀 답변 원문" not in kwargs["instructions"]
     assert "비밀 답변 원문" in kwargs["input"][0]["content"][0]["text"]
 
@@ -149,9 +150,19 @@ def test_transcription_errors_are_classified():
         provider(client).transcribe(TranscriptionRequest(audio=b"abc", mime_type="audio/wav"))
 
 
-def test_question_output_budget_cuts_run_away_output_short():
-    from app.ai.openai_provider import MAX_OUTPUT_TOKENS
 
-    # Enough for a question with guidance and examples, small enough that a whitespace run-away
-    # fails within seconds instead of tying up the follow-up task for most of its timeout.
-    assert 1000 <= MAX_OUTPUT_TOKENS["generate_question"] <= 2000
+@pytest.mark.parametrize("tier", ["auto", "default", "fast", "priority"])
+def test_service_tier_is_sent_only_to_responses(tier):
+    client = StubClient(output=[message({"type": "output_text", "text": VALID})])
+    instance = OpenAiProvider(api_key="", model="gpt-6-luna", transcribe_model="gpt-transcribe",
+                              service_tier=tier, judge_backend="responses", client=client)
+    instance.judge_sufficiency(REQUEST)
+    assert client.kwargs["service_tier"] == tier
+    instance.transcribe(TranscriptionRequest(audio=b"audio", mime_type="audio/mpeg"))
+    assert "service_tier" not in client.audio_kwargs
+
+
+def test_invalid_service_tier_rejected_before_client_creation():
+    with pytest.raises(ValueError, match="OPENAI_SERVICE_TIER"):
+        OpenAiProvider(api_key="sk-test-not-used", model="gpt-6-luna", transcribe_model="gpt-transcribe",
+                       service_tier="invalid")

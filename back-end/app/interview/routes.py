@@ -58,6 +58,7 @@ from app.interview.common import (
     lock_review,
     lock_session,
     not_found,
+    question_body,
     review_body,
     reviews_in_order,
     revision_conflict,
@@ -331,11 +332,13 @@ def answer_manual_interview_question(store_id: StoreIdPath, session_id: SessionI
         method, text, transcription_id = _input_text(db, store.id, body.input)
         photos = _lock_photos(db, store.id, body.photoIds, "photoIds")
         session.revision += 1
+        snapshot = question_body(question, answered=True)
         answer = InterviewTurn(
             session_id=session.id, turn_no=next_turn_no(db, session.id), speaker="OWNER", turn_kind="ANSWER",
             intent_id=question.intent_id, depth=question.depth, probe_batch_id=question.probe_batch_id,
             reply_to_question_turn_id=question.id, input_method=method, content=text,
             transcription_id=transcription_id,
+            guidance=snapshot.get("guidance"), guidance_cards=snapshot.get("guidanceCards"),
         )
         db.add(answer)
         db.flush()

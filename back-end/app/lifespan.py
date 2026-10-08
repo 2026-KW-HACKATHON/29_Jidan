@@ -15,6 +15,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 
 from app import idempotency, invitation_mail
 from app.db import validate_database_settings
+from app.interview.settings import guidance_responses_enabled
 from app.media import retention as media_retention
 from app.notification_sweeps import INTERVAL_SECONDS, run_notification_sweeps
 from app.oauth_cleanup import oauth_cleanup_lifespan
@@ -77,6 +78,7 @@ LIFESPANS = [oauth_cleanup_lifespan, periodic_jobs_lifespan, ai_task_runner_life
 def validate_background_settings() -> None:
     """Fail at startup on a malformed setting rather than on every interval."""
     validate_database_settings()
+    guidance_responses_enabled()
     background_jobs_enabled()
     runner_mode()
     runner_settings()

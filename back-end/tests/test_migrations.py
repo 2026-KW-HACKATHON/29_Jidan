@@ -73,6 +73,7 @@ def test_revisions_form_a_chain_on_top_of_the_untouched_baseline():
     assert script.get_revision("0040").down_revision == "0036"
     assert script.get_revision("0041").down_revision == "0040"
     assert script.get_revision("0042").down_revision == "0041"
+    assert script.get_revision("0043").down_revision == "0042"
 
 
 def test_upgrade_creates_every_baseline_table(engine):
@@ -411,9 +412,8 @@ def test_mysql_0036_switches_email_collation_and_keeps_the_index(mysql_engine):
         command.upgrade(config, "head")
 
 
-def test_0042_keeps_existing_turns_and_applies_its_check(engine):
-    """Turns written before 0042 read as NULL guidance; the CHECK holds for them afterwards, and a
-    downgrade keeps every other column."""
+def test_0042_keeps_existing_turns_and_allows_answer_snapshots(engine):
+    """Deployed 0042 permits immutable guidance on the accepted ANSWER as well as QUESTION."""
     with engine.connect() as connection:
         config = alembic_config(connection)
         command.downgrade(config, "0041")
@@ -437,8 +437,8 @@ def test_0042_keeps_existing_turns_and_applies_its_check(engine):
             "SELECT id, guidance, guidance_cards FROM interview_turns ORDER BY turn_no")).all() == [
             ("q", None, None), ("a", None, None)]
         connection.execute(text("UPDATE interview_turns SET guidance = '안내' WHERE id = 'q'"))
-        with pytest.raises(Exception, match="CHECK"):
-            connection.execute(text("UPDATE interview_turns SET guidance = '안내' WHERE id = 'a'"))
+        connection.execute(text("UPDATE interview_turns SET guidance = '안내' WHERE id = 'a'"))
+        assert connection.execute(text("SELECT guidance FROM interview_turns WHERE id = 'a'")).scalar_one() == "안내"
         connection.commit()
         command.downgrade(config, "0041")
         connection.commit()

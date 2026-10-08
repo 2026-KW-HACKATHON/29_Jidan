@@ -28,10 +28,6 @@ from pydantic import ValidationError
 
 from app.ai.aspects import aspects_for
 from app.ai.contracts import (
-    MAX_EXAMPLE_LABEL,
-    MAX_EXAMPLE_TEXT,
-    MAX_EXAMPLES,
-    MAX_GUIDANCE,
     CallMeta,
     DraftComposition,
     DraftRequest,
@@ -39,9 +35,12 @@ from app.ai.contracts import (
     ImageInput,
     IntentSummary,
     IntentSummaryRequest,
+    PhotoSuggestion,
+    PhotoSuggestionItem,
+    PhotoSuggestions,
+    PhotoSuggestionsRequest,
     QaAnswer,
     QaRequest,
-    QuestionExample,
     QuestionRequest,
     StructureRevision,
     StructureRevisionRequest,
@@ -64,11 +63,13 @@ from app.ai.schemas import (
     RawQuestion,
     RawRevision,
     RawSummary,
+    parse_question,
 )
 from app.ai.validation import (
     SHIFT_FIELDS,
     UNGROUNDED_TIME,
     build_citations,
+    check_draft_facts,
     check_revision_scope,
     dangling_shift_references,
     drop_contentless_steps,
@@ -216,7 +217,8 @@ class AiProvider(ABC):
             candidates = self._complete(operation, INSTRUCTIONS[operation], data_message(payload), images)
             for candidate in candidates:
                 try:
-                    return parser.model_validate(json.loads(candidate))
+                    return (parse_question(json.loads(candidate)) if operation == "generate_question"
+                            else parser.model_validate(json.loads(candidate)))
                 except (ValueError, ValidationError):
                     continue  # malformed or schema-violating item: try the next one
             raise invalid("unparseable_output")
@@ -310,20 +312,32 @@ class AiProvider(ABC):
         text = clean_text(raw.question)
         if not text:
             raise invalid("blank_question")
-        # Guidance is optional decoration: what is blank, repeated or too long is left out, and
-        # only the first MAX_EXAMPLES examples are kept; it is never a reason to fail.
-        guidance = clean_text(raw.guidance or "")
-        examples: list[QuestionExample] = []
-        for example in raw.examples:
-            label, description = clean_text(example.label), clean_text(example.description or "")
-            if not label or len(label) > MAX_EXAMPLE_LABEL or any(e.label == label for e in examples):
-                continue
-            examples.append(QuestionExample(
-                label=label, description=description if 0 < len(description) <= MAX_EXAMPLE_TEXT else None))
-            if len(examples) == MAX_EXAMPLES:
-                break
-        return GeneratedQuestion(text=text, guidance=guidance if 0 < len(guidance) <= MAX_GUIDANCE else None,
-                                 examples=tuple(examples), meta=self.meta("generate_question"))
+        return GeneratedQuestion(
+            text=text, guidance=(clean_text(raw.guidance) or None) if raw.guidance else None,
+            guidance_cards=tuple(card.model_dump() for card in raw.guidanceCards), meta=self.meta("generate_question"),
+        )
+
+    def suggest_review_photos(self, request: PhotoSuggestionsRequest) -> PhotoSuggestions:
+        raw = self._structured("suggest_review_photos", request.model_dump(mode="json"))
+        suggestions = []
+        section_ids = {section.id for section in request.structure.sections}
+        for suggestion in raw.suggestions:
+            if suggestion.sectionId not in section_ids:
+                raise invalid("unknown_photo_section")
+            title = clean_text(suggestion.title)
+            footer = clean_text(suggestion.footer) if suggestion.footer is not None else None
+            if not title or footer == "":
+                raise invalid("blank_photo_suggestion")
+            items = []
+            for item in suggestion.items:
+                label = clean_text(item.label)
+                description = clean_text(item.description) if item.description is not None else None
+                if not label or description == "":
+                    raise invalid("blank_photo_suggestion")
+                items.append(PhotoSuggestionItem(label=label, description=description))
+            suggestions.append(PhotoSuggestion(section_id=suggestion.sectionId, title=title,
+                                               items=tuple(items), footer=footer))
+        return PhotoSuggestions(suggestions=tuple(suggestions), meta=self.meta("suggest_review_photos"))
 
     def summarize_intent(self, request: IntentSummaryRequest) -> IntentSummary:
         # With evidence the model sees the retrieved owner sentences (with their questions)
@@ -441,6 +455,7 @@ class AiProvider(ABC):
         # The ID identifies the reviewed action, not permission to invent facts while polishing.
         # Ground before contentless filtering so an unsupported replacement cannot erase it.
         restored = _ground("compose_draft", written, request.evidence,
+                           require_evidence="evidence" in request.model_fields_set,
                            grounded_steps=reviewed_steps, grounded_shifts=reviewed_shifts)
         grounded = _contentless("compose_draft", restored, kept_section_refs=section_ids)
         # An uncited rewrite is restored above. If it was half of a split ("A하고 B해요" ->
@@ -465,7 +480,8 @@ class AiProvider(ABC):
             s.id for s in structure.sections
         }:
             raise invalid("draft_dropped_reviewed_item")
-        return DraftComposition(structure=structure, meta=self.meta("compose_draft"))
+        check_draft_facts((review.structure for review in request.reviews), structure)
+        return DraftComposition(structure=structure, meta=self.meta())
 
     def answer_question(self, request: QaRequest) -> QaAnswer:
         payload = request.model_dump(mode="json", exclude={"images"})
@@ -560,6 +576,9 @@ class FallbackAiProvider(AiProvider):
 
     def generate_question(self, request):
         return self._delegate("generate_question", request)
+
+    def suggest_review_photos(self, request):
+        return self._delegate("suggest_review_photos", request)
 
     def summarize_intent(self, request):
         return self._delegate("summarize_intent", request)

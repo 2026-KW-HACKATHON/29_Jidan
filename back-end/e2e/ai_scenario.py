@@ -149,11 +149,15 @@ def answer(data):
 
 def question(data):
     """The intent's question as written, with fixed guidance and one example per question kind."""
+    cards = [{"type": "LIST", "title": "답변 예시", "footer": None,
+              "items": [{"id": None, "label": EXAMPLE_LABEL,
+                         "description": EXAMPLE_DESCRIPTION if data["kind"] == "BASE" else None,
+                         "status": None}]}]
     if data["kind"] == "BASE":
         return {"question": data["intent"]["base_question"], "guidance": QUESTION_GUIDANCE,
-                "examples": [{"label": EXAMPLE_LABEL, "description": EXAMPLE_DESCRIPTION}]}
+                "guidanceCards": cards}
     return {"question": f"{data['missing_aspects'][0]}에 대해 조금 더 자세히 알려 주세요.", "guidance": None,
-            "examples": [{"label": EXAMPLE_LABEL, "description": None}]}
+            "guidanceCards": cards}
 
 
 def install(fake: FakeAiProvider) -> FakeAiProvider:
@@ -395,6 +399,9 @@ class RoutedAiProvider(AiProvider):
 
     def summarize_intent(self, request):
         return self._call("summarize_intent", request)
+
+    def suggest_review_photos(self, request):
+        return self._call("suggest_review_photos", request)
 
     def revise_structure(self, request):
         return self._call("revise_structure", request)

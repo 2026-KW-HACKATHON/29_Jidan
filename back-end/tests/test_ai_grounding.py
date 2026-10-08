@@ -74,6 +74,37 @@ def test_cited_steps_are_kept_and_citations_do_not_reach_the_snapshot(fake):
     assert "evidence" not in kept.steps[0].model_dump() and result.structure.missing_information == ()
 
 
+def test_empty_retrieval_keeps_reviewed_facts_but_rejects_uncited_additions(fake):
+    """Explicit empty evidence means retrieval ran, not a legacy opt-out."""
+    reviewed = StructureSnapshot(sections=(SectionItem(
+        id=S1, category="COMMON_TASK", title="응대",
+        steps=(StepItem(id=T1, instruction="손님께 인사해요."),)),))
+    output = {"structure": {
+        "shifts": [shift("new-1", [], start="07:00")],
+        "sections": [section(S1, [step(T1, "보증금을 받아요.", []), step("new-2", "할인해요.", [])])],
+        "missing_information": [],
+    }}
+    fake.script("compose_draft", FakeOutcome.ok(output))
+    result = fake.compose_draft(DraftRequest(reviews=(ReviewForDraft(
+        intent_key=INTENT.key, stage=INTENT.stage, summary="응대", needs_detail=False, structure=reviewed),), evidence=()))
+    assert result.structure.sections[0].steps == reviewed.sections[0].steps
+    [new_shift] = result.structure.shifts
+    assert (new_shift.start_time, new_shift.end_time, new_shift.ends_next_day) == (None, None, None)
+    assert {m.field for m in result.structure.missing_information if m.target_id == new_shift.id} == {
+        "startTime", "endTime", "endsNextDay"}
+
+
+def test_empty_retrieval_does_not_accept_invented_evidence_ids(fake):
+    fake.script("compose_draft", FakeOutcome.ok({"structure": {
+        "shifts": [], "sections": [section("new-1", [step("new-2", "할인해요.", ["missing#1"])])],
+        "missing_information": []}}))
+    request = DraftRequest(reviews=(ReviewForDraft(intent_key=INTENT.key, stage=INTENT.stage,
+        summary="아직 없음", needs_detail=True, structure=StructureSnapshot()),), evidence=())
+    with pytest.raises(AiError) as caught:
+        fake.compose_draft(request)
+    assert caught.value.detail == "unknown_evidence_id"
+
+
 def test_the_model_sees_evidence_instead_of_the_whole_dialogue(fake):
     summarize(fake, summary([section("new-1", [step("new-2", "인사해요.", ["t1#1"])])]))
     data = fake.calls_for("summarize_intent")[0].data
@@ -281,7 +312,7 @@ def test_draft_keeps_an_unrelated_cited_addition_beside_restored_polishing(fake,
     raw["sections"][0]["steps"][0]["instruction"] = "손님께 밝게 인사해요."
     raw["sections"][0]["steps"].append(step("new-1", "마감 후 바닥을 닦아요.", ["t1#1"] if evidence else []))
     fake.script("compose_draft", FakeOutcome.ok({"structure": raw}))
-    steps = fake.compose_draft(DraftRequest(reviews=(review,), evidence=evidence)).structure.sections[0].steps
+    steps = fake.compose_draft(DraftRequest(reviews=(review,), **({"evidence": evidence} if evidence else {}))).structure.sections[0].steps
     assert [s.instruction for s in steps] == ["인사해요.", "주문을 받아요.", "마감 후 바닥을 닦아요."]
     assert [s.id for s in steps[:2]] == [T1, T2]
 
@@ -297,7 +328,7 @@ def test_draft_split_of_a_restored_step_is_still_rejected_when_reworded_and_in_l
         raw["sections"][0]["steps"] = [step(T1, "포스기를 켜요.", []), step("new-1", "시재를 확인해요.", ids)]
         fake.script("compose_draft", FakeOutcome.ok({"structure": raw}))
         with pytest.raises(AiError) as caught:
-            fake.compose_draft(DraftRequest(reviews=(review,), evidence=evidence))
+            fake.compose_draft(DraftRequest(reviews=(review,), **({"evidence": evidence} if evidence else {})))
         assert caught.value.detail == "uncited_step_change_with_additions"
 
 

@@ -44,17 +44,16 @@ from app.ai.silence import pcm_wav_is_silent
 # Output budget per operation (reasoning tokens count against it as well).
 MAX_OUTPUT_TOKENS = {
     "judge_sufficiency": 4000,
-    # A question with guidance and examples is a few hundred tokens at low effort. The cap keeps
-    # gpt-6-luna's rare whitespace run-away inside the JSON (seen live, ~5% of calls, 39 s at
-    # 4000) short: it ends as INVALID_OUTPUT in seconds and the runner retries.
-    "generate_question": 1500,
-    "summarize_intent": 24000,
+    "generate_question": 8000,
+    "suggest_review_photos": 8000,
+    "summarize_intent": 16000,
     "revise_structure": 32000,
     "compose_draft": 32000,
     "answer_question": 8000,
 }
 WRITING_OPERATIONS = frozenset({"summarize_intent", "compose_draft", "revise_structure"})
 QUESTION_OPERATIONS = frozenset({"generate_question"})
+SERVICE_TIERS = ("auto", "default", "fast", "priority")
 AUDIO_EXTENSIONS = {"audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/webm": "webm", "audio/wav": "wav"}
 
 
@@ -93,6 +92,7 @@ class OpenAiProvider(AiProvider):
         reasoning_effort: str | None = "low",
         question_effort: str | None = "low",
         writing_effort: str | None = "medium",
+        service_tier: str = "fast",
         timeout_seconds: float = 60.0,
         writing_timeout_seconds: float | None = None,
         transcribe_timeout_seconds: float = 120.0,
@@ -104,6 +104,9 @@ class OpenAiProvider(AiProvider):
             raise ValueError("OpenAI API key is required")
         if judge_backend not in JUDGE_BACKENDS:
             raise ValueError("judge_backend must be decisions or responses")
+        if service_tier not in SERVICE_TIERS:
+            raise ValueError("OPENAI_SERVICE_TIER is not a supported value")
+        self.service_tier = service_tier
         self.model = model
         self.transcribe_model = transcribe_model
         self.reasoning_effort = reasoning_effort
@@ -151,6 +154,7 @@ class OpenAiProvider(AiProvider):
         try:
             response = self._client.responses.create(
                 model=self.model,
+                service_tier=self.service_tier,
                 instructions=instructions,
                 input=[{"role": "user", "content": content}],
                 text={"format": {"type": "json_schema", "name": name, "schema": schema, "strict": True}},

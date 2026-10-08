@@ -19,7 +19,7 @@ test('안내 카드가 없는 기존 질문과 신규 일반 목록·진행 목�
 });
 test('일반 목록은 상태·임의 필드를 거절하고 진행 목록은 모든 항목의 상태 필수',()=>{
   valid(list);valid(card);
-  invalid({...list,items:[{...list.items[0],status:'CURRENT'}]});
+  for(const status of [null,'CURRENT'])invalid({...list,items:[{...list.items[0],status}]});
   const {status,...missing}=card.items[0];invalid({...card,items:[missing]});
   for(const status of ['PENDING','CURRENT','COMPLETED','NEEDS_DETAIL'])valid({...card,items:[{...card.items[0],status}]});
   invalid({...card,items:[{...card.items[0],status:'CHECKED'}]});
@@ -37,4 +37,13 @@ test('항목·카드 제목·UUID·배열 경계 검증',()=>{
   for(const label of ['', '\n', 'a'.repeat(201)])invalid({...list,items:[{...list.items[0],label}]});
   invalid({...list,items:[{...list.items[0],description:' '}]});
   invalid({...list,footer:'a'.repeat(1001)});
+});
+
+test('질문·사진 카드 합산 상한은 5개이며 구 응답은 그대로 허용',()=>{
+  const photo=spec.components.schemas.ManualGuidancePhotos.examples[1];
+  const q=examples.guidanceChecklist.value.questions[0];
+  const cards=[card,list,...Array.from({length:3},(_,i)=>({...photo,id:`73000000-0000-4000-8000-${String(i).padStart(12,'0')}`}))];
+  assert.ok(question({...q,guidanceCards:cards}),JSON.stringify(question.errors));
+  assert.equal(question({...q,guidanceCards:[...cards,{...photo,id:'73000000-0000-4000-8000-000000000009'}]}),false);
+  assert.ok(question(examples.collecting.value.questions[0]));
 });

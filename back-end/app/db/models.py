@@ -1260,8 +1260,6 @@ class InterviewTurn(Base):
         ),
         CheckConstraint("(input_method = 'VOICE') = (transcription_id IS NOT NULL)", name="voice_source"),
         CheckConstraint(not_blank("content"), name="content_not_blank"),
-        CheckConstraint("turn_kind = 'QUESTION' OR (guidance IS NULL AND guidance_cards IS NULL)",
-                        name="guidance_on_questions"),
     )
 
     id: Mapped[str] = _id()
@@ -1276,10 +1274,9 @@ class InterviewTurn(Base):
     reply_to_question_turn_id: Mapped[str | None] = mapped_column(ForeignKey("interview_turns.id"))
     input_method: Mapped[str | None] = mapped_column(cs_string(8))
     content: Mapped[str] = mapped_column(Text)  # submitted text or the READY transcript text
-    transcription_id: Mapped[str | None] = mapped_column(ForeignKey("media_transcriptions.id"))
-    # Question guidance (#158), written once with the question (app.interview.cards).
     guidance: Mapped[str | None] = mapped_column(Text)
-    guidance_cards: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON(none_as_null=True))
+    guidance_cards: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    transcription_id: Mapped[str | None] = mapped_column(ForeignKey("media_transcriptions.id"))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     base_question_intent_id: Mapped[str | None] = mapped_column(
         CHAR(36), Computed("CASE WHEN question_kind = 'BASE' THEN intent_id END", persisted=True),
@@ -1351,6 +1348,7 @@ class InterviewEvaluation(Base):
     provider: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(cs_string(16))
     needs_follow_up: Mapped[bool | None] = mapped_column(Boolean)
+    missing_aspects: Mapped[Any | None] = mapped_column(JSON, nullable=True)
     probability: Mapped[float | None] = mapped_column(Float)
     error_code: Mapped[str | None] = mapped_column(cs_string(32))
     task_id: Mapped[str | None] = mapped_column(CHAR(36))

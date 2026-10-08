@@ -265,6 +265,8 @@ def test_insufficient_answers_probe_up_to_depth_five_then_needs_detail(ctx, fake
     evaluations = rows(ctx, InterviewEvaluation, InterviewEvaluation.session_id == sid)
     assert sorted(e.depth for e in evaluations) == [0, 1, 2, 3, 4, 5]
     assert all(e.applied_at and e.needs_follow_up and e.status == "SUCCEEDED" for e in evaluations)
+    assert all(e.missing_aspects == INSUFFICIENT["missing_aspects"] for e in evaluations)
+    assert fake_ai.calls_for("summarize_intent")[0].data["missing_aspects"] == INSUFFICIENT["missing_aspects"]
     # Jev saw the whole dialogue of the intent, BASE first.
     last = fake_ai.calls_for("judge_sufficiency")[5].data
     assert [t["depth"] for t in last["dialogue"]] == [0, 1, 2, 3, 4, 5] and "depth" not in last
@@ -470,6 +472,7 @@ def test_jev_failure_after_retries_is_a_public_error_that_keeps_the_answer(ctx, 
     assert state["currentIntentId"] == ctx.intents[0] and state["intents"][0]["depth"] == 0
     [failed] = rows(ctx, InterviewEvaluation)
     assert (failed.status, failed.error_code, failed.applied_at) == ("FAILED", "TIMEOUT", None)
+    assert failed.missing_aspects is None
     assert "timeout" not in str(state).lower()  # internal codes stay internal
     # Answering is not possible in ERROR; retry needs the current revision.
     stale = ctx.post(ctx.url(sid, "retries"), {"expectedRevision": state["revision"] - 1})
@@ -487,6 +490,7 @@ def test_jev_failure_after_retries_is_a_public_error_that_keeps_the_answer(ctx, 
     evaluations = sorted(rows(ctx, InterviewEvaluation), key=lambda e: e.attempt_no)
     assert [(e.attempt_no, e.status, e.applied_at is not None) for e in evaluations] == [
         (1, "FAILED", False), (2, "SUCCEEDED", True)]
+    assert [e.missing_aspects for e in evaluations] == [None, []]
     assert fake_ai.calls_for("judge_sufficiency")[-1].data["dialogue"][0]["answer"] == "보존될 답변"
     assert question["id"] == rows(ctx, InterviewTurn, InterviewTurn.turn_kind == "ANSWER")[0].reply_to_question_turn_id
 
@@ -546,3 +550,61 @@ def test_lost_lease_result_is_discarded(ctx, fake_ai):
     drain(now=utcnow() + timedelta(minutes=11))  # the re-queued task writes the question
     assert run_claimed(claimed).outcome == "discarded"
     assert count(ctx, InterviewTurn) == 1
+
+
+@pytest.mark.parametrize("aspects", [
+    ["마감 순서", "청소 기준", "마감 순서"],
+    [f"부족 측면 {i}" for i in range(5)],
+])
+def test_successful_evaluation_keeps_normalized_aspects_in_order(ctx, fake_ai, aspects):
+    sid = ctx.started()
+    fake_ai.script("judge_sufficiency", FakeOutcome.ok({
+        "sufficient": False, "probability": 0.2, "missing_aspects": aspects,
+    }))
+    ctx.answer_and_run(sid)
+    [evaluation] = rows(ctx, InterviewEvaluation)
+    assert evaluation.missing_aspects == list(dict.fromkeys(aspects))
+    ctx.run()
+    [reloaded] = rows(ctx, InterviewEvaluation)
+    assert reloaded.id == evaluation.id and reloaded.missing_aspects == evaluation.missing_aspects
+
+
+def test_evaluation_apply_failure_rolls_back_aspects_and_progress(ctx, fake_ai, monkeypatch):
+    from app.ai.contracts import SufficiencyRequest
+    from app.interview import tasks
+    from app.tasks import TaskContext
+
+    sid = ctx.started()
+    assert ctx.answer(sid).status_code == 202
+    before = ctx.get(sid)
+    with Session(ctx.engine) as db:
+        task = db.get(BackgroundTask, before["processing"]["taskId"])
+        task_ctx = TaskContext(task.id, task.kind, sid, task.attempt, task.input_revision, task.payload, 1)
+    fake_ai.script("judge_sufficiency", FakeOutcome.ok(INSUFFICIENT))
+    judgement = fake_ai.judge_sufficiency(SufficiencyRequest.model_validate(task_ctx.payload["request"]))
+
+    def fail_after_evaluation_flush(*args, **kwargs):
+        raise RuntimeError("injected progress failure")
+
+    monkeypatch.setattr(tasks, "apply_judgement", fail_after_evaluation_flush)
+    with pytest.raises(RuntimeError, match="injected progress"), Session(ctx.engine) as db, db.begin():
+        tasks._evaluation_apply(db, task_ctx, judgement)
+    assert count(ctx, InterviewEvaluation) == 0
+    assert ctx.get(sid) == before
+    assert count(ctx, InterviewTurn, InterviewTurn.turn_kind == "ANSWER") == 1
+
+
+def test_stale_evaluation_cannot_replace_saved_aspects(ctx, fake_ai):
+    sid = ctx.started()
+    fake_ai.script("judge_sufficiency", FakeOutcome.ok(INSUFFICIENT))
+    ctx.answer_and_run(sid)
+    before = ctx.get(sid)
+    [saved] = rows(ctx, InterviewEvaluation)
+    with Session(ctx.engine) as db:
+        original = db.get(BackgroundTask, saved.task_id)
+        enqueue(db, "EVALUATION", sid, original.payload, input_revision=original.input_revision)
+        db.commit()
+    assert [run.outcome for run in ctx.run()] == ["cancelled"]
+    [reloaded] = rows(ctx, InterviewEvaluation)
+    assert reloaded.id == saved.id and reloaded.missing_aspects == INSUFFICIENT["missing_aspects"]
+    assert ctx.get(sid) == before

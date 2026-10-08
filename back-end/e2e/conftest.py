@@ -47,10 +47,16 @@ def base_url():
     return url.rstrip("/")
 
 
-@pytest.fixture(scope="session")
-def real_db(base_url):
+def require_local_test_database():
     if os.getenv("DB_NAME") != "jidan_e2e_test" or os.getenv("APP_ENV") != "local":
         pytest.fail("HTTP E2E requires the dedicated jidan_e2e_test database and APP_ENV=local")
+    if os.getenv("DB_HOST") not in {"e2e-mysql", "127.0.0.1", "localhost"}:
+        pytest.fail("HTTP E2E requires the isolated local MySQL host")
+
+
+@pytest.fixture(scope="session")
+def real_db(base_url):
+    require_local_test_database()
     reset_engine()
     engine = get_engine()
     with engine.connect() as connection:
