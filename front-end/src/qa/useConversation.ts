@@ -72,5 +72,6 @@ export function useConversation(service:QaService,initialId:string) {
   setTurns(t=>mergeTurns(t,data.turns));setCursor(data.nextBeforeSequence)
  })}
  return {id,turns,cursor,busy,loading,blocked,error,pending,sent,running:!!running,send,retryQuestion,older,reload,
+  invalidate:report,
   retry:()=>{if(retry.current)void run(retry.current);else void reload()},dismiss:()=>setError('')}
 }
