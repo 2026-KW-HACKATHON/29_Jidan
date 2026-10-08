@@ -21,17 +21,17 @@ stays valid while the video row and its poster are alive.
 """
 
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import utcnow
 from app.db.keyed import lock_by_key
 from app.db.models import ManualMedia
+from app.media.retention import hold_video_bytes
 
 VIDEO = "VIDEO"
-VIDEO_PROCESSING_GRACE = timedelta(hours=24)  # a video original is kept this long after a writing request
 
 
 class AttachError(Exception):
@@ -70,6 +70,10 @@ def lock_attachable(db: Session, store_id: str, media_ids: Iterable[str], *,
             raise AttachError("not_image", media_id)
         elif row.poster_media_id is None:
             raise AttachError("not_found", media_id)
+    now = utcnow()
+    for media_id in ordered:
+        if rows[media_id].kind == VIDEO:  # attached (again): keep the original 24 h from now
+            hold_video_bytes(rows[media_id], now)
     posters = lock_by_key(db, ManualMedia, [rows[m].poster_media_id for m in ordered if rows[m].kind == VIDEO])
     for media_id in ordered:
         row = rows[media_id]
@@ -115,14 +119,9 @@ def video_ids(items: Iterable[dict]) -> list[str]:
 
 
 def keep_videos_for_processing(db: Session, media_ids: Iterable[str], *, now: datetime | None = None) -> None:
-    """A writing request needs the video originals: keep them for VIDEO_PROCESSING_GRACE from
-    now (retention purges a video original at `expires_at`, links or not; app.media.retention)."""
+    """A writing request (queued or finished) needs the video originals: lock them and hold
+    their bytes 24 h from now (app.media.retention.hold_video_bytes; retention purges a video
+    original at `expires_at`, links or not)."""
     now = now or utcnow()
-    for media_id in sorted(set(media_ids)):
-        db.execute(
-            update(ManualMedia)
-            .where(ManualMedia.id == media_id, ManualMedia.kind == VIDEO,
-                   ManualMedia.expires_at < now + VIDEO_PROCESSING_GRACE)
-            .values(expires_at=now + VIDEO_PROCESSING_GRACE)
-            .execution_options(synchronize_session=False)
-        )
+    for row in lock_by_key(db, ManualMedia, media_ids).values():
+        hold_video_bytes(row, now)

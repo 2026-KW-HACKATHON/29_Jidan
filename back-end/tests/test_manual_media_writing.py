@@ -34,6 +34,7 @@ from app.media.errors import MediaInvalid
 from app.media.inspection import InspectedMedia
 from app.media.storage import LocalMediaStorage, set_media_storage
 from tests import media_samples as samples
+from tests import video_samples
 from tests.api_contract import login
 from tests.factories import make_regular_grant, make_worker
 from tests.test_interview_api import build_ctx, code, rows
@@ -69,6 +70,18 @@ def fake_video(monkeypatch):
     monkeypatch.setattr(video_layer, "inspect_video", inspect)
     monkeypatch.setattr(video_layer, "digest_video", digest)
     return state
+
+
+@pytest.fixture
+def real_flow(api, db_engine, fake_ai, tmp_path):
+    """The interview driver with media-A's real decoder (PyAV) and local storage."""
+    storage = LocalMediaStorage(tmp_path / "media")
+    set_media_storage(storage)
+    fake_ai.on("summarize_intent", summaries)
+    driver = build_ctx(api, db_engine)
+    driver.storage = storage
+    yield driver
+    set_media_storage(None)
 
 
 @pytest.fixture
@@ -166,6 +179,36 @@ def test_video_upload_stores_the_video_and_a_derived_poster_photo(flow, fake_vid
     assert flow.api.get(f"/api/stores/{flow.store}/manual/media/{row.id}/content").status_code == 404
     sid = flow.started()
     assert code(flow.answer(sid, photo_ids=[row.id])) == "VALIDATION_ERROR"
+
+
+def test_real_video_is_uploaded_attached_and_read_as_frames_and_transcript(real_flow, fake_ai):
+    """End to end with a PyAV-encoded clip (tests/video_samples.py): the poster is a real frame,
+    the task samples frames in time order and transcribes the tone track (fake STT)."""
+    drv = real_flow
+    response = upload(drv, video_samples.video(seconds=3.0), "MANUAL_VIDEO")
+    assert response.status_code == 201, response.text
+    clip = response.json()
+    poster = media(drv, clip["posterMediaId"])
+    assert (poster.kind, poster.mime_type) == ("IMAGE", "image/jpeg")
+    assert drv.storage.read(poster.object_key)[:3] == b"\xff\xd8\xff"
+    sid, _ = common_review(drv)
+    assert put_items(drv, sid, [item(clip["id"])]).status_code == 200
+    assert write(drv, sid).status_code == 202
+    drv.run()
+    assert review(drv, sid)["status"] == "READY"
+    [call] = fake_ai.calls_for("write_section_from_media")
+    kinds = [m["kind"] for m in call.data["media"]]
+    assert kinds[-1] == "VIDEO_TRANSCRIPT" and set(kinds[:-1]) == {"VIDEO_FRAME"} and len(kinds) >= 2
+    times = [int(m["id"].rsplit("@", 1)[1]) for m in call.data["media"][:-1]]
+    assert times == sorted(times) and len(fake_ai.calls_for("transcribe")) == 1
+    too_long = upload(drv, video_samples.video(seconds=62.0, fps=1, width=16, height=16, audio=None), "MANUAL_VIDEO")
+    assert (too_long.status_code, code(too_long)) == (413, "MEDIA_TOO_LARGE")
+
+
+def test_upload_stops_at_the_purpose_limit(flow):
+    """A photo body over the photo limit is cut off at 413 even though videos may be larger."""
+    response = upload(flow, b"\xff\xd8\xff" + b"0" * (10 * 1024 * 1024 + 10), "MANUAL_PHOTO")
+    assert (response.status_code, code(response)) == (413, "MEDIA_TOO_LARGE")
 
 
 def test_rejected_video_and_photo_uploads_keep_nothing(flow):
@@ -639,4 +682,20 @@ def test_media_writing_leases_cover_their_calls(monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_FALLBACK_MODEL", "gpt-other")
     validate_task_leases(build_provider_from_env())  # 3 x (120 + 120) s + 30 s <= 900 s
+
+
+def test_photos_are_shrunk_to_the_model_budget():
+    import io
+
+    from PIL import Image
+
+    from app.manual_media_writing import PHOTO_MAX_SIDE, shrink_photo
+
+    big = shrink_photo(samples.jpeg(3000, 1200, gps=False))
+    with Image.open(io.BytesIO(big)) as image:
+        assert (image.format, max(image.size)) == ("JPEG", PHOTO_MAX_SIDE)
+    small = shrink_photo(samples.png(32, 20))
+    with Image.open(io.BytesIO(small)) as image:
+        assert (image.format, image.size) == ("JPEG", (32, 20))
+    assert shrink_photo(b"not an image") is None
 

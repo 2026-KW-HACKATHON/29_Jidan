@@ -6,6 +6,11 @@ Policy (openapi uploadManualMedia, docs/erd/qa.md):
 * recordings: 24 h after their transcription ends (READY or ERROR), never while it RUNS;
 * worker question photos 7 days, worker recordings 24 h; a photo is kept past that only while a
   question using it is still RUNNING (an answered or failed question keeps its text, not the photo);
+* owner videos (VIDEO, MANUAL_VIDEO): AI input only, never shown to anyone. Their bytes go at
+  `expires_at` even while referenced: 24 h after upload, and `hold_video_bytes` (called when a
+  video is attached or a media-writing task is queued or finishes) moves that to 24 h after the
+  call. What workers see is the derived poster photo (app.media.video.store_video_poster), an
+  ordinary IMAGE kept while referenced;
 * deleted (tombstoned) media: at once.
 Metadata rows stay (tombstone, transcription text, answers); only `content_deleted_at` is set.
 The DB mark commits before the file is removed, so a crash leaves at most an orphan file, which
@@ -26,6 +31,7 @@ logger = logging.getLogger("jidan.media")
 
 UNATTACHED_TTL = timedelta(hours=24)
 AFTER_TRANSCRIPTION_TTL = timedelta(hours=24)
+VIDEO_HOLD_TTL = timedelta(hours=24)
 QA_IMAGE_TTL = timedelta(days=7)
 QA_AUDIO_TTL = timedelta(hours=24)
 RECHECK_IN_USE = timedelta(hours=24)
@@ -36,8 +42,18 @@ MAX_BATCHES = 20
 INTERVAL_SECONDS = 300
 
 
+def hold_video_bytes(media: ManualMedia, now: datetime | None = None) -> None:
+    """Keep a video's bytes for `VIDEO_HOLD_TTL` from now (never shortens the current hold).
+    Call it with the row locked, in the transaction that attaches the video or queues/finishes
+    the task that digests it; after that the original goes, the poster photo stays."""
+    now = now or utcnow()
+    if media.kind == "VIDEO" and media.expires_at < now + VIDEO_HOLD_TTL:
+        media.expires_at = now + VIDEO_HOLD_TTL
+
+
 def _in_use(db, row) -> timedelta | None:
-    """How long to wait before looking at a still-needed row again, None when purgeable."""
+    """How long to wait before looking at a still-needed row again, None when purgeable.
+    A VIDEO is never "in use": only its hold (`expires_at`) keeps it."""
     if isinstance(row, ManualMedia):
         if row.kind == "IMAGE" and manual_media_in_use(db, row.id):
             return RECHECK_IN_USE

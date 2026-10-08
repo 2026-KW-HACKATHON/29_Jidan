@@ -4,7 +4,7 @@ the media-writing tasks.
 Revision ID: 0043
 Revises: 0042
 
-* manual_media: kind VIDEO (MP4/QuickTime/WebM, <= 100 MiB, 1..60000 ms) and
+* manual_media: kind VIDEO (MP4/QuickTime/WebM, <= 100 MiB, 1..60500 ms) and
   `poster_media_id`, the IMAGE row the server derived from a video at upload (unique; only a
   VIDEO has one).
 * manual_photo_attachments: `video_media_id`, the video a section attachment stands for; its
@@ -47,7 +47,7 @@ OLD_SHAPE = (
 NEW_SHAPE = (
     f"{OLD_SHAPE}"
     " OR (kind = 'VIDEO' AND mime_type IN ('video/mp4', 'video/quicktime', 'video/webm')"
-    " AND byte_size <= 104857600 AND duration_ms IS NOT NULL AND duration_ms >= 1 AND duration_ms <= 60000)"
+    " AND byte_size <= 104857600 AND duration_ms IS NOT NULL AND duration_ms >= 1 AND duration_ms <= 60500)"
 )
 POSTER_FOR_VIDEO = "poster_media_id IS NULL OR kind = 'VIDEO'"
 VIDEO_ON_SECTION = "video_media_id IS NULL OR section_id IS NOT NULL"

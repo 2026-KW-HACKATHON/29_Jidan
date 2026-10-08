@@ -429,10 +429,28 @@ def _fail(db: Session, ctx: TaskContext, _error: Exception) -> None:
     _finish(row, utcnow(), error="AI_PROCESSING_FAILED")
 
 
+def _hold_section_videos(db: Session, ctx: TaskContext) -> None:
+    row = db.get(ManualDraftCorrection, ctx.subject_id)
+    keep_videos_for_processing(db, [video for video in db.scalars(
+        select(ManualPhotoAttachment.video_media_id).where(
+            ManualPhotoAttachment.version_id == row.version_id, ManualPhotoAttachment.section_id == row.target_id,
+        )) if video])
+
+
+def _media_apply(db: Session, ctx: TaskContext, result: StructureRevision | None) -> None:
+    _apply(db, ctx, result)
+    _hold_section_videos(db, ctx)  # the finished task's hold (app.media.retention)
+
+
+def _media_fail(db: Session, ctx: TaskContext, error: Exception) -> None:
+    _fail(db, ctx, error)
+    _hold_section_videos(db, ctx)
+
+
 HANDLER = TaskHandler(kind=KIND, execute=_execute, apply=_apply, fail=_fail, max_tries=3,
                       lease_seconds=300, backoff_seconds=(2.0, 10.0))
 register_handler(HANDLER)
-MEDIA_HANDLER = TaskHandler(kind=MEDIA_KIND, execute=_media_execute, apply=_apply, fail=_fail, max_tries=3,
+MEDIA_HANDLER = TaskHandler(kind=MEDIA_KIND, execute=_media_execute, apply=_media_apply, fail=_media_fail, max_tries=3,
                             lease_seconds=MEDIA_LEASE_SECONDS, backoff_seconds=(2.0, 10.0),
                             provider_calls=MEDIA_PROVIDER_CALLS)
 register_handler(MEDIA_HANDLER)

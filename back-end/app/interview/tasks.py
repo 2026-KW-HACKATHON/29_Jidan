@@ -56,6 +56,7 @@ from app.interview.flow import (
     store_of,
     write_question,
 )
+from app.manual_attachments import keep_videos_for_processing, video_ids
 from app.manual_media_writing import LEASE_SECONDS as MEDIA_LEASE_SECONDS
 from app.manual_media_writing import PROVIDER_CALLS as MEDIA_PROVIDER_CALLS
 from app.manual_media_writing import gather_media
@@ -282,6 +283,24 @@ def _media_writing_execute(ctx: TaskContext) -> StructureRevision:
     return get_ai_provider().write_section_from_media(request)
 
 
+def _section_videos(db: Session, ctx: TaskContext) -> list[str]:
+    review = db.get(InterviewIntentReview, (ctx.subject_id, ctx.payload["intentId"]))
+    for section in ((review.ready_content if review else None) or {}).get("sections", []):
+        if section["id"] == ctx.payload["sectionId"]:
+            return video_ids(section.get("photos", []))
+    return []
+
+
+def _media_writing_apply(db: Session, ctx: TaskContext, revision: StructureRevision) -> None:
+    _correction_apply(db, ctx, revision)
+    keep_videos_for_processing(db, _section_videos(db, ctx))  # the finished task's hold (retention)
+
+
+def _media_writing_fail(db: Session, ctx: TaskContext, error: Exception) -> None:
+    _review_fail(db, ctx, error)
+    keep_videos_for_processing(db, _section_videos(db, ctx))  # a review retry may need them
+
+
 # --- registration -------------------------------------------------------------------------------
 
 HANDLERS = (
@@ -297,8 +316,8 @@ HANDLERS = (
                 fail=_review_fail, **LIMITS),
     # The result is applied like a correction's: same locks, revision check, photo re-join and
     # confirmation restore when nothing changed.
-    TaskHandler(kind="REVIEW_MEDIA_WRITING", execute=_media_writing_execute, apply=_correction_apply,
-                fail=_review_fail, **{**LIMITS, "lease_seconds": MEDIA_LEASE_SECONDS},
+    TaskHandler(kind="REVIEW_MEDIA_WRITING", execute=_media_writing_execute, apply=_media_writing_apply,
+                fail=_media_writing_fail, **{**LIMITS, "lease_seconds": MEDIA_LEASE_SECONDS},
                 provider_calls=MEDIA_PROVIDER_CALLS),
     TaskHandler(kind="DRAFT_GENERATION", execute=drafting.execute, apply=drafting.apply,
                 fail=drafting.fail, **LIMITS),

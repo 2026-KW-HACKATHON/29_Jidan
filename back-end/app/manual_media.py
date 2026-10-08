@@ -30,6 +30,8 @@ from app.auth import ROLE_OWNER, CurrentMember, CurrentOwner, DbSession
 from app.csrf import CsrfOwner
 from app.db import new_uuid, utcnow
 from app.db.models import (
+    MAX_AUDIO_BYTES,
+    MAX_IMAGE_BYTES,
     MAX_VIDEO_BYTES,
     ManualMedia,
     ManualPhotoAttachment,
@@ -69,9 +71,11 @@ logger = logging.getLogger("jidan.media")
 
 PURPOSE_KIND = {"MANUAL_PHOTO": "IMAGE", "INTERVIEW_AUDIO": "AUDIO", "MANUAL_VIDEO": "VIDEO"}
 KIND_PURPOSE = {kind: purpose for purpose, kind in PURPOSE_KIND.items()}
-# The form is read before its purpose is known: the largest purpose (video) bounds the stream;
-# each purpose's own limit is enforced by inspection (413 either way).
+# The stream stops at the purpose's own limit once the purpose part has arrived (413 at once),
+# else at the largest one; inspection enforces each limit again.
 MAX_UPLOAD_BYTES = MAX_VIDEO_BYTES
+PURPOSE_UPLOAD_BYTES = {"MANUAL_PHOTO": MAX_IMAGE_BYTES, "INTERVIEW_AUDIO": MAX_AUDIO_BYTES,
+                        "MANUAL_VIDEO": MAX_VIDEO_BYTES}  # streaming 413 per purpose
 MANUAL_NOT_FOUND = "매뉴얼 리소스를 찾을 수 없습니다."
 
 MediaIdPath = Annotated[str, Path(alias="mediaId", pattern=UUID_PATTERN)]
@@ -92,14 +96,14 @@ def media_body(media: ManualMedia) -> dict:
     return body
 
 
-def _inspect_upload(purpose: str, data: bytes) -> tuple[InspectedMedia, InspectedMedia | None]:
-    """(file, poster) after content checks; a video also yields its representative frame,
-    normalized like any uploaded photo. Raises MediaRejected."""
+def _inspect_upload(purpose: str, data: bytes) -> tuple[InspectedMedia, "video_layer.VideoFrame | None"]:
+    """(file, poster frame) after content checks. A video is decoded once here for its
+    representative frame (media-A measured ~0.3 s for 60 s of 720p): decoding, not an AI call,
+    so it may run in the request; the AI reads the video later in its task. Raises MediaRejected."""
+    inspected = inspect_media(data, PURPOSE_KIND[purpose])
     if purpose != "MANUAL_VIDEO":
-        return inspect_media(data, PURPOSE_KIND[purpose]), None
-    video = video_layer.inspect_video(data)
-    poster = video_layer.digest_video(video.data).poster
-    return video, inspect_media(poster.jpeg, "IMAGE")
+        return inspected, None
+    return inspected, video_layer.digest_video(inspected.data).poster
 
 
 # --- upload -----------------------------------------------------------------------------------
@@ -118,7 +122,7 @@ def _store_upload(db: Session, owner, store_id: str, key: str, path: str, purpos
         store = load_owned_store(db, owner.user_id, store_id)
         now = utcnow()
 
-        def stored(file: InspectedMedia, poster_id: str | None = None) -> ManualMedia:
+        def stored(file: InspectedMedia) -> ManualMedia:
             media_id = new_uuid()
             location = object_key("manual", store.id, media_id)
             storage.write(location, file.data)
@@ -127,14 +131,20 @@ def _store_upload(db: Session, owner, store_id: str, key: str, path: str, purpos
                 id=media_id, store_id=store.id, uploaded_by_owner_id=owner.user_id, kind=file.kind,
                 object_key=location, mime_type=file.mime_type, byte_size=len(file.data),
                 duration_ms=file.duration_ms, created_at=now, expires_at=now + UNATTACHED_TTL,
-                poster_media_id=poster_id,
             )
             db.add(row)
             db.flush()
             return row
 
-        poster_row = stored(poster) if poster is not None else None  # first: the video refers to it
-        media = stored(inspected, poster_row.id if poster_row else None)
+        media = stored(inspected)
+        if poster is not None:  # the derived photo workers see, linked in this transaction
+            try:
+                poster_row = video_layer.store_video_poster(db, media, poster, now=now)
+            except MediaRejected as rejected:
+                raise ApiError(rejected.status_code, rejected.code) from None
+            written.append(poster_row.object_key)
+            media.poster_media_id = poster_row.id
+            db.flush()
         return IdempotentResult(201, media_body(media))
 
     body = {"purpose": purpose, "fileSha256": hashlib.sha256(data).hexdigest()}
@@ -164,7 +174,8 @@ async def upload_manual_media(
     # Authorization before reading the body: a stranger cannot make us buffer 20 MiB. The
     # read-only transaction ends here so no snapshot stays open while the upload streams in.
     await run_in_threadpool(_authorize_upload, db, owner.user_id, store_id)
-    form = await read_media_form(request, max_file_bytes=MAX_UPLOAD_BYTES, purposes=tuple(PURPOSE_KIND))
+    form = await read_media_form(request, max_file_bytes=MAX_UPLOAD_BYTES, purposes=tuple(PURPOSE_KIND),
+                                 purpose_limits=PURPOSE_UPLOAD_BYTES)
     # The canonical path, not request.url.path: a retry spelling the store UUID in another
     # letter case is the same request and must replay, not collide as another endpoint.
     path = f"/api/stores/{normalize_uuid(store_id)}/manual/media"
