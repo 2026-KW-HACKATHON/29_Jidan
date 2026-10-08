@@ -20,6 +20,7 @@ from app.ai.contracts import (
     IntentSummaryRequest,
     QuestionRequest,
     SufficiencyRequest,
+    TranscriptionRequest,
 )
 from app.ai.errors import AiError, AiErrorCode
 from app.ai.fake import FakeAiProvider, FakeOutcome
@@ -203,6 +204,21 @@ def test_budget_refusal_is_not_traced_as_a_call(tmp_path):
     assert ai_scenario.read_trace(path) == []
 
 
+def test_voice_transcribe_uses_live_routing_trace_and_shared_call_budget(tmp_path):
+    from tests.media_samples import wav_seconds
+
+    live = interview_eval.install_voice_fake(Live())
+    provider, _live, path = traced(tmp_path, ops=ai_scenario.INTERVIEW_OPS + ("transcribe",), limit=1, live=live)
+    result = provider.transcribe(TranscriptionRequest(audio=wav_seconds(3), mime_type="audio/wav"))
+    assert result.text == interview_eval.VOICE_TEXT
+    assert provider.budget.counts == {"transcribe": 1}
+    [entry] = ai_scenario.read_trace(path)
+    assert entry["op"] == "transcribe" and entry["live"] is True and entry["outcome"] == "ok"
+    with pytest.raises(AiError) as refused:
+        provider.generate_question(QuestionRequest(kind="BASE", intent=BRIEFS["RULES"], depth=0))
+    assert refused.value.code == AiErrorCode.NOT_CONFIGURED and provider.budget.refused == 1
+
+
 EVIDENCE = (EvidenceChunk(id="t1#1", intent_key="COMMON_TASKS", question="공통 업무는요?", text="주문을 받아요."),)
 
 
@@ -306,6 +322,20 @@ def test_build_from_env_live_uses_presets(monkeypatch, tmp_path):
     monkeypatch.delenv("E2E_AI_SCRIPT", raising=False)
     provider = ai_scenario.build_from_env()
     assert provider.live_ops == frozenset(ai_scenario.INTERVIEW_OPS) and provider.budget.limit == 3
+
+
+def test_build_from_env_optional_voice_hook_uses_fixed_persona_stt(monkeypatch, tmp_path):
+    from tests.media_samples import wav_seconds
+
+    monkeypatch.setenv("E2E_AI", "fake")
+    monkeypatch.setenv("E2E_AI_SCRIPT", "persona")
+    monkeypatch.setenv("E2E_INTERVIEW_EVAL_VOICE", "1")
+    monkeypatch.setenv("E2E_AI_TRACE_FILE", str(tmp_path / "trace.jsonl"))
+    provider = ai_scenario.build_from_env()
+    result = provider.transcribe(TranscriptionRequest(audio=wav_seconds(3), mime_type="audio/wav"))
+    assert result.text == interview_eval.VOICE_TEXT
+    [entry] = ai_scenario.read_trace(tmp_path / "trace.jsonl")
+    assert (entry["op"], entry["live"], entry["outcome"]) == ("transcribe", False, "ok")
 
 
 # -- report ----------------------------------------------------------------------------------
@@ -568,7 +598,8 @@ def test_unreadable_env_file_is_refused(capsys, tmp_path):
 @pytest.mark.mysql
 @pytest.mark.parametrize("db_engine", ["mysql"], indirect=True)
 @pytest.mark.parametrize("skip", [False, True])
-def test_interview_evaluation_end_to_end_on_the_fake(db_engine, monkeypatch, tmp_path, skip):
+@pytest.mark.parametrize("voice", [False, True])
+def test_interview_evaluation_end_to_end_on_the_fake(db_engine, monkeypatch, tmp_path, skip, voice):
     from tests.interview_factories import ensure_question_set
 
     monkeypatch.setenv("APP_ENV", "local")
@@ -581,6 +612,8 @@ def test_interview_evaluation_end_to_end_on_the_fake(db_engine, monkeypatch, tmp
         port = probe.getsockname()[1]
     report = tmp_path / "report.md"
     argv = ["--ai", "fake", "--port", str(port), "--report", str(report)] + (["--skip-depth5"] if skip else [])
+    if voice:
+        argv.append("--voice")
     assert interview_eval.main(argv) == 0
     text = report.read_text(encoding="utf-8")
     assert "결과 | PASS (8/8 단계)" in text
@@ -591,3 +624,16 @@ def test_interview_evaluation_end_to_end_on_the_fake(db_engine, monkeypatch, tmp
     # The fake asks the same probe wording again (a fake artefact); judgements must all agree.
     assert not any(flag in text for flag in ("모호하게 쓴 답", "구체적으로 쓴 답", "≠ 페르소나", "실패한 AI 호출",
                                               "근거 없는 내용 제거"))
+    if voice:
+        record = json.loads(report.with_suffix(".json").read_text(encoding="utf-8"))
+        assert record["voice"]["answer"]["inputMethod"] == "VOICE"
+        assert record["call_limit"] == 81
+        assert record["voice"]["transcription"]["text"] == interview_eval.VOICE_TEXT
+        assert record["persistence"]["voiceAnswer"]["content"] == interview_eval.VOICE_TEXT
+        assert record["persistence"]["draft"]["apiMatchesDb"] is True
+        assert record["persistence"]["draft"]["stepRows"] > 0
+        assert len(record["persistence"]["reviews"]) == 6
+        assert any(e["op"] == "transcribe" and not e["live"] for e in record["trace"])
+        assert "[VOICE]" in text and "PENDING" in text
+        audio_path = interview_eval.Path(record["voice"]["audioFile"])
+        assert audio_path.is_file()
