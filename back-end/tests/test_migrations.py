@@ -73,6 +73,7 @@ def test_revisions_form_a_chain_on_top_of_the_untouched_baseline():
     assert script.get_revision("0040").down_revision == "0036"
     assert script.get_revision("0041").down_revision == "0040"
     assert script.get_revision("0042").down_revision == "0041"
+    assert script.get_revision("0043").down_revision == "0042"
 
 
 def test_upgrade_creates_every_baseline_table(engine):

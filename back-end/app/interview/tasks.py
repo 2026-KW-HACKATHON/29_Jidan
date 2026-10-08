@@ -116,7 +116,8 @@ def _evaluation_apply(db: Session, ctx: TaskContext, judgement: SufficiencyJudge
     db.add(_evaluation_row(
         session, ctx, evaluation_config_version=judgement.meta.config_version[:200],
         provider=judgement.meta.provider[:32], status="SUCCEEDED",
-        needs_follow_up=judgement.needs_follow_up, probability=judgement.probability, applied_at=now,
+        needs_follow_up=judgement.needs_follow_up, probability=judgement.probability,
+        missing_aspects=list(judgement.missing_aspects), applied_at=now,
     ))
     db.flush()  # the (session, intent, applied_depth) UNIQUE rejects a second applied result
     apply_judgement(db, session, judgement.sufficient, judgement.missing_aspects, now)

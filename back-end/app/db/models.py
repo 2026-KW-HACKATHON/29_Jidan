@@ -1348,6 +1348,7 @@ class InterviewEvaluation(Base):
     provider: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(cs_string(16))
     needs_follow_up: Mapped[bool | None] = mapped_column(Boolean)
+    missing_aspects: Mapped[Any | None] = mapped_column(JSON, nullable=True)
     probability: Mapped[float | None] = mapped_column(Float)
     error_code: Mapped[str | None] = mapped_column(cs_string(32))
     task_id: Mapped[str | None] = mapped_column(CHAR(36))
