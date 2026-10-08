@@ -48,6 +48,7 @@ from app.interview.flow import (
     store_of,
     write_question,
 )
+from app.interview.photos import suggest_current_question_photos
 from app.media.references import replace_snapshot_refs
 from app.tasks import TaskContext, TaskDeferred, TaskHandler, register_handler, task_error_code
 
@@ -235,13 +236,13 @@ def _correction_apply(db: Session, ctx: TaskContext, revision: StructureRevision
 
 HANDLERS = (
     TaskHandler(kind="INITIAL_QUESTION", execute=_question_execute, apply=_question_apply,
-                fail=_question_fail, **LIMITS),
+                fail=_question_fail, after_success=suggest_current_question_photos, **LIMITS),
     TaskHandler(kind="FOLLOWUP_GENERATION", execute=_question_execute, apply=_question_apply,
                 fail=_question_fail, **LIMITS),
     TaskHandler(kind="EVALUATION", execute=_evaluation_execute, apply=_evaluation_apply,
                 fail=_evaluation_fail, **LIMITS),
     TaskHandler(kind="REVIEW_UNDERSTANDING", execute=_understanding_execute, apply=_understanding_apply,
-                fail=_review_fail, **LIMITS),
+                fail=_review_fail, after_success=suggest_current_question_photos, **LIMITS),
     TaskHandler(kind="REVIEW_CORRECTION", execute=_correction_execute, apply=_correction_apply,
                 fail=_review_fail, **LIMITS),
     TaskHandler(kind="DRAFT_GENERATION", execute=drafting.execute, apply=drafting.apply,

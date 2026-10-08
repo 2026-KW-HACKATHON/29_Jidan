@@ -165,6 +165,9 @@ class RoutedAiProvider(AiProvider):
     def summarize_intent(self, request):
         return self._call("summarize_intent", request)
 
+    def suggest_review_photos(self, request):
+        return self._call("suggest_review_photos", request)
+
     def revise_structure(self, request):
         return self._call("revise_structure", request)
 
