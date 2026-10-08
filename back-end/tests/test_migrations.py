@@ -448,3 +448,37 @@ def test_0042_keeps_existing_turns_and_applies_its_check(engine):
             ("q", "질문?", None), ("a", "답변", "q")]
         command.upgrade(config, "head")
         connection.commit()
+
+
+def test_0043_keeps_rows_and_refuses_to_downgrade_over_new_values(engine):
+    """0043 rebuilds five SQLite tables from their stored DDL: existing rows survive both ways,
+    the new CHECKs apply, and a downgrade stops (before any DDL) while a row uses a 0043 value."""
+    insert = text(
+        "INSERT INTO background_tasks (id, kind, subject_id, attempt, status, tries, max_tries, payload,"
+        " available_at, created_at) VALUES (:id, :kind, 's', 1, 'QUEUED', 0, 3, '{}',"
+        " '2026-10-01 00:00:00', '2026-10-01 00:00:00')")
+    with engine.connect() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, "0042")
+        connection.commit()
+        connection.execute(insert, {"id": "old", "kind": "DRAFT_CORRECTION"})
+        connection.commit()
+        with pytest.raises(Exception, match="CHECK"):
+            connection.execute(insert, {"id": "new", "kind": "REVIEW_MEDIA_WRITING"})
+        connection.rollback()
+        command.upgrade(config, "head")
+        connection.commit()
+        connection.execute(insert, {"id": "new", "kind": "REVIEW_MEDIA_WRITING"})
+        connection.commit()
+        assert "poster_media_id" in {c["name"] for c in inspect(connection).get_columns("manual_media")}
+        with pytest.raises(RuntimeError, match="background_tasks"):
+            command.downgrade(config, "0042")
+        connection.rollback()
+        connection.execute(text("DELETE FROM background_tasks WHERE id = 'new'"))
+        connection.commit()
+        command.downgrade(config, "0042")
+        connection.commit()
+        assert "video_media_id" not in {c["name"] for c in inspect(connection).get_columns("manual_photo_attachments")}
+        assert connection.execute(text("SELECT id, kind FROM background_tasks")).all() == [("old", "DRAFT_CORRECTION")]
+        command.upgrade(config, "head")
+        connection.commit()

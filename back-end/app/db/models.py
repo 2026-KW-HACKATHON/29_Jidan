@@ -650,6 +650,7 @@ class InvitationMailOutbox(Base):
 TASK_KINDS = (
     "TRANSCRIPTION", "INITIAL_QUESTION", "EVALUATION", "FOLLOWUP_GENERATION", "DRAFT_GENERATION",
     "REVIEW_UNDERSTANDING", "REVIEW_CORRECTION", "DRAFT_CORRECTION", "QA_ANSWER",
+    "REVIEW_MEDIA_WRITING", "DRAFT_MEDIA_WRITING",  # 0043: sections written from photos/videos
 )
 TASK_STATUSES = ("QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED")
 
@@ -706,24 +707,33 @@ class BackgroundTask(Base):
 # retention task (unattached files after 24 h, audio originals 24 h after transcription ends).
 
 MEDIA_KINDS = ("IMAGE", "AUDIO")
+MANUAL_MEDIA_KINDS = (*MEDIA_KINDS, "VIDEO")  # 0043: owner videos (MANUAL_VIDEO); Q&A keeps photo/audio
 IMAGE_MIME_TYPES = ("image/jpeg", "image/png", "image/webp")
 AUDIO_MIME_TYPES = ("audio/mpeg", "audio/mp4", "audio/webm", "audio/wav")
+VIDEO_MIME_TYPES = ("video/mp4", "video/quicktime", "video/webm")
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_AUDIO_BYTES = 20 * 1024 * 1024
 MAX_AUDIO_MILLISECONDS = 120_000
+MAX_VIDEO_BYTES = 100 * 1024 * 1024
+MAX_VIDEO_MILLISECONDS = 60_000
 MEDIA_SHAPE = (
     f"(kind = 'IMAGE' AND {_in('mime_type', IMAGE_MIME_TYPES)} AND byte_size <= {MAX_IMAGE_BYTES}"
     " AND duration_ms IS NULL)"
     f" OR (kind = 'AUDIO' AND {_in('mime_type', AUDIO_MIME_TYPES)} AND byte_size <= {MAX_AUDIO_BYTES}"
     f" AND duration_ms IS NOT NULL AND duration_ms >= 1 AND duration_ms <= {MAX_AUDIO_MILLISECONDS})"
 )
+MANUAL_MEDIA_SHAPE = (
+    f"{MEDIA_SHAPE}"
+    f" OR (kind = 'VIDEO' AND {_in('mime_type', VIDEO_MIME_TYPES)} AND byte_size <= {MAX_VIDEO_BYTES}"
+    f" AND duration_ms IS NOT NULL AND duration_ms >= 1 AND duration_ms <= {MAX_VIDEO_MILLISECONDS})"
+)
 TRANSCRIPTION_STATUSES = ("RUNNING", "READY", "ERROR")
 
 
-def _media_columns_args(table: str) -> tuple:
+def _media_columns_args(table: str, kinds: tuple[str, ...] = MEDIA_KINDS, shape: str = MEDIA_SHAPE) -> tuple:
     return (
-        CheckConstraint(_in("kind", MEDIA_KINDS), name="kind"),
-        CheckConstraint(MEDIA_SHAPE, name="media_shape"),
+        CheckConstraint(_in("kind", kinds), name="kind"),
+        CheckConstraint(shape, name="media_shape"),
         CheckConstraint("byte_size >= 1", name="byte_size"),
         CheckConstraint("expires_at > created_at", name="expiry"),
         Index(f"ix_{table}_store_id", "store_id"),
@@ -732,14 +742,19 @@ def _media_columns_args(table: str) -> tuple:
 
 
 class ManualMedia(Base):
-    """An owner's private interview photo (IMAGE) or answer recording (AUDIO).
+    """An owner's private interview photo (IMAGE), answer recording (AUDIO) or video (VIDEO).
 
-    API purpose MANUAL_PHOTO <-> IMAGE, INTERVIEW_AUDIO <-> AUDIO. `object_key` locates the
-    bytes in app.media storage and is never returned by the API.
+    API purpose MANUAL_PHOTO <-> IMAGE, INTERVIEW_AUDIO <-> AUDIO, MANUAL_VIDEO <-> VIDEO (0043).
+    `object_key` locates the bytes in app.media storage and is never returned by the API.
+    A video's `poster_media_id` is the IMAGE row the server derived from it at upload (the
+    representative frame workers see instead of the video; app.manual_attachments).
     """
 
     __tablename__ = "manual_media"
-    __table_args__ = _media_columns_args("manual_media")
+    __table_args__ = (
+        *_media_columns_args("manual_media", MANUAL_MEDIA_KINDS, MANUAL_MEDIA_SHAPE),
+        CheckConstraint("poster_media_id IS NULL OR kind = 'VIDEO'", name="poster_for_video"),
+    )
 
     id: Mapped[str] = _id()
     store_id: Mapped[str] = mapped_column(ForeignKey("stores.id"))
@@ -753,6 +768,7 @@ class ManualMedia(Base):
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     content_deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    poster_media_id: Mapped[str | None] = mapped_column(ForeignKey("manual_media.id"), unique=True)
 
 
 class QaMedia(Base):
@@ -827,13 +843,15 @@ SESSION_STATUSES = ("IN_PROGRESS", "ERROR", "COMPLETED")
 SESSION_PROCESSING_KINDS = ("INITIAL_QUESTION", "EVALUATION", "FOLLOWUP_GENERATION", "DRAFT_GENERATION")
 COVERAGE_STATUSES = ("PENDING", "NEEDS_DETAIL", "COVERED")
 REVIEW_STATUSES = ("PROCESSING", "READY", "ERROR")
-REVIEW_PROCESSING_KINDS = ("UNDERSTANDING", "CORRECTION")
+REVIEW_PROCESSING_KINDS = ("UNDERSTANDING", "CORRECTION", "MEDIA_WRITING")
 PUBLIC_PROCESSING_ERRORS = ("AI_PROCESSING_FAILED", "TRANSCRIPTION_FAILED")
 PROBE_STATUSES = ("GENERATING", "READY", "ERROR")
 SPEAKERS = ("AI", "OWNER")
 TURN_KINDS = ("QUESTION", "ANSWER", "CORRECTION")
 QUESTION_KINDS = ("BASE", "PROBE")
 INPUT_METHODS = ("TEXT", "VOICE")
+# A draft correction may also be written from the target section's photos/videos (0043): no text.
+CORRECTION_INPUT_METHODS = (*INPUT_METHODS, "MEDIA")
 EVALUATION_STATUSES = ("SUCCEEDED", "FAILED")
 # app.tasks.task_error_code(): upper-cased app.ai.errors.AiErrorCode values plus the runner's own.
 TASK_ERROR_CODES = (
@@ -978,6 +996,9 @@ class ManualStep(Base):
 class ManualPhotoAttachment(Base):
     """A photo shown in a version: structure photo (section_id NULL) or a section photo.
 
+    A section video is an attachment of its poster image (`media_id`) that remembers the video
+    (`video_media_id`), so every reader path (workers, Q&A, photo bytes) only ever sees images.
+
     `scope_id` (section, else version) gives the nullable section_id a real UNIQUE meaning:
     order and media are unique within each attachment list.
     """
@@ -992,7 +1013,9 @@ class ManualPhotoAttachment(Base):
         ),
         CheckConstraint("sort_order >= 0", name="sort_order"),
         CheckConstraint(not_blank("title"), name="title_not_blank"),
+        CheckConstraint("video_media_id IS NULL OR section_id IS NOT NULL", name="video_on_section"),
         Index("ix_manual_photo_attachments_media_id", "media_id"),
+        Index("ix_manual_photo_attachments_video_media_id", "video_media_id"),
     )
 
     id: Mapped[str] = _id()
@@ -1005,6 +1028,8 @@ class ManualPhotoAttachment(Base):
     scope_id: Mapped[str] = mapped_column(
         CHAR(36), Computed("COALESCE(section_id, version_id)", persisted=True),
     )
+    # A video attachment (0043): `media_id` is its poster image (what readers see), this the video.
+    video_media_id: Mapped[str | None] = mapped_column(ForeignKey("manual_media.id"))
 
 
 class ManualMediaSnapshotRef(Base):
@@ -1416,13 +1441,14 @@ class ManualIssueAcknowledgement(Base):
 
 class ManualDraftCorrection(Base):
     """Voice/text correction of a generated draft (API ManualDraftCorrection). The input text
-    is a snapshot, so retries survive audio purge. One RUNNING correction per draft."""
+    is a snapshot, so retries survive audio purge. One RUNNING correction per draft.
+    MEDIA (0043) writes the target section from its photos/videos instead and has no text."""
 
     __tablename__ = "manual_draft_corrections"
     __table_args__ = (
         UniqueConstraint("running_version_id"),
         CheckConstraint(_in("target_kind", MISSING_TARGETS), name="target_kind"),
-        CheckConstraint(_in("input_method", INPUT_METHODS), name="input_method"),
+        CheckConstraint(_in("input_method", CORRECTION_INPUT_METHODS), name="input_method"),
         CheckConstraint(_in("status", CORRECTION_STATUSES), name="status"),
         CheckConstraint(_in("error_code", CORRECTION_ERRORS), name="error_code"),
         CheckConstraint("base_revision >= 1 AND attempt >= 1", name="revisions"),
@@ -1437,7 +1463,8 @@ class ManualDraftCorrection(Base):
             " AND completed_at IS NOT NULL)",
             name="status_consistency",
         ),
-        CheckConstraint(not_blank("input_text"), name="input_text_not_blank"),
+        CheckConstraint(not_blank("input_text", nullable=True), name="input_text_not_blank"),
+        CheckConstraint("(input_method = 'MEDIA') = (input_text IS NULL)", name="media_input"),
         Index("ix_manual_draft_corrections_version_id_created_at", "version_id", "created_at"),
     )
 
@@ -1447,7 +1474,7 @@ class ManualDraftCorrection(Base):
     target_kind: Mapped[str] = mapped_column(cs_string(8))
     target_id: Mapped[str | None] = mapped_column(CHAR(36))
     input_method: Mapped[str] = mapped_column(cs_string(8))
-    input_text: Mapped[str] = mapped_column(Text)
+    input_text: Mapped[str | None] = mapped_column(Text)  # NULL: MEDIA (the section's photos/videos)
     transcription_id: Mapped[str | None] = mapped_column(
         ForeignKey("media_transcriptions.id", name="fk_manual_draft_corrections_transcription_id"),
     )
