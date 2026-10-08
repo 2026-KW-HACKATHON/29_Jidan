@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { AppBar } from '../ui/AppBar'
 import { MobileLayout } from '../ui/MobileLayout'
 import { AuthFlow } from '../auth/AuthFlow'
@@ -34,7 +35,7 @@ const groups=[
  {title:'근무자 초대',links:[['근무자 초대 관리','/__invitations'],['지난 초대','/__invitations?view=past'],['활성 초대 없음','/__invitations?empty=1'],['초대 취소 확인','/__invitations?overlay=cancel'],['초대 재전송 안내','/__invitations?overlay=resent'],['초대 취소 실패','/__invitations?overlay=cancel&fail=1'],['근무자 초대 생성','/__invitations?view=create'],['초대 수락','/__invitations?view=accept'],['초대 생성 실패','/__invitations?view=create&fail=1']]},
  {title:'매장·근무자 관리',links:[['매장 관리 홈','/__store/manage'],['근무자 목록','/__store/manage?view=workers'],['김지수 상세','/__store/manage?view=worker&id=jisu'],['최유진 상세·만료 예정','/__store/manage?view=worker&id=yujin'],['근무자 목록 빈 상태','/__store/manage?view=workers&empty=1'],['접근 종료 실패','/__store/manage?view=worker&id=jisu&fail=1']]},
  {title:'대타 공고',links:[['공고 탐색','/__jobs'],['검색 결과 없음','/__jobs?empty=1'],['공고 필터','/__jobs?filter=1'],['공고 상세','/__jobs?view=detail&id=cafe'],['다음 날 종료 공고','/__jobs?view=detail&id=night'],['지원 자기소개 작성','/__jobs?view=apply&id=cafe&case=empty'],['지원 작성 완료','/__jobs?view=apply&id=cafe&case=written'],['지원 완료','/__jobs?view=complete&id=cafe&case=complete'],['신청 취소 확인','/__jobs?view=complete&id=cafe&case=withdraw'],['지원 실패·재시도','/__jobs?view=apply&id=cafe&case=submit-fail&fail=1'],['신청 취소 실패·재시도','/__jobs?view=complete&id=cafe&case=withdraw-fail&fail=1']]},
- {title:'공통·로그인',links:[['공통 UI·오버레이','/__ui'],['Google 로그인','/__preview/login'],['가입 유형 선택','/__preview/signup']]},
+ {title:'공통·로그인',links:[['페이지 로딩','/__preview/loading'],['공통 UI·오버레이','/__ui'],['Google 로그인','/__preview/login'],['가입 유형 선택','/__preview/signup']]},
  {title:'점주 가입',links:[['기본 정보','/__auth/owner'],['매장 정보·업종 선택','/__auth/owner?step=store'],['입력 확인','/__auth/owner?step=review'],['승인 대기','/__auth/owner?step=pending'],['등록 실패·재시도','/__auth/owner?step=review&fail=1']]},
  {title:'일반회원 등록',links:[['기본 정보','/__auth/worker'],['근무 경력·종료 연월','/__auth/worker?step=career'],['신입','/__auth/worker?step=work'],['가능 시간·시간 선택','/__auth/worker?step=time'],['입력 확인','/__auth/worker?step=review'],['등록 완료','/__auth/worker?step=complete'],['등록 실패·재시도','/__auth/worker?step=review&fail=1']]},
  {title:'홈·프로필·매장',links:[['점주 홈','/__home/owner'],['점주 홈 빈 상태','/__home/owner?empty=1'],['일반회원 홈','/__home/worker'],['일반회원 홈 빈 상태','/__home/worker?empty=1'],['내 프로필·섹션 수정','/__profile/worker'],['프로필 저장 실패·재시도','/__profile/worker?fail=1'],['대타 근무자 프로필','/__store/applicant'],['근무 상태·접근 종료','/__store/employment'],['접근 종료 실패·재시도','/__store/employment?fail=1']]},
@@ -43,7 +44,8 @@ function ScreenList({current}:{current:string}) {
  return <>{groups.map(group=><section key={group.title}><h3>{group.title}</h3>{group.links.map(([title,url])=><a key={url} href={url} aria-current={url===current?'page':undefined}>{title}</a>)}</section>)}</>
 }
 export default function PreviewApp(){const current=usePreviewLocation();const path=current.split('?')[0];let content
- if(['/__owner/noti','/__owner/noti/unread','/__owner/noti/read-all'].includes(path))content=<OwnerNotifications/>
+ if(path==='/__preview/loading')content=<MobileLayout header={<AppBar title="지단" onBack={()=>navigatePreview('/__preview')}/>}><LoadingState cards/></MobileLayout>
+ else if(['/__owner/noti','/__owner/noti/unread','/__owner/noti/read-all'].includes(path))content=<OwnerNotifications/>
  else if(['/__user/noti','/__user/noti/unread','/__user/noti/read-all'].includes(path))content=<UserNotifications/>
  else if(['/__user/status','/__user/status/confirmed','/__user/status/ended'].includes(path))content=<UserApplications/>
  else if(['/__owner/applicant','/__owner/applicant/no-response','/__owner/applicant/confirmed','/__owner/applicant/no-response/alert'].includes(path))content=<OwnerApplicantStatus/>
