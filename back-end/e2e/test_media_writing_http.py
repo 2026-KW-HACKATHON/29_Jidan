@@ -5,11 +5,14 @@ DB dependency, decoder or task runner is replaced. Each scenario has its own dis
 so the standard E2E API cannot claim its tasks. Paid AI and deployment/browser checks are separate.
 """
 import argparse
+import io
 import os
+import struct
 import subprocess
 import sys
 import time
 import uuid
+import wave
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -197,7 +200,7 @@ def status(flow, accepted):
 
 
 def input_files(flow):
-    clip = upload(flow, video_samples.video(seconds=2, audio="tone"), "MANUAL_VIDEO")
+    clip = upload(flow, video_samples.video(seconds=2, audio="tone", audio_start=1, audio_seconds=1), "MANUAL_VIDEO")
     still = upload(flow, media_samples.jpeg(gps=False), "MANUAL_PHOTO")
     assert clip.status_code == still.status_code == 201, (clip.text, still.text)
     ids = [clip.json()["id"], still.json()["id"]]
@@ -360,6 +363,17 @@ def main():
         raw["shifts"].reverse()
         return {"outcome": "APPLIED", "structure": raw, "removed_steps": []}
 
+    def transcribe(request):
+        # Real uploaded MP4 was decoded before this external STT boundary. Its audio
+        # starts one second after the video: require preserved silence, not a shifted track.
+        with wave.open(io.BytesIO(request.audio)) as sound:
+            rate = sound.getframerate()
+            values = struct.unpack(f"<{sound.getnframes()}h", sound.readframes(sound.getnframes()))
+        assert max(abs(v) for v in values[:int(0.9 * rate)]) == 0
+        assert max(abs(v) for v in values[int(1.1 * rate):]) > 1000
+        return "결제 후 영수증과 진동벨을 함께 드려요."
+
+    provider.on("transcribe", transcribe)
     provider.on("write_section_from_media", writing)
     from app.ai import set_ai_provider
     set_ai_provider(provider)

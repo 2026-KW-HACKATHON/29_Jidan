@@ -362,38 +362,57 @@ def choose_poster(images: list[Image.Image]) -> int:
     return max(range(len(images)), key=lambda i: (scores[i][0], scores[i][1], -i))
 
 
-def _audio_wav(data: bytes, mime_type: str, duration: Fraction) -> bytes | None:
-    """The first sound track as 16 kHz mono 16-bit PCM WAV, cut at the video's length; None when
-    there is no sound track, it cannot be decoded, or it is digital silence (nothing to transcribe)."""
+def _audio_wav(data: bytes, mime_type: str, start: Fraction, duration: Fraction) -> bytes | None:
+    """16 kHz mono PCM on the video's presentation timeline.
+
+    Clip samples to [start, start + duration). Preserve leading/interior silence when
+    the audio begins later or has timestamp gaps; never shift lead-in audio onto video.
+    Audio without presentation timestamps cannot be aligned and is left out.
+    """
     with _open(data, mime_type) as container:
         if not container.streams.audio:
             return None
         stream = container.streams.audio[0]
         resampler = av.AudioResampler(format="s16", layout="mono", rate=AUDIO_RATE)
         limit = int(duration * AUDIO_RATE)
-        pcm = bytearray()
+        pcm = bytearray(limit * 2)
+        written_end = 0
         if stream.codec_context is None:
-            return None  # no decoder for this sound track: frames only
+            return None
+
+        def place(out):
+            nonlocal written_end
+            if out.pts is None or out.time_base is None:
+                raise ValueError("audio presentation timestamp missing")
+            offset = round((out.pts * out.time_base - start) * AUDIO_RATE)
+            left, right = max(0, offset), min(limit, offset + out.samples)
+            if right > left:
+                samples = bytes(out.planes[0])
+                source = (left - offset) * 2
+                pcm[left * 2:right * 2] = samples[source:source + (right - left) * 2]
+                written_end = max(written_end, right)
+
         try:
             for frame in container.decode(stream):
+                if frame.pts is None or frame.time_base is None:
+                    return None
                 for out in resampler.resample(frame):
-                    pcm += bytes(out.planes[0])[: out.samples * 2]
-                if len(pcm) >= limit * 2:
+                    place(out)
+                if frame.pts * frame.time_base >= start + duration:
                     break
             for out in resampler.resample(None):
-                pcm += bytes(out.planes[0])[: out.samples * 2]
+                place(out)
         except (av.FFmpegError, ValueError):
-            if not pcm:
+            if not written_end:
                 return None  # a broken sound track does not stop the frames
-    del pcm[limit * 2:]
-    if not pcm:
+    if not written_end:
         return None
     output = io.BytesIO()
     with wave.open(output, "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(AUDIO_RATE)
-        wav.writeframes(bytes(pcm))
+        wav.writeframes(bytes(pcm[:written_end * 2]))
     wav_bytes = output.getvalue()
     return None if pcm_wav_is_silent(wav_bytes) else wav_bytes
 
@@ -410,7 +429,7 @@ def digest_video(data: bytes) -> VideoDigest:
                 _stream, timeline = _checked_stream(container, data, mime_type)
             duration_ms = _milliseconds(timeline.duration)
             sampled = _sample_frames(data, mime_type, timeline.start, duration_ms)
-            audio = _audio_wav(data, mime_type, timeline.duration)
+            audio = _audio_wav(data, mime_type, timeline.start, timeline.duration)
         except av.FFmpegError:
             raise MediaInvalid("video_decode") from None
         except _PARSE_ERRORS as error:

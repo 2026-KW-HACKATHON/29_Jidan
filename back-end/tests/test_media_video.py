@@ -4,7 +4,9 @@ photo and retention hold. Every clip is encoded in the test with PyAV (tests/vid
 import io
 import struct
 import wave
+from contextlib import contextmanager
 from datetime import timedelta
+from fractions import Fraction
 
 import pytest
 from PIL import Image, ImageStat
@@ -366,3 +368,62 @@ def test_video_hold_extends_only_videos_and_never_shortens():
     photo = ManualMedia(kind="IMAGE", expires_at=now)
     retention.hold_video_bytes(photo, now)
     assert photo.expires_at == now
+
+
+@pytest.mark.parametrize("kind", ["mp4", "webm"])
+def test_audio_before_video_is_excluded_and_last_video_audio_is_retained(kind):
+    # Audio at 0..0.5 precedes video at 1..3 and must not become video evidence.
+    before = samples.video(kind, seconds=2, video_start=1, audio_seconds=3, tone_until=0.5)
+    assert digest_video(before).audio is None
+    # Conversely the sound at 2.5..3 belongs to the final half second of the video.
+    tail = samples.video(kind, seconds=2, video_start=1, audio_seconds=3, tone_from=2.5)
+    digest = digest_video(tail)
+    assert digest.duration_ms == 2000
+    with wave.open(io.BytesIO(digest.audio)) as sound:
+        values = struct.unpack(f"<{sound.getnframes()}h", sound.readframes(sound.getnframes()))
+    assert max(abs(v) for v in values[:AUDIO_RATE]) < 64
+    assert max(abs(v) for v in values[int(1.6 * AUDIO_RATE):]) > 1000
+    assert len(values) <= 2 * AUDIO_RATE
+
+
+@pytest.mark.parametrize("kind", ["mp4", "webm"])
+def test_delayed_audio_keeps_leading_silence_on_the_video_timeline(kind):
+    digest = digest_video(samples.video(kind, seconds=2, audio_start=1, audio_seconds=1))
+    with wave.open(io.BytesIO(digest.audio)) as sound:
+        values = struct.unpack(f"<{sound.getnframes()}h", sound.readframes(sound.getnframes()))
+    assert max(abs(v) for v in values[:int(0.9 * AUDIO_RATE)]) == 0
+    assert max(abs(v) for v in values[int(1.1 * AUDIO_RATE):]) > 1000
+    assert int(1.9 * AUDIO_RATE) <= len(values) <= 2 * AUDIO_RATE
+
+
+
+@pytest.mark.parametrize("kind", ["mp4", "webm"])
+def test_interior_audio_timestamp_gap_keeps_later_sound_at_its_original_position(kind):
+    data = samples.video(kind, seconds=2, audio_seconds=1.5, audio_gap_at=1, audio_gap_seconds=0.5)
+    digest = digest_video(data)
+    with wave.open(io.BytesIO(digest.audio)) as sound:
+        values = struct.unpack(f"<{sound.getnframes()}h", sound.readframes(sound.getnframes()))
+    assert max(abs(v) for v in values[int(0.7 * AUDIO_RATE):int(0.9 * AUDIO_RATE)]) > 1000
+    assert max(abs(v) for v in values[int(1.1 * AUDIO_RATE):int(1.4 * AUDIO_RATE)]) == 0
+    assert max(abs(v) for v in values[int(1.6 * AUDIO_RATE):int(1.9 * AUDIO_RATE)]) > 1000
+
+
+def test_audio_without_pts_is_omitted_instead_of_guessed(monkeypatch):
+    data = samples.video(seconds=2)
+    original_open = video._open
+
+    @contextmanager
+    def without_pts(data, mime_type):
+        with original_open(data, mime_type) as container:
+            class NoTimestamp:
+                streams = container.streams
+
+                def decode(self, stream):
+                    for frame in container.decode(stream):
+                        frame.pts = None
+                        yield frame
+
+            yield NoTimestamp()
+
+    monkeypatch.setattr(video, "_open", without_pts)
+    assert video._audio_wav(data, "video/mp4", Fraction(0), Fraction(2)) is None

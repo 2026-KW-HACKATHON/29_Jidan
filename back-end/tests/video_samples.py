@@ -35,7 +35,9 @@ def _picture(width: int, height: int, pattern: str, index: int, total: int) -> I
 def video(kind: str = "mp4", *, seconds: float = 2.0, fps: int = 4, width: int = 64, height: int = 48,
           audio: str | None = "tone", pattern: str = "bars", gop: int | None = None,
           rotation: int | None = None, metadata: dict | None = None, options: dict | None = None,
-          path=None) -> bytes:
+          path=None, video_start: float = 0, audio_start: float = 0,
+          audio_seconds: float | None = None, tone_from: float = 0, tone_until: float | None = None,
+          audio_gap_at: float | None = None, audio_gap_seconds: float = 0) -> bytes:
     """An encoded clip. `audio`: "tone" (440 Hz), "silent" (digital zeros) or None (no track).
     `path`: write to that file instead of memory (needed for muxer options such as faststart)."""
     container_format, codec = CONTAINERS[kind]
@@ -57,24 +59,31 @@ def video(kind: str = "mp4", *, seconds: float = 2.0, fps: int = 4, width: int =
         total = max(1, round(seconds * fps))
         for index in range(total):
             frame = av.VideoFrame.from_image(_picture(width, height, pattern, index, total))
-            frame.pts, frame.time_base = index, Fraction(1, fps)
+            frame.pts, frame.time_base = index + round(video_start * fps), Fraction(1, fps)
             container.mux(stream.encode(frame))
         container.mux(stream.encode())
         if sound is not None:
-            _write_audio(container, sound, seconds, silent=audio == "silent")
+            _write_audio(container, sound, seconds if audio_seconds is None else audio_seconds,
+                         silent=audio == "silent", offset=audio_start, tone_from=tone_from, tone_until=tone_until,
+                         gap_at=audio_gap_at, gap_seconds=audio_gap_seconds)
     return Path(path).read_bytes() if path else output.getvalue()
 
 
-def _write_audio(container, stream, seconds: float, *, silent: bool) -> None:
+def _write_audio(container, stream, seconds: float, *, silent: bool, offset: float = 0,
+                 tone_from: float = 0, tone_until: float | None = None,
+                 gap_at: float | None = None, gap_seconds: float = 0) -> None:
     rate, chunk = 48000, 960
     total = int(seconds * rate)
     fmt = stream.codec_context.format.name
     for start in range(0, total, chunk):
         count = min(chunk, total - start)
-        values = [0.0 if silent else 0.5 * math.sin(2 * math.pi * 440 * (start + i) / rate) for i in range(count)]
+        values = [0.0 if silent or (start + i) / rate < tone_from
+                  or (tone_until is not None and (start + i) / rate >= tone_until)
+                  else 0.5 * math.sin(2 * math.pi * 440 * (start + i) / rate) for i in range(count)]
         frame = av.AudioFrame(format="flt" if fmt == "flt" else "fltp", layout="mono", samples=count)
         frame.planes[0].update(_floats(values, count, frame.planes[0].buffer_size))
-        frame.sample_rate, frame.pts, frame.time_base = rate, start, Fraction(1, rate)
+        gap = round(gap_seconds * rate) if gap_at is not None and start >= round(gap_at * rate) else 0
+        frame.sample_rate, frame.pts, frame.time_base = rate, start + round(offset * rate) + gap, Fraction(1, rate)
         container.mux(stream.encode(frame))
     container.mux(stream.encode())
 
