@@ -16,7 +16,7 @@ function setup(path: AuthPath, state: AuthState = { kind: 'unavailable' }, searc
 }
 it('API 미준비 상태는 준비 안내만 표시한다', async () => {
   const { service, renderHome } = setup('/')
-  const button = screen.getByRole('button', { name: 'Google 계정으로 시작하기' })
+  const button = await screen.findByRole('button', { name: 'Google 계정으로 시작하기' })
   await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button)
   expect(screen.getByRole('dialog')).toHaveAccessibleName('요청을 완료하지 못했어요')
   expect(fetch).not.toHaveBeenCalled(); expect(service.startGoogle).not.toHaveBeenCalled(); expect(renderHome).not.toHaveBeenCalled()
@@ -53,7 +53,7 @@ it('상태 조회가 지연되어도 준비 안내를 확인할 수 있고 늦�
 })
 it('로그인 시작 지연 후 버튼을 복구하고 중복 시작을 막는다',async()=>{
  const startGoogle=vi.fn(()=>new Promise<void>(()=>{}));render(<AuthFlow path="/" navigate={vi.fn()} service={{read:async()=>({kind:'guest'}),startGoogle}} renderHome={()=>null} renderRegistration={()=>null}/>)
- const button=screen.getByRole('button',{name:'Google 계정으로 시작하기'});await waitFor(()=>expect(button).toBeEnabled());vi.useFakeTimers();fireEvent.click(button);fireEvent.click(button);expect(startGoogle).toHaveBeenCalledTimes(1)
+ const button=await screen.findByRole('button',{name:'Google 계정으로 시작하기'});await waitFor(()=>expect(button).toBeEnabled());vi.useFakeTimers();fireEvent.click(button);fireEvent.click(button);expect(startGoogle).toHaveBeenCalledTimes(1)
  await act(async()=>{await vi.advanceTimersByTimeAsync(10000)});expect(button).toBeEnabled();expect(screen.getByRole('dialog')).toBeVisible()
 })
 

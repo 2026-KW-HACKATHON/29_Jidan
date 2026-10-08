@@ -5,7 +5,7 @@ import { slots } from './model'
 it('드래그 범위를 30분 단위로 확정하고 취소된 드래그는 저장하지 않는다',()=>{
  const change=vi.fn(), point=Object.getOwnPropertyDescriptor(document,'elementFromPoint')
  const view=render(<WorkerAvailability values={[]} change={change} edit={vi.fn()} />)
- const first=screen.getByLabelText('월 06:00–06:30', { selector: 'button' }),last=screen.getByLabelText('월 07:00–07:30', { selector: 'button' })
+ const first=screen.getByLabelText('월 06:00 – 06:30', { selector: 'button' }),last=screen.getByLabelText('월 07:00 – 07:30', { selector: 'button' })
  expect(first).toBeVisible()
  expect(last).toBeVisible()
  Object.defineProperty(first,'setPointerCapture',{value:vi.fn()})
