@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DeadlineExceeded, withDeadline } from '../async/deadline'
 import { ApiError, errorMessage } from '../api/client'
@@ -75,7 +76,7 @@ export function AuthFlow({ path, search = '', navigate, renderHome, renderRegist
     if (path === '/signup/owner' || path === '/signup/worker') return <>{renderRegistration(path.endsWith('/owner') ? 'owner' : 'worker', () => setRegistered(true))}{modal}</>
     return <><RoleSelectionScreen onBack={() => { if (service.logout) void command('logout'); else navigate('/login') }} onSelect={role => { if (!locked.current) navigate(`/signup/${role}`) }} />{modal}</>
   }
-  if (checking) return <MobileLayout><p role="status">로그인 정보를 확인하고 있어요.</p></MobileLayout>
+  if (checking) return <MobileLayout><LoadingState message="로그인 정보를 확인하고 있어요."/></MobileLayout>
   return <><LoginScreen onStart={() => void command('start')} busy={checking || busy} />
     {(readError || callbackError) && <p role="alert">{readError || callbackError}</p>}
     {readError && <Button intent="secondary" disabled={checking} onClick={() => { setChecking(true); setReadError(''); setRevision(value => value + 1) }}>다시 시도</Button>}
