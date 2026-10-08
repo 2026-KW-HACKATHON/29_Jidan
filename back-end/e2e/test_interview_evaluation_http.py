@@ -5,11 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import InterviewEvaluation, InterviewSession
-from e2e.interview_helpers import interview_case
+from e2e.interview_helpers import interview_case, scenario_server
 
 
-def test_successful_evaluation_commits_empty_known_aspects_once(real_db, base_url):
-    with interview_case(real_db, base_url) as case:
+def test_successful_evaluation_commits_empty_known_aspects_once(real_db, tmp_path):
+    with scenario_server(tmp_path) as origin, interview_case(real_db, origin) as case:
         started = case.start()
         state = case.wait(started["id"], lambda body: body["phase"] == "COLLECTING")
         key = str(uuid.uuid4())
