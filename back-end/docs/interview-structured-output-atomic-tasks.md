@@ -59,12 +59,12 @@ AI가 질문과 안내 카드를 함께 생성하고, 서버가 검증·ID 부�
 
 | 결정 | 실행 기본안 | 이유와 확인할 경계 |
 | --- | --- | --- |
-| 사진 추천 반환 위치 | 기존 질문 응답의 `guidanceCards`에 `PHOTO_SUGGESTIONS`를 포함하고 `attachmentTarget`으로 실제 검토·섹션 연결 | 별도 생성 시점이 새 공개 필드를 요구하지는 않음. 질문 없는 마지막 인텐트·이어하기의 전달 가능성은 A02에서 별도로 확인 |
+| 사진 추천 반환 위치 | 기존 질문 응답의 `guidanceCards`에 `PHOTO_SUGGESTIONS`를 포함하고 `attachmentTarget`으로 실제 검토·섹션 연결 | 별도 생성 시점이 새 공개 필드를 요구하지는 않음. 사용자 결정: 실제 다음 미답변 질문이 있을 때만 전달. 마지막 인텐트·질문 없는 이어하기는 기존 수동 사진 첨부 사용 |
 | 공개 질문 카드 호환 | 공용 `ManualGuidanceCard`의 세 유형은 유지하되 신규 질문 생성은 두 유형만 사용 | 과거 계약·응답을 불필요하게 거절하지 않고 생성 책임을 분리 |
 | 추천 작업 상태 | 기존 review의 UNDERSTANDING/CORRECTION 처리 상태와 별도 내부 task 연결 정보 사용 | 추천 처리·실패 때문에 READY 검토를 PROCESSING/ERROR로 변경하지 않음 |
 | 추천 revision | 내부 추천 결과는 원본 review revision에 귀속. 공개 질문 카드 변경은 기존 계약대로 session revision과 함께 원자 저장 | 사진 연결에는 최신 review revision을 사용. 추천만으로 review revision을 올리지 않으며 평가 작업과 답변 시점 snapshot을 훼손하지 않음 |
 | 추천 재생성 | 최초 요약 READY와 실제 내용 정정 성공 뒤 생성. GET·사진 순서 변경·동일 확인에서는 생성하지 않음 | 재조회로 ID·추천이 바뀌거나 불필요한 AI 호출이 늘지 않음 |
-| 추천 표시 한도 | 기존 guidanceCards 전체 최대 5개와 카드별 item 최대 50개 적용 | LIST·진행·사진 카드의 합계로 검사. 기존 카드를 덮어쓰거나 총 상한을 초과하지 않도록 배치 |
+| 추천 표시 한도 | 기존 guidanceCards 전체 최대 5개와 카드별 item 최대 50개 적용 | LIST·진행·사진 카드의 합계로 검사. 기존 카드를 덮어쓰거나 총 상한을 초과하지 않도록 배치. 공간 부족·늦은 추천은 전달하지 않아도 되며 진행 보존 |
 | 이해 확인과 진행 | 프론트가 미확인 READY 요약을 우선 표시. 서버의 confirmedAt을 인터뷰 진행·초안 생성의 새 필수 조건으로 만들지 않음 | 기존 depth 한도 자동 진행과 호환. 사용자의 확인 후 다음 화면으로 이동하는 UI는 별도로 구현 |
 | 삭제 처리 | 기존 명시적 삭제 동작만 허용하고, AI가 기존 ID를 빠뜨렸다는 이유만으로 사진 연결을 다른 대상으로 옮기지 않음 | 삭제 의도가 불명확하면 기존 콘텐츠 보존·정정 재입력 경로 사용 |
 
@@ -82,7 +82,7 @@ API·백엔드 동작을 바꾸는 태스크는 [백엔드 작업 규칙](../AGE
 
 ### A01 응답 위치와 상태 경계 결정
 
-- [ ] 선행 결정의 결과를 기록한다.
+- [x] 선행 결정의 결과를 기록한다.
 - **선행:** 없음.
 - **파일:** `back-end/docs/manual-interview-design.md`, 이 계획.
 - **작업:** 기존 `guidanceCards`에서의 카드 배치·전달 시점, 추천 결과의 revision 정책, 진행 카드 ID 수명, 카드만 오류일 때 제외 단위, 명시적 섹션 삭제 경계를 확정한다. 화면 확인과 서버 진행을 구분하고 프론트 의존성을 기록한다.
@@ -95,7 +95,7 @@ API·백엔드 동작을 바꾸는 태스크는 [백엔드 작업 규칙](../AGE
 - **선행:** A01.
 - **파일:** `back-end/openapi.yaml`과 승인 계약 snapshot은 읽기 기준, `back-end/docs/manual-interview-design.md`, `back-end/docs/tests/manual-guidance.test.mjs`, `manual-photo-guidance.test.mjs`, `manual-question-snapshot.test.mjs`, 이 계획.
 - **작업:** `guidanceCards`의 PHOTO_SUGGESTIONS와 attachmentTarget으로 추천 내용·intentId·SECTION/sectionId를 매핑한다. LIST API item에는 AI의 `status:null`을 보내지 않는다. 사진 추천 AI를 요약 뒤 별도로 호출하는 것과 기존 질문 응답에 결과를 전달하는 것을 구분한다. API 스키마·버전·승인 snapshot을 변경하지 않고 기존 계약에 대한 구현 검증을 보강한다.
-- **완료·검증:** 카드 표현·대상·총 개수 제한과 답변 스냅샷 불변성을 확인한다. 현재 공개 전달 위치는 `ManualInterviewQuestion.guidanceCards`이고 review 응답에는 해당 필드가 없음을 기록한다. 다음 질문이 있는 경우와 질문 없는 마지막 인텐트·READY_TO_GENERATE·이어하기를 각각 대조해 전달 경로를 확정한다. 후자에서 전달이 성립하지 않으면 미해결 흐름으로 명시하고 D06의 해당 분기를 완료 처리하지 않는다. 임의 질문·새 필드·phase 변경이나 추천 생략으로 이 간극을 숨기지 않는다.
+- **완료·검증:** 카드 표현·대상·총 개수 제한과 답변 스냅샷 불변성을 확인한다. 현재 공개 전달 위치는 `ManualInterviewQuestion.guidanceCards`이고 review 응답에는 해당 필드가 없음을 기록한다. 다음 질문이 있는 경우와 질문 없는 마지막 인텐트·READY_TO_GENERATE·이어하기를 각각 대조해 전달 경로를 확정한다. 사용자 승인 범위에 따라 후자는 추천 카드 없이 기존 수동 사진 첨부를 사용한다. 늦은 결과·공간 부족도 전달을 보장하지 않는다. 임의 질문·새 필드·phase 변경 없이 기존 카드와 상태를 보존하는 것을 검증한다.
 - **커밋:** `test(interview): 기존 사진 카드 계약과 전달 흐름 검증`.
 
 ### A03 실제 HTTP 인터뷰 테스트 준비
@@ -281,7 +281,7 @@ API·백엔드 동작을 바꾸는 태스크는 [백엔드 작업 규칙](../AGE
 - **선행:** A02, B10, B11, D05.
 - **파일:** `back-end/app/interview/common.py`, `flow.py`, `routes.py`, `photo_suggestions.py`, `back-end/tests/test_interview_photo_suggestions.py`, `back-end/e2e/test_interview_photo_suggestions_http.py`.
 - **작업:** A02에서 확인한 전달 시점에 저장된 추천을 질문의 기존 guidanceCards와 합성하고 PHOTO_SUGGESTIONS·attachmentTarget을 그대로 사용한다. 카드가 담긴 질문의 intentId와 첨부 대상 intentId를 구분한다. review 응답·content에 새 필드를 추가하지 않는다. 합성 결과는 session revision과 함께 원자 저장하고 GET은 저장본만 직렬화한다.
-- **완료·검증:** 기존 스키마와 승인 계약 snapshot 변경 없이 응답이 유효하다. LIST·진행 카드의 ID/순서를 보존하고 총 5개 제한을 지킨다. 답변 접수 뒤 질문·lastAnsweredQuestion을 뒤늦은 추천으로 변경하지 않는다. 처리 중 revision 변경으로 기존 질문 생성/평가 task가 무효화되지 않게 적용 시점을 제어한다. 다른 review 대상, 정정·삭제·completion 경합, 재조회·복원을 검증한다. 마지막 인텐트·질문 없는 상태는 A02에서 확인된 경로와 검증 근거가 있어야 완료다.
+- **완료·검증:** 기존 스키마와 승인 계약 snapshot 변경 없이 응답이 유효하다. LIST·진행 카드의 ID/순서를 보존하고 총 5개 제한을 지킨다. 답변 접수 뒤 질문·lastAnsweredQuestion을 뒤늦은 추천으로 변경하지 않는다. 처리 중 revision 변경으로 기존 질문 생성/평가 task가 무효화되지 않게 적용 시점을 제어한다. 다른 review 대상, 정정·삭제·completion 경합, 재조회·복원을 검증한다. 마지막 인텐트·질문 없는 상태는 추천 카드 없이 기존 수동 사진 첨부가 가능함을 검증한다. 늦은 결과·공간 부족은 기존 카드·상태를 보존하고 진행을 막지 않는다.
 - **커밋:** `feat(interview): 기존 안내 카드에 사진 추천 연결`.
 
 ### D07 내용 정정에 따른 추천 무효화
