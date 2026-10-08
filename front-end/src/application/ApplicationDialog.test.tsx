@@ -13,7 +13,7 @@ it('빈 값과 공백은 금지하고 501자 붙여넣기·한글 조합을 제�
   expect(input).toHaveValue('');expect(button).toBeDisabled()
   fireEvent.change(input,{target:{value:' \n '}});expect(button).toBeDisabled()
   fireEvent.change(input,{target:{value:'가'.repeat(501)}});expect(input).toHaveValue('가'.repeat(500));expect(screen.getByText('500 / 500')).toBeInTheDocument()
-  fireEvent.compositionStart(input);fireEvent.change(input,{target:{value:'나'.repeat(501)}});expect(button).toBeDisabled()
+  fireEvent.compositionStart(input);fireEvent.change(input,{target:{value:'나'.repeat(501)}});expect(button).toBeEnabled()
   fireEvent.compositionEnd(input);expect(input).toHaveValue('나'.repeat(500));expect(button).toBeEnabled()
 })
 it('중복 제출을 막고 실패 시 입력을 보존하여 재시도한다',async()=>{
@@ -53,4 +53,16 @@ it('응답 없는 서비스는 대기 종료 후 입력을 유지하고 재시�
     fireEvent.click(screen.getByRole('button',{name:'지원 완료하기'}));await act(async()=>{})
     expect(onSuccess).toHaveBeenCalledOnce();view.unmount()
   } finally {vi.useRealTimers()}
+})
+
+it('한글 조합 중 직접 완료 클릭은 마지막 글자를 포함하고 조합 중 암묵 제출은 막는다',async()=>{
+ const submit=vi.fn().mockResolvedValue({id:'1',job,introduction:'안녕하세요'})
+ mount({submit,withdraw:vi.fn()})
+ const input=screen.getByLabelText('지원자 자기소개 *')
+ fireEvent.compositionStart(input);fireEvent.change(input,{target:{value:'안녕하세요'}})
+ const button=screen.getByRole('button',{name:'지원 완료하기'});expect(button).toBeEnabled()
+ fireEvent.submit(input.closest('form')!);expect(submit).not.toHaveBeenCalled()
+ fireEvent.click(button)
+ await waitFor(()=>expect(submit).toHaveBeenCalledOnce())
+ expect(submit).toHaveBeenCalledWith(job,'안녕하세요',expect.any(AbortSignal))
 })
