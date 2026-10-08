@@ -104,8 +104,9 @@ def _default_judge(_data):
 
 def _default_question(data):
     if data["kind"] == "BASE":
-        return {"question": data["intent"]["base_question"]}
-    return {"question": f"{data['missing_aspects'][0]}에 대해 조금 더 자세히 알려 주세요."}
+        return {"question": data["intent"]["base_question"], "guidance": None, "guidanceCards": []}
+    return {"question": f"{data['missing_aspects'][0]}에 대해 조금 더 자세히 알려 주세요.",
+            "guidance": None, "guidanceCards": []}
 
 
 def _default_summary(data):

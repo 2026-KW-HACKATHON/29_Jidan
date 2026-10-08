@@ -14,7 +14,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-07.1"  # Atomic missing aspects; a probe asks one sub-item (Q-INT-1).
+PROMPT_VERSION = "2026-10-08.1"  # Atomic missing aspects; a probe asks one sub-item (Q-INT-1).
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.
@@ -63,6 +63,16 @@ INSTRUCTIONS: dict[str, str] = {
 """,
     "generate_question": _COMMON + """
 [작업: 질문 문구 생성]
+- question, nullable guidance, guidanceCards를 함께 생성한다. 카드가 불필요하면 빈 배열이다.
+- 카드는 LIST(일반 예시/설명) 또는 PROGRESS_CHECKLIST(점주가 실제로 확인한 업무)만 쓴다.
+  예시를 실제 업무로 확정하지 않는다. 선택형 입력이나 사진 추천을 만들지 않는다.
+- 카드 ID는 만들지 않는다. item id는 previous_cards에 있는 같은 항목의 ID를 유지하고 새 항목은 null이다.
+  표현 수정·재정렬에도 같은 ID를 쓴다. section ID나 new-N을 item ID로 쓰지 않는다.
+- LIST item status는 null이다. 진행 카드는 최대 한 개, CURRENT도 최대 한 개다.
+  전체 업무 목록을 묻는 질문은 CURRENT가 없어도 된다.
+- 상태는 읽기 전용이다. 답변 접수만으로 COMPLETED로 바꾸지 않는다. dialogue와 evaluation을 근거로
+  확보한 항목만 COMPLETED, 부족한 채 확인을 마친 항목은 NEEDS_DETAIL로 남긴다.
+- context는 다른 완료 주제의 요약이고 현재 주제의 실제 답변은 dialogue다. 이전 카드는 사실의 독립 근거가 아니다.
 점주에게 할 질문을 정확히 한 개 만든다.
 - kind=BASE: 인텐트의 base_question이 묻는 내용을 바꾸지 말고, 이전 대화 문맥에 맞게 자연스럽게 다듬는다.
   이전 답변에 이 인텐트 내용이 일부 나왔다면 그것을 확인하는 형태로 묻는다.
@@ -88,6 +98,8 @@ INSTRUCTIONS: dict[str, str] = {
 - 공통 업무는 COMMON_TASK, 규정은 RULE, 설비 사용법은 EQUIPMENT, 특정 근무조 업무는 SHIFT_TASK.
 - 시간은 HH:MM. 점주가 말하지 않은 시간은 null, 단계를 모르면 steps는 빈 배열로 두고 해당 값마다
   missing_information 항목(대상·필드·설명)을 넣는다. 확정된 값에는 missing_information을 붙이지 않는다.
+- missing_aspects는 마지막 평가에서 남은 부족 측면이다. 각 측면을 해당 대상의 missing_information에
+  보존하고 summary에도 간결하게 알린다. 횟수 한도 종료는 정보 확보가 아니다.
 - needs_detail=true이면 아직 부족하다고 판단된 인텐트다. 아는 범위만 정리하고 부족한 값을 미확정으로 남긴다.
 - 점주가 모르겠다고 했거나 답하지 않은 값은 미확정(null/빈 배열 + missing_information)이다. 점주가 "따로 정한
   규칙 없음"이라고 분명히 말한 세부는 그 사실을 그대로 적는다(지어낸 기준으로 채우지 않는다).

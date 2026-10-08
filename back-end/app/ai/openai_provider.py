@@ -30,7 +30,7 @@ from app.ai.silence import pcm_wav_is_silent
 # Output budget per operation (reasoning tokens count against it as well).
 MAX_OUTPUT_TOKENS = {
     "judge_sufficiency": 4000,
-    "generate_question": 4000,
+    "generate_question": 8000,
     "summarize_intent": 16000,
     "revise_structure": 32000,
     "compose_draft": 32000,

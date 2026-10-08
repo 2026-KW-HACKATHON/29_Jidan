@@ -95,8 +95,23 @@ JUDGE_SCHEMA = _object({
     ),
 })
 
-QUESTION_SCHEMA = _object({"question": _string("점주에게 할 질문 한 개 (2000자 이내)")})
-
+QUESTION_ITEM_SCHEMA = _object({
+    "id": _string("입력의 기존 item ID 또는 새 항목이면 null", nullable=True),
+    "label": _string("항목 이름 (200자 이내)"),
+    "description": _string("보조 설명 (1000자 이내)", nullable=True),
+    "status": {"type": ["string", "null"], "enum": ["PENDING", "CURRENT", "COMPLETED", "NEEDS_DETAIL", None]},
+})
+QUESTION_CARD_SCHEMA = _object({
+    "type": _enum(("LIST", "PROGRESS_CHECKLIST"), "질문 안내 유형"),
+    "title": _string("카드 제목 (200자 이내)"),
+    "items": _array(QUESTION_ITEM_SCHEMA, "1~50개 항목"),
+    "footer": _string("하단 안내 (1000자 이내)", nullable=True),
+})
+QUESTION_SCHEMA = _object({
+    "question": _string("점주에게 할 질문 한 개 (2000자 이내)"),
+    "guidance": _string("답변 안내 (2000자 이내)", nullable=True),
+    "guidanceCards": _array(QUESTION_CARD_SCHEMA, "질문 안내 카드 최대 5개, 필요 없으면 빈 배열"),
+})
 SUMMARY_SCHEMA = _object({
     "summary": _string("점주가 확인할 이해 요약 (해요체)"),
     "structure": STRUCTURE_SCHEMA,
@@ -171,8 +186,42 @@ class RawJudgement(_Raw):
     )
 
 
+class RawQuestionItem(_Raw):
+    id: str | None
+    label: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(min_length=1, max_length=1000)
+    status: Literal["PENDING", "CURRENT", "COMPLETED", "NEEDS_DETAIL"] | None
+
+
+class RawQuestionCard(_Raw):
+    type: Literal["LIST", "PROGRESS_CHECKLIST"]
+    title: str = Field(min_length=1, max_length=200)
+    items: list[RawQuestionItem] = Field(min_length=1, max_length=50)
+    footer: str | None = Field(min_length=1, max_length=1000)
+
+
 class RawQuestion(_Raw):
     question: str = Field(min_length=1, max_length=2000)
+    guidance: str | None = Field(min_length=1, max_length=2000)
+    guidanceCards: list[RawQuestionCard] = Field(max_length=5)
+
+
+def parse_question(value: Any) -> RawQuestion:
+    """Validate the question envelope, dropping only independently invalid cards."""
+    if not isinstance(value, dict) or set(value) - {"question", "guidance", "guidanceCards"}:
+        raise ValueError("invalid question envelope")
+    guidance = value.get("guidance")
+    if not isinstance(guidance, str) or not guidance.strip() or len(guidance) > 2000:
+        guidance = None
+    cards = value.get("guidanceCards", [])
+    valid = []
+    if isinstance(cards, list):
+        for card in cards[:5]:
+            try:
+                valid.append(RawQuestionCard.model_validate(card))
+            except ValueError:
+                pass
+    return RawQuestion(question=value.get("question"), guidance=guidance, guidanceCards=valid)
 
 
 class RawSummary(_Raw):
