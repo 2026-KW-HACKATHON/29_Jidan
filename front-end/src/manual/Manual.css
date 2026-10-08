@@ -55,3 +55,11 @@
 .manual-photo-group h3{color:var(--ds-text)}
 
 .manual-status{text-align:center}
+
+.manual-review-skeleton{gap:var(--ds-space-4)}
+.manual-skeleton-line{display:block;position:relative;overflow:hidden;height:16px;width:100%;border-radius:4px;background:var(--ds-primary-surface)}
+.manual-skeleton-title{width:40%;height:20px;margin-bottom:var(--ds-space-2)}
+.manual-skeleton-short{width:65%}
+.manual-skeleton-line::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgb(255 255 255 / 85%),transparent);transform:translateX(-100%);animation:manual-shimmer 1.6s ease-in-out infinite}
+@keyframes manual-shimmer{to{transform:translateX(100%)}}
+@media(prefers-reduced-motion:reduce){.manual-skeleton-line::after{animation:none;display:none}}
