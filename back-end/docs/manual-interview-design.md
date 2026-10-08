@@ -207,3 +207,25 @@ PHOTO_SUGGESTIONS는 추천 목록과 attachmentTarget을 제공한다. READY �
 lastAnsweredQuestion은 EVALUATION 처리 중 또는 해당 평가의 ERROR에서만 제공하는 선택적 표시 스냅샷이다. POST answers의 접수 응답과 GET 세션 응답에서 같은 질문 ID·카드·항목을 제공한다. 답변 접수와 같은 트랜잭션에서 질문·카드를 고정하고 answered=true로 제공한다(구현: 질문 행과 그 안내는 작성 후 바뀌지 않으므로 복사본 대신 평가 중인 질문 행을 그대로 쓴다. 결과는 접수 당시 스냅샷과 같다). 현재 답변 가능한 질문은 기존 questions 배열만 사용하며 처리 중에는 계속 빈 배열이다. 스냅샷을 다시 답변 대상으로 제출하지 않는다.
 
 스냅샷은 직전 답변 questionId 및 currentIntentId와 일치해야 하고 처리 재시도에도 유지한다. 질문 스냅샷의 카드는 접수 당시 상태를 보존하며 CURRENT를 자동 COMPLETED로 바꾸지 않는다. 새 질문·다음 인텐트 질문 생성·초안 생성으로 전환하면 스냅샷은 null 또는 생략한다. 평가 결과로 바뀌는 목록은 새 질문 응답에 반영한다. 과거 응답에 스냅샷이 없으면 새로고침 시 일반 처리 안내를 표시하고 임의 질문을 복원하지 않는다. 동일 revision에서 서로 다른 질문·카드·스냅샷을 반환하지 않는다. 이 교차 리소스 정합성은 서버 구현 테스트가 필요하다.
+
+## 사진·영상 기반 작성 (0.12.0)
+
+검토(인텐트 요약)·초안의 **섹션에 첨부한 사진·영상**을 AI가 보고 그 섹션의 단계를 작성하거나 보강한다. 인터뷰 질문 흐름은 그대로다. 사진·영상에서 읽은 내용은 점주 발화와 같은 근거로 쓰되 단계별 인용 검증은 유지한다. 인용 가능한 ID에 미디어 ID(`media:<id>`, 영상 프레임 `media:<id>@<ms>`, 영상 음성 `media:<id>#transcript`)가 추가될 뿐이며 근거 없는 새 단계는 버리고, 기존 단계는 근거 없이 지우지 않는다. 대상 섹션 밖은 바꾸지 않고 검토 요약 문장도 다시 쓰지 않는다.
+
+| 메서드·경로 | 역할 |
+| --- | --- |
+| `POST M/media` purpose `MANUAL_VIDEO` | MP4(H.264/HEVC)·MOV·WebM, 100 MiB·60초 이하. 업로드 때 대표 프레임을 사진으로 저장하고 `posterMediaId`를 반환 |
+| `PUT R/photos` | SECTION 대상에 영상 mediaId도 연결. 응답 항목은 `kind: VIDEO`, `posterMediaId` 추가 |
+| `PUT M/draft/content` | 섹션 `photos`에 영상 연결(근무 구조 사진은 사진만) |
+| `POST R/media-writing` | `{expectedRevision, sectionId}` → 202, 검토 PROCESSING(`processing.kind=MEDIA_WRITING`). 실패는 검토 ERROR, 기존 `R/retries`로 재시도 |
+| `POST M/draft/corrections` `input.method=MEDIA` | 초안 섹션 작성. 기존 초안 정정(0.10.0) 리소스·잠금·조회·재시도를 그대로 쓰며 `target.kind=SECTION`만 허용 |
+
+초안 쪽은 새 endpoint 대신 정정 리소스를 확장했다. 초안당 RUNNING 하나, 처리 중 편집·게시 409, 결과 적용 시 versionId·baseRevision·작업 ID 재검사, 재시도 규칙이 모두 같아 프론트는 하나의 비동기 패턴만 다룬다. 검토 쪽은 정정이 섹션 단위가 아니어서 별도 operation을 두었지만 처리 상태·재시도·잠금·revision 규칙은 정정과 같다. 결과 화면의 확인·수정·재시도는 기존 confirmations·corrections·retries를 쓴다. 섹션에 사진·영상이 없거나 섹션이 이 검토에 없으면 422 VALIDATION_ERROR(sectionId)이며 새 오류 코드는 없다.
+
+**영상은 AI 입력용**이다. 서버는 업로드 때 뽑은 대표 프레임을 별도 사진으로 저장하고, 근무자 화면(게시본 목록·상세)·초안 미리보기·게시 응답에는 그 사진만 `mediaId`로 내보낸다. 점주용 검토·초안 응답만 영상 항목을 `mediaId=영상, kind=VIDEO, posterMediaId`로 보여 준다. 사진 항목 모양은 0.11.0과 같아 기존 사진 전용 클라이언트는 영향이 없다. 요청의 `kind`·`posterMediaId`는 생략할 수 있고 보내도 서버가 파일로 다시 정한다(조회 응답 왕복 편집 허용). 대표 프레임 ID를 단독 사진으로 연결하거나 영상 바이트를 조회할 수는 없다.
+
+작업 실행: 섹션의 사진(긴 변 2048px JPEG로 축소)·제목·설명, 영상은 프레임 샘플과 음성 전사(실패하면 프레임만)로 바꿔 넣는다. 작업당 영상 2개까지 해석하고 나머지·원본이 정리된 영상은 대표 프레임 사진을 쓴다. 이미지 16장·32 MiB, 항목 20개 상한을 넘는 것은 표시 순서대로 뺀다. 작업 lease는 전사 2회 + 작성 1회 기준 900초다. 영상 원본은 작성 접수 때 보관을 연장하고 그 뒤 보관 정리 대상이며, 정리돼도 연결과 대표 프레임은 남는다.
+
+삭제: 연결된 영상과 그 대표 프레임은 삭제할 수 없다(409 MEDIA_IN_USE). 목록에서 빼면 사진만 빠지고 작성한 업무 단계는 그대로 남는다. 연결이 모두 풀린 영상을 삭제하면 대표 프레임도 함께 정리된다. DB 변경은 migration 0043(`manual_media.poster_media_id`·VIDEO, `manual_photo_attachments.video_media_id`, 정정 입력 MEDIA, 작업 종류 REVIEW_MEDIA_WRITING·DRAFT_MEDIA_WRITING, 검토 처리 MEDIA_WRITING)이다.
+
+Figma 근거: [섹션 사진 첨부](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-2979)·[777-3041](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3041)·[777-3009](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3009) "사진은 연결된 업무 내용과 함께 표시돼요", [가져오기](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3360) 카메라·앨범·파일, [삭제](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3464) "사진만 삭제돼요. 작성한 업무 내용은 그대로 유지돼요.", [근무자 미리보기](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3203)·[777-3228](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=777-3228), [업무 상세](https://www.figma.com/design/ZaFHresnBXJ1h98Xl1AUDj?node-id=330-2865) "위치 사진 2장". 영상 업로드·AI 자동 작성 화면은 Figma에 없어 기존 사진 첨부 흐름을 최소로 확장했다. 단계별 출처 배지(사진·영상에서 확인)는 사용자 결정 대기로 계약에 넣지 않았다.
