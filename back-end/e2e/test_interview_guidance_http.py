@@ -63,3 +63,47 @@ def test_guidance_and_answer_snapshot_are_committed_and_stable_over_http(real_db
         original = case.turns(state["id"])[0]
         assert original.guidance_cards == question["guidanceCards"]
         assert case.get(state["id"])["questions"] == following["questions"]
+
+
+def omitted_item_provider():
+    """Script ID reappearance; this fixture does not test model semantic quality."""
+    from app.ai.fake import FakeAiProvider
+
+    def question(data):
+        if data["depth"] == 0:
+            items = [{"id": None, "label": label, "description": None, "status": "PENDING"}
+                     for label in ("재고 정리", "시재 점검")]
+        elif data["depth"] == 1:
+            items = data["previous_cards"][0]["items"][:1]
+        else:
+            # Recover the omitted ID exclusively from actual supplied history.
+            items = data["previous_cards"][-1]["items"]
+        return {"question": "매장 업무를 알려 주세요.", "guidance": None,
+                "guidanceCards": [{"type": "PROGRESS_CHECKLIST", "title": "실제 업무",
+                                   "items": items, "footer": None}]}
+
+    return FakeAiProvider().on("generate_question", question).on(
+        "judge_sufficiency", lambda _data: {
+            "sufficient": False, "probability": 0.2, "missing_aspects": ["시재 점검 순서"]})
+
+
+def test_omitted_item_identity_is_restored_from_committed_history(real_db, tmp_path):
+    with (scenario_server(tmp_path, "e2e.test_interview_guidance_http:omitted_item_provider") as origin,
+          interview_case(real_db, origin) as case):
+        started = case.start()
+        state = case.wait(started["id"], lambda body: body["phase"] == "COLLECTING")
+        first = state["questions"][0]
+        response = case.answer(state)
+        assert response.status_code == 202, response.text
+        state = case.wait(state["id"], lambda body: body["phase"] == "COLLECTING")
+        second = state["questions"][0]
+        assert len(second["guidanceCards"][0]["items"]) == 1
+        response = case.answer(state)
+        assert response.status_code == 202, response.text
+        state = case.wait(state["id"], lambda body: body["phase"] == "COLLECTING")
+        third = state["questions"][0]
+        assert third["guidanceCards"] == first["guidanceCards"]
+        questions = [turn for turn in case.turns(state["id"]) if turn.turn_kind == "QUESTION"]
+        assert [turn.guidance_cards for turn in questions] == [
+            first["guidanceCards"], second["guidanceCards"], third["guidanceCards"]]
+        assert case.get(state["id"])["questions"] == state["questions"]

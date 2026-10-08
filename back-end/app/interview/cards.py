@@ -1,7 +1,7 @@
 """Pure question-card validation and stable server identifier assignment.
 
-Only the same-intent history supplied to this generation is an ID authority. Text and
-position never identify a card or an item. Call once while persisting a question.
+Only the same-intent stored question history is an ID authority. Text and position
+never identify a card or an item. Call once while persisting a question.
 """
 from uuid import UUID, uuid4
 
@@ -10,7 +10,6 @@ from app.ai.schemas import RawQuestionCard
 
 
 def normalize_question_cards(raw_cards, previous_cards=()) -> list[dict]:
-    history = {}
     owners = {}
     for card in previous_cards:
         try:
@@ -19,11 +18,10 @@ def normalize_question_cards(raw_cards, previous_cards=()) -> list[dict]:
                 continue
             for item in card["items"]:
                 UUID(item["id"])
-                # question_context supplies newest cards first. An item may have
+                # Stored question history supplies newest cards first. An item may have
                 # belonged to older cards before a merge; those obsolete owners
                 # must not make the current card ambiguous on every later turn.
                 owners.setdefault(item["id"], {(card["type"], card["id"])})
-            history[card["id"]] = card
         except (KeyError, TypeError, ValueError):
             continue
     result, used_items, used_cards = [], set(), set()
@@ -55,7 +53,10 @@ def normalize_question_cards(raw_cards, previous_cards=()) -> list[dict]:
             candidates = {owner for item_id in ids for typ, owner in owners[item_id] if typ == card.type}
             card_id = next(iter(candidates)) if len(candidates) == 1 else str(uuid4())
             if card_id in used_cards:
-                continue
+                # Regrouping can split a previous LIST into multiple cards. Its
+                # first group keeps the card ID; further groups get new card IDs,
+                # while each distinct item retains its original ID.
+                card_id = str(uuid4())
             items = []
             for item in card.items:
                 saved = {"id": item.id or str(uuid4()), "label": clean_text(item.label),

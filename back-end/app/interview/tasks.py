@@ -42,6 +42,7 @@ from app.interview.flow import (
     apply_judgement,
     available_shifts,
     fallback_question,
+    question_card_history,
     shift_summary_pending,
     store_context,
     store_of,
@@ -80,12 +81,17 @@ def _set_error(session: InterviewSession) -> None:
 
 
 def _question_execute(ctx: TaskContext) -> GeneratedQuestion:
-    return get_ai_provider().generate_question(QuestionRequest.model_validate(ctx.payload["request"]))
+    request_data = dict(ctx.payload["request"])
+    with session_scope() as db:
+        request_data["previous_cards"] = question_card_history(
+            db, ctx.subject_id, ctx.payload["intentId"], ctx.payload["depth"])
+    return get_ai_provider().generate_question(QuestionRequest.model_validate(request_data))
 
 
 def _question_apply(db: Session, ctx: TaskContext, result: GeneratedQuestion) -> None:
     session = _waiting_session(db, ctx)
-    cards = normalize_question_cards(result.guidance_cards, ctx.payload["request"].get("previous_cards", ()))
+    history = question_card_history(db, session.id, ctx.payload["intentId"], ctx.payload["depth"])
+    cards = normalize_question_cards(result.guidance_cards, history)
     write_question(db, session, ctx.payload, result.text, result.meta.config_version,
                    guidance=result.guidance, guidance_cards=cards)
 

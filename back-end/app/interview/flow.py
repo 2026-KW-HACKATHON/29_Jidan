@@ -150,31 +150,31 @@ def _set_processing(session: InterviewSession, kind: str | None, task_id: str | 
 # --- question generation --------------------------------------------------------------------
 
 
-def question_context(db: Session, session_id: str, intent_id: str) -> dict[str, Any]:
-    """Only this intent's stored, verified cards/evaluation authorize the next generation.
+def question_card_history(db: Session, session_id: str, intent_id: str, before_depth: int) -> list[dict]:
+    """Saved same-intent question cards, newest first, used only as ID authority.
 
-    Keep the latest copy per card, including a checklist omitted in intervening turns.
-    At most five cards bound context size below the task payload limit.
+    Do not fill a current card with older items: those snapshots can contain
+    omitted or corrected work and are not independent evidence of current facts.
     """
-    cards, seen, progress_found = [], set(), False
+    answered_questions = select(InterviewTurn.reply_to_question_turn_id).where(
+        InterviewTurn.session_id == session_id, InterviewTurn.intent_id == intent_id,
+        InterviewTurn.turn_kind == "ANSWER",
+    )
     turns = db.scalars(select(InterviewTurn).where(
         InterviewTurn.session_id == session_id, InterviewTurn.intent_id == intent_id,
         InterviewTurn.turn_kind == "QUESTION",
+        InterviewTurn.depth < before_depth, InterviewTurn.id.in_(answered_questions),
     ).order_by(InterviewTurn.turn_no.desc()))
-    for turn in turns:
-        for card in turn.guidance_cards or []:
-            if card["type"] not in {"LIST", "PROGRESS_CHECKLIST"} or card["id"] in seen:
-                continue
-            if card["type"] == "PROGRESS_CHECKLIST" and progress_found:
-                continue
-            cards.append(deepcopy(card))
-            seen.add(card["id"])
-            progress_found |= card["type"] == "PROGRESS_CHECKLIST"
-    # A later full LIST-only turn must not hide the earlier progress checklist.
-    latest_progress = next((card for card in cards if card["type"] == "PROGRESS_CHECKLIST"), None)
-    cards = cards[:5]
-    if latest_progress is not None and latest_progress not in cards:
-        cards = cards[:4] + [latest_progress]
+    return [deepcopy(card) for turn in turns for card in turn.guidance_cards or []
+            if card["type"] in {"LIST", "PROGRESS_CHECKLIST"}]
+
+
+def question_context(db: Session, session_id: str, intent_id: str) -> dict[str, Any]:
+    """Snapshot the evaluation; immutable answered card history is read at execution.
+
+    Existing session/intent/depth task fields fix its boundary without copying
+    potentially large historical cards into the task payload.
+    """
     evaluation = db.scalars(select(InterviewEvaluation).where(
         InterviewEvaluation.session_id == session_id, InterviewEvaluation.intent_id == intent_id,
         InterviewEvaluation.applied_at.is_not(None),
@@ -184,7 +184,7 @@ def question_context(db: Session, session_id: str, intent_id: str) -> dict[str, 
         judgement = QuestionEvaluation(sufficient=not evaluation.needs_follow_up,
                                        probability=evaluation.probability,
                                        missing_aspects=tuple(evaluation.missing_aspects))
-    return {"previous_cards": tuple(cards), "evaluation": judgement}
+    return {"previous_cards": (), "evaluation": judgement}
 
 
 def enqueue_base_question(db: Session, session: InterviewSession, intent: InterviewIntent, store: Store) -> None:

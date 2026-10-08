@@ -1,5 +1,7 @@
 """Persisted cards, scoped generation snapshots and evaluation-only answer snapshots."""
+import json
 from copy import deepcopy
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -83,8 +85,94 @@ def test_question_context_keeps_last_cards_after_omitted_turn_and_evaluation_sna
         task = db.scalars(select(BackgroundTask).where(
             BackgroundTask.subject_id == sid, BackgroundTask.kind == "FOLLOWUP_GENERATION"
         ).order_by(BackgroundTask.created_at.desc())).first()
-        assert task.payload["request"]["previous_cards"] == initial
+        assert task.payload["request"]["previous_cards"] == []
     assert state["questions"][0]["depth"] == 2
+
+
+def test_omitted_item_uses_saved_history_without_rewriting_latest_card(ctx, fake_ai, monkeypatch):
+    from app.interview.flow import question_card_history
+
+    monkeypatch.setenv("INTERVIEW_GUIDANCE_RESPONSES", "on")
+    initial = raw_question()
+    initial["guidanceCards"][0]["items"].append(
+        {"id": None, "label": "시재 점검", "description": None, "status": "PENDING"})
+    fake_ai.script("generate_question", FakeOutcome.ok(initial))
+    sid = ctx.started()
+    first = ctx.get(sid)["questions"][0]
+    original = first["guidanceCards"][0]
+    partial = raw_question()
+    partial["guidanceCards"][0]["items"][0]["id"] = original["items"][0]["id"]
+    fake_ai.script("generate_question", FakeOutcome.ok(partial))
+    fake_ai.script("judge_sufficiency", FakeOutcome.ok(INSUFFICIENT), FakeOutcome.ok(INSUFFICIENT))
+    second = ctx.answer_and_run(sid)["questions"][0]
+    returning = deepcopy(initial)
+    for item, saved in zip(returning["guidanceCards"][0]["items"], original["items"]):
+        item["id"] = saved["id"]
+    fake_ai.script("generate_question", FakeOutcome.ok(returning))
+    third = ctx.answer_and_run(sid)["questions"][0]
+    assert third["guidanceCards"] == first["guidanceCards"]
+    # Actual immutable snapshots remain distinct, newest first. Omitted work is
+    # not synthesized into the latest card to manufacture current facts.
+    assert fake_ai.calls_for("generate_question")[-1].data["previous_cards"] == [
+        *second["guidanceCards"], *first["guidanceCards"]]
+    assert len(second["guidanceCards"][0]["items"]) == 1
+    with Session(ctx.engine) as db:
+        first_turn = db.get(InterviewTurn, first["id"])
+        history = question_card_history(db, sid, first_turn.intent_id, third["depth"])
+        assert history == [*second["guidanceCards"], *first["guidanceCards"]]
+        assert question_card_history(db, str(uuid4()), first_turn.intent_id, third["depth"]) == []
+        assert question_card_history(db, sid, str(uuid4()), third["depth"]) == []
+        assert question_card_history(db, sid, first_turn.intent_id, 1) == first["guidanceCards"]
+        assert first_turn.guidance_cards == first["guidanceCards"]
+        assert db.get(InterviewTurn, second["id"]).guidance_cards == second["guidanceCards"]
+    assert ctx.get(sid)["questions"][0] == third
+
+
+def test_question_history_replay_excludes_future_answered_turns(ctx, fake_ai, monkeypatch):
+    from app.interview.tasks import _question_execute
+    from app.tasks import TaskContext
+
+    monkeypatch.setenv("INTERVIEW_GUIDANCE_RESPONSES", "on")
+    fake_ai.script("generate_question", *[FakeOutcome.ok(raw_question())] * 3)
+    fake_ai.script("judge_sufficiency", *[FakeOutcome.ok(INSUFFICIENT)] * 2)
+    sid = ctx.started()
+    first = ctx.get(sid)["questions"][0]
+    ctx.answer_and_run(sid)
+    original_request = deepcopy(fake_ai.calls_for("generate_question")[-1].data)
+    with Session(ctx.engine) as db:
+        task = db.scalars(select(BackgroundTask).where(
+            BackgroundTask.subject_id == sid, BackgroundTask.kind == "FOLLOWUP_GENERATION"
+        )).one()
+        task_ctx = TaskContext(task.id, task.kind, sid, task.attempt, task.input_revision, task.payload, 1)
+    ctx.answer_and_run(sid)
+    _question_execute(task_ctx)
+    assert fake_ai.calls_for("generate_question")[-1].data == original_request
+    assert original_request["previous_cards"] == first["guidanceCards"]
+
+
+def test_large_card_history_is_rebuilt_without_task_payload_duplication(ctx, fake_ai, monkeypatch):
+    monkeypatch.setenv("INTERVIEW_GUIDANCE_RESPONSES", "on")
+    large = raw_question(cards=False)
+    large["guidanceCards"] = [
+        {"type": "LIST", "title": "설명", "footer": None,
+         "items": [{"id": None, "label": f"예시 {i}", "description": "가" * 1000, "status": None}
+                   for i in range(50)]}
+        for _ in range(5)]
+    fake_ai.script("generate_question", *[FakeOutcome.ok(large)] * 3)
+    fake_ai.script("judge_sufficiency", *[FakeOutcome.ok(INSUFFICIENT)] * 2)
+    sid = ctx.started()
+    ctx.answer_and_run(sid)
+    ctx.answer_and_run(sid)
+    history = fake_ai.calls_for("generate_question")[-1].data["previous_cards"]
+    assert len(history) == 10  # output max-five does not truncate AI input history
+    assert len(json.dumps(history, ensure_ascii=False).encode()) > 1_000_000
+    with Session(ctx.engine) as db:
+        tasks = list(db.scalars(select(BackgroundTask).where(
+            BackgroundTask.subject_id == sid, BackgroundTask.kind == "FOLLOWUP_GENERATION")))
+        assert len(tasks) == 2
+        for task in tasks:
+            assert task.payload["request"]["previous_cards"] == []
+            assert len(json.dumps(task.payload, ensure_ascii=False).encode()) < 100_000
 
 
 @pytest.mark.parametrize("value", ["true", "false", "", "invalid"])

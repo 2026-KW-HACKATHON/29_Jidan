@@ -14,7 +14,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-08.1"  # Atomic missing aspects; a probe asks one sub-item (Q-INT-1).
+PROMPT_VERSION = "2026-10-08.4-t1"  # Atomic operation integration snapshot.
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.
@@ -66,13 +66,28 @@ INSTRUCTIONS: dict[str, str] = {
 - question, nullable guidance, guidanceCards를 함께 생성한다. 카드가 불필요하면 빈 배열이다.
 - 카드는 LIST(일반 예시/설명) 또는 PROGRESS_CHECKLIST(점주가 실제로 확인한 업무)만 쓴다.
   예시를 실제 업무로 확정하지 않는다. 선택형 입력이나 사진 추천을 만들지 않는다.
+- PROGRESS_CHECKLIST의 각 업무는 dialogue의 점주 답변에서 실제로 한다고 확인되어야 한다. 질문·안내·LIST에
+  나온 예시, 업종, 이전 카드에 이름이 있다는 것만으로 실제 업무를 만들지 않는다. 근거가 없으면 LIST의
+  예시로 명확히 표시하거나 카드를 생략한다. 점주가 하지 않는다고 정정한 업무를 과거 카드에서 되살리지 않는다.
 - 카드 ID는 만들지 않는다. item id는 previous_cards에 있는 같은 항목의 ID를 유지하고 새 항목은 null이다.
-  표현 수정·재정렬에도 같은 ID를 쓴다. section ID나 new-N을 item ID로 쓰지 않는다.
+  표현 수정·재정렬·카드 재구성·잠시 생략했다 재등장한 항목도 허용된 이력에 있으면 같은 ID를 쓴다.
+  같은 글자라도 다른 업무이면 ID를 재사용하지 않는다. LIST 예시를 실제 업무로 확인한 경우 진행 카드에는
+  새 항목(null)으로 넣는다. section ID나 new-N을 item ID로 쓰지 않는다.
 - LIST item status는 null이다. 진행 카드는 최대 한 개, CURRENT도 최대 한 개다.
-  전체 업무 목록을 묻는 질문은 CURRENT가 없어도 된다.
+  CURRENT는 생성한 question에서 지금 확인하는 실제 업무에만 붙인다. 목록의 첫 항목이나 이전 CURRENT를
+  자동 선택하지 않는다. 전체 업무 목록을 묻는 질문은 CURRENT가 없어도 된다.
 - 상태는 읽기 전용이다. 답변 접수만으로 COMPLETED로 바꾸지 않는다. dialogue와 evaluation을 근거로
   확보한 항목만 COMPLETED, 부족한 채 확인을 마친 항목은 NEEDS_DETAIL로 남긴다.
+- PENDING은 아직 확인하지 않은 실제 업무다. 현재 묻는 업무는 부족하더라도 CURRENT이며, COMPLETED는
+  이름을 말했다는 뜻이 아니라 그 업무에 필요한 내용이 확보됐다는 뜻이다. 평가의 missing_aspects에 남은
+  업무를 완료로 표시하지 않는다. evaluation은 인텐트 전체의 판단이므로 모든 항목에 같은 상태를 복사하지 않는다.
+- 예를 들어 점주가 "재고 정리와 시재 점검을 해요"라고만 답했고 시재 점검 순서를 묻는다면, 재고 정리는
+  이름만 확보됐으므로 PENDING, 시재 점검은 CURRENT다. 재고 정리의 필요한 내용까지 앞서 확보된 경우에만
+  COMPLETED다. "청소 같은 일을 하나요?"라는 AI의 예시만 있고 점주 확인이 없으면 청소는 진행 항목이 아니다.
 - context는 다른 완료 주제의 요약이고 현재 주제의 실제 답변은 dialogue다. 이전 카드는 사실의 독립 근거가 아니다.
+- previous_cards는 현재 질문보다 앞서 답변된 질문에 저장된 카드 스냅샷 전체이며 최신순이다. 같은 카드가
+  여러 번 나타날 수 있다. 과거 항목은 동일 ID를 찾는 근거이지 지금도 실제로 하는 업무라는 근거가 아니다.
+  최신 카드에 과거 항목을 자동으로 합치지 말고 현재 dialogue와 평가에 맞는 항목만 출력한다.
 점주에게 할 질문을 정확히 한 개 만든다.
 - kind=BASE: 인텐트의 base_question이 묻는 내용을 바꾸지 말고, 이전 대화 문맥에 맞게 자연스럽게 다듬는다.
   이전 답변에 이 인텐트 내용이 일부 나왔다면 그것을 확인하는 형태로 묻는다.

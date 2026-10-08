@@ -92,6 +92,66 @@ def test_merged_list_keeps_its_id_on_subsequent_identical_turns():
         history = [repeated, *history]
 
 
+def test_split_list_keeps_all_items_and_stabilizes_new_card_ids():
+    original = normalize_question_cards([card(count=2)])[0]
+    split = [card(), card()]
+    for candidate, item in zip(split, original["items"]):
+        candidate["items"][0]["id"] = item["id"]
+    saved = normalize_question_cards(split, [original])
+    assert len(saved) == 2
+    assert saved[0]["id"] == original["id"]
+    assert saved[1]["id"] != original["id"]
+    assert [c["items"][0]["id"] for c in saved] == [i["id"] for i in original["items"]]
+    assert normalize_question_cards(split, [*saved, original]) == saved
+
+
+def test_duplicate_item_cannot_be_reused_by_another_card():
+    original = normalize_question_cards([card()])[0]
+    candidate = card()
+    candidate["items"][0]["id"] = original["items"][0]["id"]
+    saved = normalize_question_cards([candidate, deepcopy(candidate)], [original])
+    assert len(saved) == 1
+    assert saved[0]["id"] == original["id"]
+
+
+def test_progress_item_reappears_with_same_id_from_allowed_history():
+    original = normalize_question_cards([card("PROGRESS_CHECKLIST", "PENDING", 2)])[0]
+    current = card("PROGRESS_CHECKLIST", "CURRENT")
+    current["items"][0]["id"] = original["items"][0]["id"]
+    latest = normalize_question_cards([current], [original])[0]
+    returning = card("PROGRESS_CHECKLIST", "PENDING", 2)
+    for candidate, item in zip(returning["items"], reversed(original["items"])):
+        candidate["id"] = item["id"]
+    saved = normalize_question_cards([returning], [latest, original])[0]
+    assert saved["id"] == original["id"]
+    assert [i["id"] for i in saved["items"]] == [i["id"] for i in reversed(original["items"])]
+
+
+def test_example_is_not_promoted_using_its_list_identity():
+    # A scripted output checks the deterministic provenance boundary only; it
+    # does not demonstrate that a model understood the owner's actual answer.
+    example = card()
+    example["items"][0]["label"] = "청소"
+    previous = normalize_question_cards([example])[0]
+    invented = card("PROGRESS_CHECKLIST", "COMPLETED")
+    invented["items"][0].update(id=previous["items"][0]["id"], label="청소")
+    assert normalize_question_cards([invented, example], [previous])[0]["type"] == "LIST"
+    assert len(normalize_question_cards([invented, example], [previous])) == 1
+
+
+def test_grounded_checklist_preserves_distinct_supplied_statuses():
+    # Supplied example: only inventory details are complete; this question asks
+    # about the till; an unfinished reviewed item remains NEEDS_DETAIL.
+    raw = card("PROGRESS_CHECKLIST", "PENDING", 4)
+    statuses = ["COMPLETED", "CURRENT", "NEEDS_DETAIL", "PENDING"]
+    labels = ["재고 정리", "시재 점검", "마감 정산", "물품 입고"]
+    for item, label, status in zip(raw["items"], labels, statuses):
+        item.update(label=label, status=status)
+    saved = normalize_question_cards([raw])[0]
+    assert [i["status"] for i in saved["items"]] == statuses
+    assert [i["label"] for i in saved["items"]] == labels
+
+
 @pytest.mark.parametrize("field,value", [("title", " "), ("footer", "\x00"), ("title", "가" * 201)])
 def test_invalid_card_text(field, value):
     bad = card()
