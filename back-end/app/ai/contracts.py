@@ -175,6 +175,7 @@ class IntentSummaryRequest(_Model):
     intent: IntentBrief
     dialogue: tuple[DialogueTurn, ...] = Field(min_length=1, max_length=MAX_DIALOGUE_TURNS)
     needs_detail: bool
+    missing_aspects: tuple[str, ...] = Field(default=(), max_length=MAX_ASPECTS)
     available_shifts: tuple[ShiftItem, ...] = Field(default=(), max_length=MAX_SHIFTS)
     store: StoreContext | None = None
 

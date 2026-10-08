@@ -98,6 +98,8 @@ INSTRUCTIONS: dict[str, str] = {
 - 공통 업무는 COMMON_TASK, 규정은 RULE, 설비 사용법은 EQUIPMENT, 특정 근무조 업무는 SHIFT_TASK.
 - 시간은 HH:MM. 점주가 말하지 않은 시간은 null, 단계를 모르면 steps는 빈 배열로 두고 해당 값마다
   missing_information 항목(대상·필드·설명)을 넣는다. 확정된 값에는 missing_information을 붙이지 않는다.
+- missing_aspects는 마지막 평가에서 남은 부족 측면이다. 각 측면을 해당 대상의 missing_information에
+  보존하고 summary에도 간결하게 알린다. 횟수 한도 종료는 정보 확보가 아니다.
 - needs_detail=true이면 아직 부족하다고 판단된 인텐트다. 아는 범위만 정리하고 부족한 값을 미확정으로 남긴다.
 - 점주가 모르겠다고 했거나 답하지 않은 값은 미확정(null/빈 배열 + missing_information)이다. 점주가 "따로 정한
   규칙 없음"이라고 분명히 말한 세부는 그 사실을 그대로 적는다(지어낸 기준으로 채우지 않는다).
