@@ -30,6 +30,10 @@ from app.ai.contracts import (
     ImageInput,
     IntentSummary,
     IntentSummaryRequest,
+    PhotoSuggestion,
+    PhotoSuggestionItem,
+    PhotoSuggestions,
+    PhotoSuggestionsRequest,
     QaAnswer,
     QaRequest,
     QuestionRequest,
@@ -57,6 +61,7 @@ from app.ai.schemas import (
 from app.ai.validation import (
     build_citations,
     check_revision_scope,
+    check_section_identity,
     dangling_shift_references,
     invalid,
     known_ids,
@@ -178,6 +183,25 @@ class AiProvider(ABC):
             guidance_cards=tuple(card.model_dump() for card in raw.guidanceCards), meta=self.meta(),
         )
 
+    def suggest_review_photos(self, request: PhotoSuggestionsRequest) -> PhotoSuggestions:
+        raw = self._structured("suggest_review_photos", request.model_dump(mode="json"))
+        suggestions = []
+        for suggestion in raw.suggestions:
+            title = clean_text(suggestion.title)
+            footer = clean_text(suggestion.footer) if suggestion.footer is not None else None
+            if not title or footer == "":
+                raise invalid("blank_photo_suggestion")
+            items = []
+            for item in suggestion.items:
+                label = clean_text(item.label)
+                description = clean_text(item.description) if item.description is not None else None
+                if not label or description == "":
+                    raise invalid("blank_photo_suggestion")
+                items.append(PhotoSuggestionItem(label=label, description=description))
+            suggestions.append(PhotoSuggestion(section_id=suggestion.sectionId, title=title,
+                                               items=tuple(items), footer=footer))
+        return PhotoSuggestions(suggestions=tuple(suggestions), meta=self.meta())
+
     def summarize_intent(self, request: IntentSummaryRequest) -> IntentSummary:
         raw: RawSummary = self._structured("summarize_intent", request.model_dump(mode="json"))
         structure = materialize_structure(
@@ -221,6 +245,7 @@ class AiProvider(ABC):
                 return StructureRevision(outcome="REFERENCE_CONFLICT", meta=meta)
             raise
         check_revision_scope(current, structure, target.kind, target.target_id)
+        check_section_identity(current, structure, request.instruction, target.kind, target.target_id)
         if dangling_shift_references(structure, external_ids):
             return StructureRevision(outcome="REFERENCE_CONFLICT", meta=meta)
         summary = None
@@ -334,6 +359,9 @@ class FallbackAiProvider(AiProvider):
 
     def generate_question(self, request):
         return self._delegate("generate_question", request)
+
+    def suggest_review_photos(self, request):
+        return self._delegate("suggest_review_photos", request)
 
     def summarize_intent(self, request):
         return self._delegate("summarize_intent", request)

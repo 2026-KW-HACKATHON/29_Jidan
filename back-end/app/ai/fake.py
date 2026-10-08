@@ -31,7 +31,7 @@ from app.ai.errors import AiError, AiErrorCode
 from app.ai.provider import AiProvider
 
 OPERATIONS = (
-    "judge_sufficiency", "generate_question", "summarize_intent", "revise_structure",
+    "suggest_review_photos", "judge_sufficiency", "generate_question", "summarize_intent", "revise_structure",
     "compose_draft", "answer_question", "transcribe",
 )
 
@@ -163,6 +163,7 @@ def _default_transcript(_request):
 DEFAULTS: dict[str, Callable[[Any], Any]] = {
     "judge_sufficiency": _default_judge,
     "generate_question": _default_question,
+    "suggest_review_photos": lambda _data: {"suggestions": []},
     "summarize_intent": _default_summary,
     "revise_structure": _default_revision,
     "compose_draft": _default_draft,

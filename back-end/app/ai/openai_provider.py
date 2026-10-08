@@ -31,6 +31,7 @@ from app.ai.silence import pcm_wav_is_silent
 MAX_OUTPUT_TOKENS = {
     "judge_sufficiency": 4000,
     "generate_question": 8000,
+    "suggest_review_photos": 8000,
     "summarize_intent": 16000,
     "revise_structure": 32000,
     "compose_draft": 32000,

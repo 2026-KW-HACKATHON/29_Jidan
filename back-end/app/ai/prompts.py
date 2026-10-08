@@ -109,6 +109,8 @@ INSTRUCTIONS: dict[str, str] = {
 current 내용에 점주의 정정 지시(instruction)를 반영한다.
 - target이 SHIFT/SECTION이면 그 대상만 고친다. 다른 기존 항목은 id·내용을 그대로 돌려준다. 새 항목이 필요하면
   new-1 같은 ref로 추가할 수 있다. target이 MANUAL이면 전체 중 지시와 관련된 부분만 고친다.
+- 명칭·설명·절차 수정은 기존 섹션의 같은 id를 유지한다. 새 ID로 대체하지 않는다.
+  삭제는 점주가 명시적으로 요청한 대상에만 적용한다.
 - 기존 항목은 입력의 id를 ref로 그대로 쓴다. 지시와 무관한 내용은 바꾸지 않는다.
 - 무엇을 어떻게 바꾸라는지 모호하거나 대상이 여럿으로 해석되면 추측하지 말고 outcome=CLARIFICATION_REQUIRED.
 - 지시대로 하면 다른 업무가 참조하는 근무조가 사라지는 등 연결이 깨지면 outcome=REFERENCE_CONFLICT.
@@ -124,6 +126,14 @@ current 내용에 점주의 정정 지시(instruction)를 반영한다.
   표현을 다듬거나 순서를 근무 흐름에 맞게 정리할 수 있다. 새 섹션이 꼭 필요하면 new-1 같은 ref로 추가한다.
 - 검토에 없는 사실을 추가하지 않는다. 미확정 값은 그대로 미확정으로 유지하고 missing_information을 넣는다.
 - 근무조가 하나도 없거나 섹션이 하나도 없으면 MANUAL 대상(shifts/sections) 미확정 항목을 넣는다.
+""",
+    "suggest_review_photos": _COMMON + """
+[작업: 저장된 이해 요약의 선택 사진 추천]
+summary와 structure의 실제 섹션을 보고 처음 온 근무자의 이해에 도움이 되는 사진만 추천한다.
+위치·설비 식별·배치 등 시각 정보가 유용할 때만 추천하고, 필요 없으면 suggestions=[]이다.
+각 추천은 입력의 section id를 sectionId로 그대로 사용한다. 서로 다른 섹션은 별도 추천이다.
+사진으로 없는 업무나 사실을 만들지 않는다. 촬영 대상 label과 nullable description, title, nullable footer만 쓴다.
+helpful·상태·revision·attachmentTarget·카드/item ID는 출력하지 않는다. 사진은 필수가 아니다.
 """,
     "answer_question": _COMMON + """
 [작업: 근무자 업무 질문 답변]

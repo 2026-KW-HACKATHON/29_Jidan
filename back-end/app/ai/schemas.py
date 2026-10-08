@@ -112,6 +112,18 @@ QUESTION_SCHEMA = _object({
     "guidance": _string("답변 안내 (2000자 이내)", nullable=True),
     "guidanceCards": _array(QUESTION_CARD_SCHEMA, "질문 안내 카드 최대 5개, 필요 없으면 빈 배열"),
 })
+PHOTO_SUGGESTIONS_SCHEMA = _object({
+    "suggestions": _array(_object({
+        "sectionId": _string("저장된 요약에 있는 section id"),
+        "title": _string("카드 제목"),
+        "items": _array(_object({
+            "label": _string("사진 대상"),
+            "description": _string("촬영 안내", nullable=True),
+        }), "사진 추천 목록"),
+        "footer": _string("하단 안내", nullable=True),
+    }), "도움이 되는 사진이 없으면 빈 배열"),
+})
+
 SUMMARY_SCHEMA = _object({
     "summary": _string("점주가 확인할 이해 요약 (해요체)"),
     "structure": STRUCTURE_SCHEMA,
@@ -206,6 +218,22 @@ class RawQuestion(_Raw):
     guidanceCards: list[RawQuestionCard] = Field(max_length=5)
 
 
+class RawPhotoItem(_Raw):
+    label: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(min_length=1, max_length=1000)
+
+
+class RawPhotoSuggestion(_Raw):
+    sectionId: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=200)
+    items: list[RawPhotoItem] = Field(min_length=1, max_length=50)
+    footer: str | None = Field(min_length=1, max_length=1000)
+
+
+class RawPhotoSuggestions(_Raw):
+    suggestions: list[RawPhotoSuggestion] = Field(max_length=5)
+
+
 def parse_question(value: Any) -> RawQuestion:
     """Validate the question envelope, dropping only independently invalid cards."""
     if not isinstance(value, dict) or set(value) - {"question", "guidance", "guidanceCards"}:
@@ -251,10 +279,11 @@ class RawQa(_Raw):
 
 
 Operation = Literal["judge_sufficiency", "generate_question", "summarize_intent", "revise_structure",
-                    "compose_draft", "answer_question"]
+                    "compose_draft", "answer_question", "suggest_review_photos"]
 
 # operation -> (schema name sent to the provider, JSON Schema, parser)
 OUTPUTS: dict[str, tuple[str, dict[str, Any], type[_Raw]]] = {
+    "suggest_review_photos": ("review_photo_suggestions", PHOTO_SUGGESTIONS_SCHEMA, RawPhotoSuggestions),
     "judge_sufficiency": ("sufficiency_judgement", JUDGE_SCHEMA, RawJudgement),
     "generate_question": ("interview_question", QUESTION_SCHEMA, RawQuestion),
     "summarize_intent": ("intent_summary", SUMMARY_SCHEMA, RawSummary),
