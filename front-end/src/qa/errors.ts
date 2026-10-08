@@ -1,6 +1,6 @@
 import {ApiError} from '../api/client'
 import {ManualError,errorMessage as recordingError} from '../manual/service'
-export const accessLost=(error:unknown)=>error instanceof ApiError&&(error.status===401||error.status===403||error.status===404&&error.code==='RESOURCE_NOT_FOUND')
+export const accessLost=(error:unknown)=>(error instanceof ApiError||error instanceof ManualError)&&(error.status===401||error.status===403||error.status===404&&error.code==='RESOURCE_NOT_FOUND')
 export function qaError(error:unknown):string {
  if(error instanceof ManualError)return recordingError(error)
  const code=error instanceof ApiError?error.code:''
