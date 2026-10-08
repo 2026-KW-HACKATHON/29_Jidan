@@ -83,8 +83,8 @@ from app.ai.validation import (
     invalid,
     known_ids,
     materialize_structure,
-    restore_existing_steps,
     repeats_removed_text,
+    restore_existing_steps,
     same_content,
     same_except_gap_wording,
 )
@@ -489,6 +489,14 @@ class AiProvider(ABC):
             require_manual_level=request.require_manual_level,
         )
         check_revision_scope(current, structure, "SECTION", section.id)
+        # Model output may reorder otherwise identical objects. Only the target's steps may
+        # move: preserve the owner's shift/section order before comparing or storing content.
+        shifts = {item.id: item for item in structure.shifts}
+        sections = {item.id: item for item in structure.sections}
+        structure = structure.model_copy(update={
+            "shifts": tuple(shifts[item.id] for item in current.shifts),
+            "sections": tuple(sections[item.id] for item in current.sections),
+        })
         # Gaps of other targets keep the wording they had (the scope check compares shifts and
         # sections only; a gap's key is fixed by the structure, its text is not).
         kept_gaps = {(m.target, m.target_id, m.field): m.description for m in current.missing_information

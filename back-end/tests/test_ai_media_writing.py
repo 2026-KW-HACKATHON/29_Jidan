@@ -534,3 +534,21 @@ def test_auto_cite_cites_the_first_media_item():
     fake = FakeAiProvider()  # auto_cite on: scripted steps without evidence_ids cite media[0]
     raw = output([*kept(A, B, C), {"ref": "new-1", "instruction": "우유를 앞에 둬요.", "checklist_item": False}])
     assert write(fake, raw).outcome == "APPLIED"
+
+
+@pytest.mark.parametrize("change", [False, True])
+def test_media_writing_preserves_shift_and_section_order(fake, change):
+    current = CURRENT.model_copy(update={"shifts": (*CURRENT.shifts, ShiftItem(
+        id=U(80), name="마감조", start_time="15:00", end_time="23:00", ends_next_day=False))})
+    steps = [*kept(A, B, C)]
+    if change:
+        steps.append(step("new-1", "우유를 앞줄에 놓아요.", [PHOTO]))
+    raw = output(steps, current=current)
+    raw["structure"]["shifts"].reverse()
+    raw["structure"]["sections"].reverse()
+    result = write(fake, raw, request(current=current))
+    assert result.outcome == ("APPLIED" if change else "NO_CHANGE")
+    if change:
+        assert [s.id for s in result.structure.shifts] == [s.id for s in current.shifts]
+        assert [s.id for s in result.structure.sections] == [s.id for s in current.sections]
+        assert result.structure.sections[1] == current.sections[1]
