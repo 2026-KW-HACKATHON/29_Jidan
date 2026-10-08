@@ -34,3 +34,13 @@ it('답변 질문 스냅샷은 평가 중에만 표시하며 미답변 스냅샷
  expect(valid('ManualInterviewSession',{...session,lastAnsweredQuestion:{...snapshot,answered:false}})).toBe(false)
  expect(valid('ManualInterviewSession',{...interviewFixture,lastAnsweredQuestion:snapshot})).toBe(false)
 })
+
+it('기존 SECTION 대상과 세 카드 유형의 합산 상한을 유지하고 LIST null 상태를 거절한다',()=>{
+ const list={id:id(),type:'LIST',title:'예시',items:[item]}
+ const photo={id:id(),type:'PHOTO_SUGGESTIONS',title:'추천',items:[{id:id(),label:'위치'}],attachmentTarget:{intentId:id(),target:'SECTION',sectionId:id()}}
+ expect(valid('ManualGuidanceCard',photo)).toBe(true)
+ expect(valid('ManualGuidanceCard',{...list,items:[{...item,status:null}]})).toBe(false)
+ const cards=[checklist,list,...Array.from({length:3},()=>({...photo,id:id()}))]
+ expect(valid('ManualInterviewQuestion',{...interviewFixture.questions[0],guidanceCards:cards})).toBe(true)
+ expect(valid('ManualInterviewQuestion',{...interviewFixture.questions[0],guidanceCards:[...cards,{...photo,id:id()}]})).toBe(false)
+})

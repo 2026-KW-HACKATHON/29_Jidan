@@ -1,6 +1,7 @@
 import './dialogTestSetup'
 import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
+import {ManualError} from './service'
 import {ManualReviewPhotos} from './ManualReviewPhotos'
 import {ManualPhoto} from './ManualPhoto'
 import {createManualPreviewService} from '../dev/manualPreviewService'
@@ -42,4 +43,27 @@ it('연결 실패 전까지 로컬 사진을 표시하고 첨부 취소·이탈 
  await screen.findByRole('button',{name:'이 첨부 취소'});expect(screen.getByRole('img',{name:'사진 1 연결 전 미리보기'})).toBeInTheDocument()
  fireEvent.click(screen.getByRole('button',{name:'이 첨부 취소'}));expect(screen.queryByRole('img',{name:'사진 1 연결 전 미리보기'})).not.toBeInTheDocument();expect(URL.revokeObjectURL).toHaveBeenCalled()
  unmount();expect(call.mock.calls.some(c=>c[0]==='deleteUnusedManualMedia')).toBe(false)
+})
+
+it('revision 충돌은 첨부 재시도 버튼으로 최신 요약을 읽고 같은 업로드를 연결한다',async()=>{
+ const service=createManualPreviewService(true,'review'),original=service.call.bind(service),onUpdate=vi.fn();let conflict=true
+ const call=vi.spyOn(service,'call').mockImplementation(async(...args)=>{if(args[0]==='replaceManualInterviewReviewPhotos'&&conflict){conflict=false;throw new ManualError('REVISION_CONFLICT')}return original(...args)})
+ render(<ManualReviewPhotos service={service} sessionId={interviewFixture.id} review={reviewFixture} target={{target:'WORK_STRUCTURE',sectionId:null}} onUpdate={onUpdate} onClose={vi.fn()}/>)
+ fireEvent.change(screen.getByLabelText('첨부할 사진'),{target:{files:[new File(['p'],'p.png',{type:'image/png'})]}})
+ fireEvent.click(await screen.findByRole('button',{name:'첨부 요청 다시 시도'}))
+ await waitFor(()=>expect(onUpdate).toHaveBeenCalledOnce())
+ expect(call.mock.calls.filter(([name])=>name==='uploadManualMedia')).toHaveLength(1)
+ expect(call.mock.calls.filter(([name])=>name==='getManualIntentReview')).toHaveLength(1)
+ const links=call.mock.calls.filter(([name])=>name==='replaceManualInterviewReviewPhotos')
+ expect(links).toHaveLength(2);expect(links[0][3].key).not.toBe(links[1][3].key)
+})
+
+it('추천에서 연 사진 선택 취소는 추천 복귀 콜백만 실행하고 업로드하지 않는다',()=>{
+ const service=createManualPreviewService(true,'review'),call=vi.spyOn(service,'call'),cancel=vi.fn()
+ render(<ManualReviewPhotos service={service} sessionId={interviewFixture.id} review={reviewFixture} target={{target:'WORK_STRUCTURE',sectionId:null}} onUpdate={vi.fn()} onClose={vi.fn()} onSelectionCancel={cancel}/>)
+ fireEvent.change(screen.getByLabelText('첨부할 사진'),{target:{files:[]}})
+ expect(cancel).toHaveBeenCalledOnce()
+ fireEvent(screen.getByLabelText('첨부할 사진'),new Event('cancel'))
+ expect(cancel).toHaveBeenCalledTimes(2)
+ expect(call.mock.calls.some(([name])=>name==='uploadManualMedia'||name==='replaceManualInterviewReviewPhotos')).toBe(false)
 })
