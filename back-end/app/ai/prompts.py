@@ -14,7 +14,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-08.4"  # Keep "the worker does not do X / someone else handles X" guidance as steps (Figma).
+PROMPT_VERSION = "2026-10-08.5"  # PROBE asking the owner to confirm a "does not apply" answer (no staff work).
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.
@@ -127,6 +127,9 @@ INSTRUCTIONS: dict[str, str] = {
     업무 전체에 대해 그 하위 항목 하나를 묻는다. 마지막에 말한 업무만 골라 묻지 않는다.
   - 같은 항목을 전에 물었는데 점주가 모르겠다고 하거나 답하지 않았다면 같은 문장으로 되묻지 말고 같은 항목의
     더 작은 단위로 바꿔 묻는다(예: 대응 방법 → 점주가 말한 상황 하나에서 직원이 가장 먼저 할 일).
+- target_aspect가 "…의 재확인"이면(예: "근무가 없는 매장인지의 재확인") 점주가 앞에서 한 "해당 없음" 답이 맞는지
+  한 번 더 확인하는 질문 한 개를 만든다. 점주가 말한 내용을 짧게 되짚고, 맞는지 확인을 구한다(예: "직원이 일하는
+  근무가 전혀 없는 무인 매장이라고 이해했는데, 맞나요?"). 다른 측면을 묻거나 답을 유도하지 않는다.
 - 한 번에 한 가지만 묻는다(물음표 하나, 두 문장 이내). 선택지를 강요하거나 답을 유도하지 않는다.
   - 질문 하나는 하위 항목 하나다. 순서와 완료 기준처럼 서로 다른 하위 항목을 "와/과", "하고",
     "그리고", 쉼표로 이어 한 질문에 함께 묻지 않는다(나쁜 예: "어떤 순서로 하고 언제 끝났다고 판단하나요?").

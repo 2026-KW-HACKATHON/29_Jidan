@@ -22,6 +22,12 @@ whole) and max as the OR. It is recorded for evaluation only; the decision uses 
 thresholds above, so a judgement may be insufficient with probability >= 0.5 (e.g. one aspect at
 0.6 under a 0.7 threshold).
 
+Confirmed "does not apply" (`IntentAspects.confirmation`, WORK_STRUCTURE): a not_applicable at or
+above its threshold counts only when the `not_applicable_confirmed` predicate (the owner, asked
+again, confirmed it) is at or above the same threshold. Until then the judgement is insufficient
+with the confirmation label as the only missing aspect, so the question model asks the owner to
+confirm. The combined probability uses min(P(na), P(confirmed)) in place of P(na).
+
 Refusals: the API may decline a single question. A refused aspect counts as not covered
 (probability 0), and a refused not_applicable as "not said". That keeps the B04 policy (what is
 not known stays missing) and the interview going: the probe asks the refused aspect, and the
@@ -43,6 +49,7 @@ from app.ai.prompts import data_message
 from app.ai.validation import invalid
 
 NOT_APPLICABLE = "not_applicable"
+CONFIRMED = "not_applicable_confirmed"
 DEFAULT_ASPECT_THRESHOLD = 0.7
 DEFAULT_NOT_APPLICABLE_THRESHOLD = 0.8
 
@@ -122,14 +129,20 @@ def _aspect_instructions(aspect: Aspect) -> str:
 
 
 def build_request(request: SufficiencyRequest, *, model: str) -> tuple[dict[str, Any], tuple[str, ...]]:
-    """The Decisions body and the aspect labels in question order (the last question, named
-    `not_applicable`, has no label)."""
+    """The Decisions body and the aspect labels in question order. After the aspects come the
+    unlabelled `not_applicable_confirmed` (only for intents with a confirmation) and, always
+    last, `not_applicable`."""
     table = aspects_for(request.intent)
     payload = request.model_dump(mode="json", exclude={"depth"})
     questions = [
         {"type": "predicate", "name": f"aspect_{index}", "instructions": _aspect_instructions(aspect)}
         for index, aspect in enumerate(table.aspects, start=1)
     ]
+    if table.confirmation:
+        questions.append({
+            "type": "predicate", "name": CONFIRMED,
+            "instructions": f"{_POLICY}{table.confirmation}",
+        })
     questions.append({
         "type": "predicate", "name": NOT_APPLICABLE,
         "instructions": f"{_POLICY}{table.not_applicable}\n{_NOT_APPLICABLE_RULE}",
@@ -178,16 +191,31 @@ class DecisionOutcome:
     sufficient: bool
     probability: float
     missing_aspects: tuple[str, ...]
+    not_applicable: bool = False
 
 
-def decide(body: dict[str, Any], labels: tuple[str, ...], raw: Any, thresholds: Thresholds) -> DecisionOutcome:
+def decide(body: dict[str, Any], labels: tuple[str, ...], raw: Any, thresholds: Thresholds,
+           *, confirmation_label: str | None = None) -> DecisionOutcome:
     probabilities = parse_answers(body, raw)
     if all(p is None for p in probabilities):
         raise AiError(AiErrorCode.REFUSED)
-    *aspect_ps, na = (0.0 if p is None else p for p in probabilities)
-    combined = max(na, min(aspect_ps))
+    by_name = {question["name"]: 0.0 if p is None else p
+               for question, p in zip(body["questions"], probabilities, strict=True)}
+    aspect_ps = [by_name[f"aspect_{index}"] for index in range(1, len(labels) + 1)]
+    na = by_name[NOT_APPLICABLE]
+    confirmed = by_name.get(CONFIRMED)
+    if confirmed is not None:
+        if not confirmation_label:
+            raise invalid("decision_confirmation_without_label")
+        na_held = min(na, confirmed)
+    else:
+        na_held = na
+    combined = max(na_held, min(aspect_ps))
     if na >= thresholds.not_applicable:
-        return DecisionOutcome(True, combined, ())
+        if confirmed is None or confirmed >= thresholds.not_applicable:
+            return DecisionOutcome(True, combined, (), not_applicable=True)
+        # Said once, not yet confirmed: ask again (the aspects themselves are moot for now).
+        return DecisionOutcome(False, combined, (confirmation_label,))
     missing = tuple(label for label, p in zip(labels, aspect_ps, strict=True) if p < thresholds.aspect)
     if not missing:
         return DecisionOutcome(True, combined, ())

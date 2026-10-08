@@ -130,8 +130,8 @@ def test_aspects_are_listed_most_essential_first():
     labels = {key: [a.label for a in aspects_for(V1[key]).aspects] for key in V1}
     assert labels["EXCEPTIONS"] == ["돌발 상황의 종류", "돌발 상황의 대응 방법", "점주 연락의 기준"]
     assert labels["COMMON_TASKS"] == ["공통 업무의 종류", "공통 업무의 작업 순서", "공통 업무의 완료 기준"]
-    # Safety before upkeep for a worker's first day.
-    assert labels["EQUIPMENT"] == ["설비의 종류", "설비의 사용 순서", "설비의 주의 사항", "설비의 관리 방법"]
+    # User decision 2026-10-08: use → upkeep → cautions (cautions follow from how it is kept).
+    assert labels["EQUIPMENT"] == ["설비의 종류", "설비의 사용 순서", "설비의 관리 방법", "설비의 주의 사항"]
     for key, definition in V1.items():  # core aspects come before details
         cores = [a.core for a in aspects_for(definition).aspects]
         assert cores == sorted(cores, reverse=True), key
@@ -158,7 +158,7 @@ def test_equipment_use_order_accepts_sentences_and_rejects_names_only():
 
 
 def test_the_aspect_version_was_bumped_and_is_recorded():
-    assert ASPECTS_VERSION == "2026-10-08.2"
+    assert ASPECTS_VERSION == "2026-10-08.3"
     judgement = FakeAiProvider().judge_sufficiency(SufficiencyRequest(
         intent=V1["COMMON_TASKS"], depth=1,
         dialogue=(DialogueTurn(question="q", answer="a", depth=0),)))

@@ -26,6 +26,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.ai.aspects import aspects_for
 from app.ai.contracts import (
     MAX_EXAMPLE_LABEL,
     MAX_EXAMPLE_TEXT,
@@ -51,7 +52,7 @@ from app.ai.contracts import (
     TranscriptionRequest,
     clean_text,
 )
-from app.ai.decisions import Thresholds, build_request, config_tag, decide, parse_answers
+from app.ai.decisions import Thresholds, build_request, config_tag, decide
 from app.ai.errors import AiError, AiErrorCode
 from app.ai.prompts import INSTRUCTIONS, PROMPT_VERSION, data_message
 from app.ai.schemas import (
@@ -234,10 +235,9 @@ class AiProvider(ABC):
         outcome = "ok"
         try:
             raw = self._decide(body)
-            result = decide(body, labels, raw, self.judge_thresholds)
-            # decide() validated the answers; the last one is the intent-level not_applicable.
-            not_applicable = result.sufficient and (parse_answers(body, raw)[-1] or 0.0) >= (
-                self.judge_thresholds.not_applicable)
+            result = decide(body, labels, raw, self.judge_thresholds,
+                            confirmation_label=aspects_for(request.intent).confirmation_label)
+            not_applicable = result.not_applicable
         except AiError as error:
             outcome = error.code.value
             raise

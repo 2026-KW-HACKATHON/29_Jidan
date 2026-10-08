@@ -26,6 +26,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.ai.aspects import confirmation_question
 from app.ai.contracts import (
     MAX_SHIFTS,
     ContextNote,
@@ -223,7 +224,7 @@ def fallback_question(payload: dict[str, Any]) -> str:
     if request["kind"] == "BASE":
         return request["intent"]["base_question"]
     aspect = request["missing_aspects"][0]
-    return f"{aspect}에 대해 조금 더 자세히 알려 주시겠어요?"
+    return confirmation_question(aspect) or f"{aspect}에 대해 조금 더 자세히 알려 주시겠어요?"
 
 
 # --- answers and evaluation -----------------------------------------------------------------
