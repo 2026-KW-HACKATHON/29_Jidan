@@ -19,7 +19,10 @@ def normalize_question_cards(raw_cards, previous_cards=()) -> list[dict]:
                 continue
             for item in card["items"]:
                 UUID(item["id"])
-                owners.setdefault(item["id"], set()).add((card["type"], card["id"]))
+                # question_context supplies newest cards first. An item may have
+                # belonged to older cards before a merge; those obsolete owners
+                # must not make the current card ambiguous on every later turn.
+                owners.setdefault(item["id"], {(card["type"], card["id"])})
             history[card["id"]] = card
         except (KeyError, TypeError, ValueError):
             continue

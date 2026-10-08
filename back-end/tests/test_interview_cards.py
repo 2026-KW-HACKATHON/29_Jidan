@@ -67,14 +67,29 @@ def test_unknown_duplicate_or_wrong_type_ids_drop_only_bad_card():
     assert normalize_question_cards([candidate], [old]) == []
 
 
-def test_ambiguous_card_history_gets_new_id_without_guessing():
+def test_latest_card_owns_item_when_older_history_has_another_card():
     first = normalize_question_cards([card()])[0]
     second = deepcopy(first)
     second["id"] = str(uuid4())
     candidate = card()
     candidate["items"][0]["id"] = first["items"][0]["id"]
     saved = normalize_question_cards([candidate], [first, second])[0]
+    assert saved["id"] == first["id"]
+    assert normalize_question_cards([candidate], [second, first])[0]["id"] == second["id"]
+
+
+def test_merged_list_keeps_its_id_on_subsequent_identical_turns():
+    first, second = normalize_question_cards([card(), card()])
+    merged = card(count=2)
+    for item, prior in zip(merged["items"], [first, second]):
+        item["id"] = prior["items"][0]["id"]
+    saved = normalize_question_cards([merged], [first, second])[0]
     assert saved["id"] not in {first["id"], second["id"]}
+    history = [saved, first, second]
+    for _ in range(2):
+        repeated = normalize_question_cards([merged], history)[0]
+        assert repeated == saved
+        history = [repeated, *history]
 
 
 @pytest.mark.parametrize("field,value", [("title", " "), ("footer", "\x00"), ("title", "가" * 201)])
