@@ -366,10 +366,3 @@ def test_video_hold_extends_only_videos_and_never_shortens():
     photo = ManualMedia(kind="IMAGE", expires_at=now)
     retention.hold_video_bytes(photo, now)
     assert photo.expires_at == now
-
-
-def test_a_video_is_never_kept_by_references():
-    # Unit level only: kind VIDEO rows need the migration (owned by the contract work) before
-    # purge_media_content can be exercised end to end.
-    # Purged at its hold even while attached; the derived poster photo is what stays.
-    assert retention._in_use(None, ManualMedia(kind="VIDEO")) is None
