@@ -572,3 +572,35 @@ def test_draft_cannot_fill_unknown_steps_without_owner_input(fake_ai):
     with expect_error(AiErrorCode.INVALID_OUTPUT) as caught:
         fake_ai.compose_draft(DraftRequest(reviews=(review(current),)))
     assert caught.value.detail == "draft_changed_reviewed_fact"
+
+
+
+@pytest.mark.parametrize("value,expected", [(None, "fast"), ("", "fast"), (" auto ", "auto"),
+                                           ("default", "default"), ("fast", "fast"), ("priority", "priority")])
+def test_service_tier_environment_applies_to_primary_and_fallback(monkeypatch, value, expected):
+    from app.ai import build_provider_from_env
+
+    monkeypatch.setenv("AI_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-used")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("OPENAI_FALLBACK_MODEL", "gpt-6-sol")
+    if value is None:
+        monkeypatch.delenv("OPENAI_SERVICE_TIER", raising=False)
+    else:
+        monkeypatch.setenv("OPENAI_SERVICE_TIER", value)
+    instance = build_provider_from_env()
+    assert instance.primary.service_tier == instance.fallback.service_tier == expected
+    assert instance.primary.model == "gpt-6-luna"
+    assert instance.primary.reasoning_effort == "low"
+
+
+@pytest.mark.parametrize("key", ["", "sk-test-not-used"])
+@pytest.mark.parametrize("value", ["invalid", "flex", "fast,auto"])
+def test_invalid_service_tier_fails_closed_even_without_api_key(monkeypatch, key, value):
+    from app.ai import build_provider_from_env
+
+    monkeypatch.setenv("AI_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", key)
+    monkeypatch.setenv("OPENAI_SERVICE_TIER", value)
+    with pytest.raises(ValueError, match="OPENAI_SERVICE_TIER"):
+        build_provider_from_env()

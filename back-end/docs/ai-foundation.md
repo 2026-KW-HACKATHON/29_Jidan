@@ -27,6 +27,7 @@
 | `OPENAI_MODEL` | `gpt-6-luna` | 사용자 결정 "ChatGPT 6 Luna". `/v1/models`와 공식 문서로 ID 확인 |
 | `OPENAI_FALLBACK_MODEL` | 없음 | 지정하면 재시도 가능 실패 뒤 이 모델로 한 번 더 시도(fallback) |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | OpenAI 파일 전사 모델 |
+| `OPENAI_SERVICE_TIER` | `fast` | Responses의 Fast mode. `auto/default/fast/priority` 허용(빈 값은 기본값), 잘못된 값은 시작 거절. 주 모델·fallback 공통, STT 제외 |
 | `OPENAI_REASONING_EFFORT` | `low` | `none/low/medium/high/xhigh/max`, 빈 값이면 미지정 |
 | `OPENAI_TIMEOUT_SECONDS` / `OPENAI_TRANSCRIBE_TIMEOUT_SECONDS` | 60 / 120 | 호출당 타임아웃(유한한 1~600초, NaN·무한대 거부). 핸들러 lease보다 길면 시작 거부(§ lease와 장시간 호출) |
 
@@ -262,3 +263,5 @@ turn.input_method, turn.transcription_id, turn.content = "VOICE", row.id, text
 - MP4는 edit list가 있으면 그 길이를, 없으면 트랙 길이를 쓴다. gapless 메타데이터(iTunSMPB)만 있는 파일은 인코더 패딩(약 0.1초)만큼 길게 계산되어 120초 근처에서 보수적으로 거절될 수 있다.
 - 실행기는 앱 프로세스 안의 스레드다. 장시간 호출 중 프로세스가 죽으면 마지막 heartbeat 뒤 lease(기본 300초)가 지나야 다른 프로세스가 복구하며, 그 호출은 다시 실행된다(at-least-once).
 - 레이트 리밋(429)은 이 범위에서 구현하지 않았다.
+
+Fast mode는 Responses 요청의 `service_tier="fast"`로 지정한다. `priority`는 공식 별칭이며, 프로젝트 설정에 따르려면 `auto`, 표준 처리는 `default`를 명시한다. reasoning effort 기본 `low`와는 별도 설정이다. 근거: [OpenAI Fast mode 가이드](https://developers.openai.com/api/docs/guides/fast-mode).
