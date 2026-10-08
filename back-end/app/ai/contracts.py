@@ -303,3 +303,26 @@ class Transcript(_Model):
         if not value.strip():
             raise ValueError("blank transcript")
         return value
+
+
+class PhotoSuggestionsRequest(_Model):
+    summary: str = Field(min_length=1, max_length=10000)
+    structure: StructureSnapshot
+    store: StoreContext | None = None
+
+
+class PhotoSuggestionItem(_Model):
+    label: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
+class PhotoSuggestion(_Model):
+    section_id: str
+    title: str = Field(min_length=1, max_length=200)
+    items: tuple[PhotoSuggestionItem, ...] = Field(min_length=1, max_length=50)
+    footer: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
+class PhotoSuggestions(_Model):
+    suggestions: tuple[PhotoSuggestion, ...] = Field(default=(), max_length=5)
+    meta: CallMeta

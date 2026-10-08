@@ -125,6 +125,14 @@ current 내용에 점주의 정정 지시(instruction)를 반영한다.
 - 검토에 없는 사실을 추가하지 않는다. 미확정 값은 그대로 미확정으로 유지하고 missing_information을 넣는다.
 - 근무조가 하나도 없거나 섹션이 하나도 없으면 MANUAL 대상(shifts/sections) 미확정 항목을 넣는다.
 """,
+    "suggest_review_photos": _COMMON + """
+[작업: 저장된 이해 요약의 선택 사진 추천]
+summary와 structure의 실제 섹션을 보고 처음 온 근무자의 이해에 도움이 되는 사진만 추천한다.
+위치·설비 식별·배치 등 시각 정보가 유용할 때만 추천하고, 필요 없으면 suggestions=[]이다.
+각 추천은 입력의 section id를 sectionId로 그대로 사용한다. 서로 다른 섹션은 별도 추천이다.
+사진으로 없는 업무나 사실을 만들지 않는다. 촬영 대상 label과 nullable description, title, nullable footer만 쓴다.
+helpful·상태·revision·attachmentTarget·카드/item ID는 출력하지 않는다. 사진은 필수가 아니다.
+""",
     "answer_question": _COMMON + """
 [작업: 근무자 업무 질문 답변]
 manual(이 매장이 게시한 매뉴얼)만 근거로 근무자의 질문에 답한다.
