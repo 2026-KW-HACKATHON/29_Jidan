@@ -225,6 +225,16 @@ register_handler(TaskHandler(kind="EVALUATION", execute=execute, apply=apply, fa
 - `inspect_media(data, "IMAGE" | "AUDIO") -> InspectedMedia(kind, mime_type, data, duration_ms)` 또는 `MediaRejected`(`status_code`, `code`). 순서: 빈 파일 422 → byte 상한 413(정확히 상한 허용) → 실제 형식 415 → 내용(손상 422, 픽셀·길이 초과 413, 애니메이션·영상 트랙 415). 사진은 EXIF 방향 적용 후 메타데이터 없이 재인코딩한 byte를 저장한다. 음성은 원본 그대로이며 길이는 밀리초(올림)다.
 - `read_media_form(request, max_file_bytes=, purposes=)`: `purpose`/`file` multipart를 스트리밍으로 읽고 상한을 넘으면 즉시 413. **#121 질문 미디어 업로드도 같은 함수를 쓰면 된다**(`purposes=("QUESTION_IMAGE", "QUESTION_AUDIO")`, scope `"qa"`, 테이블 `qa_media`, 보관 `QA_IMAGE_TTL` 7일·`QA_AUDIO_TTL` 24시간).
 
+### 영상 (`app.media.video`, MANUAL_VIDEO)
+
+모델은 텍스트·이미지만 받으므로 영상은 원본 그대로 보내지 않는다. 디코딩은 PyAV(`av`, FFmpeg 내장 wheel)로 한다.
+
+- `inspect_video(data) -> InspectedMedia(kind="VIDEO", mime_type, data=원본, duration_ms)`(`inspect_media(data, "VIDEO")`도 같다). MP4·MOV(H.264/HEVC), WebM(VP8/VP9/AV1), ≤100 MiB(`MAX_VIDEO_BYTES`), ≤60초(`MAX_VIDEO_MILLISECONDS`, 정확히 60초 허용), 프레임당 ≤4천만 화소(선언·디코딩 크기 모두). 순서와 오류 코드는 사진·음성과 같다: 빈 파일 422 → byte 413 → 실제 형식 415(AVI·MKV·MPEG-TS·HEIC·사진·WAV, 영상 트랙 없는 M4A/WebM 녹음, 다른 코덱) → 내용(잘림·손상 422, 길이·화소·패킷 수 초과 413). 길이는 헤더가 아니라 영상 패킷 타임스탬프로 잰다(헤더 위조 방지). FFmpeg에는 형식을 명시(`mov`/`matroska`)해 메모리에서만 열므로 다른 demuxer(HLS·concat 등 외부 URL·파일을 여는 형식)는 쓰이지 않는다.
+- `digest_video(data) -> VideoDigest(duration_ms, frames, poster, audio, audio_mime)`: 작업 실행기에서 요청 트랜잭션 밖에서 호출한다(프로세스당 동시 1개). 프레임은 길이를 2초당 1장(최대 `MAX_VIDEO_FRAMES`=8)으로 나눈 구간의 가운데 시각에 가장 가까운 프레임이다(키프레임 우선, 키프레임이 목표에서 구간 폭의 1/4보다 멀거나 부족하면 전체 디코딩). 각 프레임은 회전(display matrix) 적용 후 긴 변 ≤1024px JPEG(q85)이며 EXIF·컨테이너 메타데이터(위치·제목)가 없다. `poster`는 그중 하나로, 거의 검은(평균 휘도 < 24)·단색(표준편차 < 8) 프레임을 빼고 가장 선명한(에지 표준편차 최대) 프레임이다. 음성은 첫 오디오 트랙을 16 kHz mono 16-bit WAV로 바꿔 영상 길이에서 자른다. 트랙이 없거나 디지털 무음(`app.ai.silence` 기준)이면 `audio=None`.
+- `store_video_poster(db, video_row, digest.poster) -> ManualMedia`: 대표 프레임을 같은 매장·점주의 일반 사진(IMAGE, image/jpeg, 미첨부 24시간)으로 저장하고 flush한 행을 돌려준다. 이후 `lock_photos_for_link`로 일반 사진처럼 연결한다. 트랜잭션이 롤백되면 남은 파일은 고아 파일 정리가 지운다.
+- 보관: 영상 원본은 참조가 있어도 `expires_at`(업로드 24시간)에 정리된다. 영상을 첨부하거나 처리 작업을 넣거나 끝낼 때 `hold_video_bytes(row)`(행 잠금 상태)로 그 시각부터 24시간을 보장한다. 근무자·게시본에는 파생 사진만 노출되며 그 사진은 일반 사진 규칙(참조되는 동안 보존)을 따른다.
+- 스키마: `manual_media.kind`에 `VIDEO`를 허용하고 `media_shape`에 `kind = 'VIDEO' AND mime_type IN (VIDEO_MIME_TYPES) AND byte_size <= MAX_VIDEO_BYTES AND duration_ms BETWEEN 1 AND MAX_VIDEO_MILLISECONDS`를 더하는 마이그레이션이 필요하다(상수는 `app.db.models`).
+
 ### 사진 연결 규칙 (반드시 지킬 것)
 
 사진을 답변·검토·초안·게시본에 연결하는 모든 트랜잭션은 다음 순서를 따른다. 삭제 API와 직렬화되어 dangling 참조가 생기지 않는다.

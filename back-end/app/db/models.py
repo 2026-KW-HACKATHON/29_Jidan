@@ -711,6 +711,11 @@ AUDIO_MIME_TYPES = ("audio/mpeg", "audio/mp4", "audio/webm", "audio/wav")
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_AUDIO_BYTES = 20 * 1024 * 1024
 MAX_AUDIO_MILLISECONDS = 120_000
+# Owner manual videos (MANUAL_VIDEO, app.media.video). Not yet in MEDIA_KINDS/MEDIA_SHAPE: the
+# migration that allows kind 'VIDEO' rows adds them there.
+VIDEO_MIME_TYPES = ("video/mp4", "video/quicktime", "video/webm")
+MAX_VIDEO_BYTES = 100 * 1024 * 1024
+MAX_VIDEO_MILLISECONDS = 60_000
 MEDIA_SHAPE = (
     f"(kind = 'IMAGE' AND {_in('mime_type', IMAGE_MIME_TYPES)} AND byte_size <= {MAX_IMAGE_BYTES}"
     " AND duration_ms IS NULL)"
