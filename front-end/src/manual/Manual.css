@@ -11,7 +11,7 @@
 .manual-muted{color:var(--ds-secondary)}
 .manual-card{background:var(--ds-white);padding:var(--ds-space-4);border-radius:var(--ds-radius-dialog);display:flex;flex-direction:column;gap:var(--ds-space-2)}
 .manual-card h3{font-size:var(--ds-body);color:var(--ds-primary-strong)}
-.manual-voice{display:flex;flex-direction:column;gap:var(--ds-space-4);text-align:left}
+.manual-voice{display:flex;flex-direction:column;gap:var(--ds-space-4);text-align:center}
 .manual-voice-title{font-size:17px;font-weight:700;color:var(--ds-primary-strong)}
 .manual-screen [role=alert]{color:var(--ds-danger)}
 .manual-screen .ds-button{width:100%}
@@ -53,3 +53,17 @@
 .manual-screen.manual-no-progress .ds-mobile-body{padding-top:var(--ds-space-6)}
 .manual-screen.manual-compact-footer .ds-mobile-footer{padding-top:var(--ds-space-4)}
 .manual-photo-group h3{color:var(--ds-text)}
+
+.manual-status{text-align:center}
+
+.manual-review-skeleton{gap:var(--ds-space-4)}
+.manual-skeleton-line{display:block;position:relative;overflow:hidden;height:16px;width:100%;border-radius:4px;background:var(--ds-primary-surface)}
+.manual-skeleton-title{width:40%;height:20px;margin-bottom:var(--ds-space-2)}
+.manual-skeleton-short{width:65%}
+.manual-skeleton-line::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgb(255 255 255 / 85%),transparent);transform:translateX(-100%);animation:manual-shimmer 1.6s ease-in-out infinite}
+@keyframes manual-shimmer{to{transform:translateX(100%)}}
+@media(prefers-reduced-motion:reduce){.manual-skeleton-line::after{animation:none;display:none}}
+
+.manual-loading-dialog .ds-modal-message > p::after{content:"...";display:inline-block;font-family:monospace;width:3ch;text-align:left;clip-path:inset(0 66.67% 0 0);animation:manual-loading-dots 1.5s step-end infinite}
+@keyframes manual-loading-dots{0%,100%{clip-path:inset(0 66.67% 0 0)}33.33%{clip-path:inset(0 33.33% 0 0)}66.67%{clip-path:inset(0 0 0 0)}}
+@media(prefers-reduced-motion:reduce){.manual-loading-dialog .ds-modal-message > p::after{animation:none;clip-path:none}}

@@ -8,6 +8,7 @@ import {WorkerProfile} from '../profile/WorkerProfile'
 import {profileService} from '../profile/service'
 import {ManualAuthoring} from '../manual/ManualAuthoring'
 import {liveManualService} from '../manual/live'
+import {WorkerQa} from '../qa/WorkerQa'
 import {WorkerManual} from './WorkerManual'
 import {OwnerJobs,WorkerJobs,type Route} from './Jobs'
 import {StorePages} from './Stores'
@@ -21,7 +22,7 @@ import {WorkerApplications} from './WorkerApplications'
 import {ReceivedInvitation,WorkerRequest} from './WorkerInbox'
 
 export function Workspace({session,search,navigate}:{session:Session;search:string;navigate:(url:string,replace?:boolean)=>void}){
- const params=new URLSearchParams(search),view=params.get('view')||'home',id=params.get('id')||'',storeId=params.get('store')||''
+ const params=new URLSearchParams(search),view=params.get('view')||'home',id=params.get('id')||'',storeId=params.get('store')||'',newQa=params.get('new')==='1'
  const [invitationToken,setInvitationToken]=useState(pendingInvitation)
  const [month,setMonth]=useState(()=>seoulDate(new Date().toISOString()).slice(0,7))
  const route:Route=(next,id)=>{const query=new URLSearchParams({view:next});if(storeId)query.set('store',storeId);if(id)query.set('id',id);navigate(`/home?${query}`)}
@@ -35,6 +36,7 @@ export function Workspace({session,search,navigate}:{session:Session;search:stri
  if(view==='notifications')return <Notifications owner={owner} navigate={navigate} onBack={()=>route('home')}/>
  if(!owner){
   if(invitationToken)return <TokenInvitation token={invitationToken} onResponded={clearInvitation} onDone={()=>{clearInvitation();setInvitationToken(null);route('home')}}/>
+  if(view==='qa')return <WorkerQa key={`${storeId}:${id}:${newQa}`} storeId={storeId} id={id} newChat={newQa} navigate={navigate}/>
   if(view==='manual')return <WorkerManual storeId={storeId} id={id} navigate={navigate} onBack={()=>route('home')}/>
   if(view==='invitation')return <ReceivedInvitation id={id} route={route}/>
   if(view==='work-request')return <WorkerRequest id={id} route={route}/>

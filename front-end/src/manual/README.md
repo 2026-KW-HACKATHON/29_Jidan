@@ -70,6 +70,7 @@ NEEDS_DETAIL의 느낌표+보완 필요 표기, 업무 0/1개 미리보기, 여�
 - `?case=checklist`: 대기/현재/완료/보완 필요
 - `?case=processing`: 새로고침 후 질문 스냅샷 유지
 - `?case=photo-request`: 추천 대상 → 요청 화면 → 사진 편집
+- `?case=review-loading`: 요약 카드 스켈레톤 유지 (검수용)
 - `?case=review-photo`: 다음 질문이 운반하는 이전 요약 SECTION 추천과 생략/복귀
 - `?case=review`, `review-error`, `depth5`, `ready`: 주제 검토와 최종 진입
 - `?case=draft-photo`: 같은 섹션 사진의 최종 상세·근무자 미리보기
@@ -90,3 +91,7 @@ NEEDS_DETAIL의 느낌표+보완 필요 표기, 업무 0/1개 미리보기, 여�
 2026-10-08 검증: 전체 프론트 113파일/591테스트 통과(실패·skip 0), native cancel listener 보완 뒤 영향 UI 20개 재통과, lint·production build 통과(기존 500 kB chunk 경고). 독립 ai_and_cards 에이전트가 실제 diff를 두 차례 이상 대조해 refresh 조회 실패/기연결 mediaId/늦은 사진 화면 재진입 누락을 지적했고 회귀 테스트와 navigation token으로 보완했다. 최종 재점검에서 차단 누락 없음.
 
 로컬 IAB와 샘플 서비스로 review-photo 추천 표시→사진 요청→생략→같은 요약 복귀→다음 질문, 사진 출처 dialog 취소→추천 복귀, ready 마지막 요약→수동 사진 관리→복귀, draft-photo 상세/전체/근무자 미리보기의 같은 placeholder 사진을 확인했다. 네트워크 API·DB·실제 사진 저장·마이크·모바일/OS 파일 선택창 검증과 구분한다.
+
+### #175 통합 검증
+
+최신 프론트의 요약 로딩 스켈레톤과 Q&A·접근 오류 전파를 보존하여 사진 추천·연결 재시도를 통합했다. 사진 요청 화면을 떠나면 navigation 토큰이 만료되며, 이후 도착한 성공뿐 아니라 네트워크/시간 초과 오류도 폐기한다. 이탈한 조회의 오류 모달이나 오래된 재시도는 노출하지 않는다. 매뉴얼·Q&A 영향 범위 29개 파일의 140개 테스트와 lint/build를 통과했다. 실제 장치·외부 API·배포 검증은 이 로컬 테스트 결과에 포함하지 않는다.

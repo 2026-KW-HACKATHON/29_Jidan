@@ -43,5 +43,5 @@ export function ManualDraftReview({service,versionId,onBack,onReload}:{service:M
    {content&&(target&&correctionContent?<ManualContentView content={correctionContent} service={service}/>:<><Button intent="secondary" disabled={blocked} onClick={showPreview}>근무자 화면 미리보기</Button><ManualDraftSummary content={content} service={service} disabled={blocked} onSelect={setGroup} onPhotos={()=>setGroup('photos')}/><p className="manual-muted manual-caption">게시하면 근무자가 이 내용을 볼 수 있어요.</p></>)}
   </div></ManualFrame>
  }
- return <>{view}{overlays}<Modal open={!readError&&(!draft||draft.generationStatus==='RUNNING'||draft.generationStatus==='NOT_STARTED'||running)} showIcon={false} title={running?'수정한 내용을 정리하고 있어요':'매뉴얼을 준비하고 있어요'} description="잠시만 기다려 주세요." onClose={onBack} confirmLabel="작성 화면 나가기"/></>
+ return <>{view}{overlays}<Modal open={!readError&&(!draft||draft.generationStatus==='RUNNING'||draft.generationStatus==='NOT_STARTED'||running)} showIcon={false} title={running?'수정한 내용을 정리하고 있어요':'매뉴얼을 준비하고 있어요'} className="manual-loading-dialog" description="잠시만 기다려 주세요" onClose={onBack} confirmLabel="작성 화면 나가기"/></>
 }
