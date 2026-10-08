@@ -43,3 +43,12 @@ def test_deletion_only_authorizes_exact_target_and_unique_name():
     check_section_identity(before, StructureSnapshot(sections=(second,)), "삭제해 주세요", "SECTION", "one")
 
 
+
+
+def test_exact_named_remove_command_keeps_existing_supported_wording():
+    item = SectionItem(id="one", category="COMMON_TASK", title="손님 응대")
+    before = StructureSnapshot(sections=(item,))
+    check_section_identity(before, StructureSnapshot(), "손님 응대는 빼 주세요.", "MANUAL", None)
+    for command in ("손님 응대는 빼지 마세요.", "손님 응대는 빼 주세요. 그리고 내용을 바꿔 주세요."):
+        with pytest.raises(AiError):
+            check_section_identity(before, StructureSnapshot(), command, "MANUAL", None)
