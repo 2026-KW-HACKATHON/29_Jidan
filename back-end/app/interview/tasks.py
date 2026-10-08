@@ -35,6 +35,7 @@ from app.db.models import (
     InterviewTurn,
 )
 from app.interview import drafting
+from app.interview.cards import normalize_question_cards
 from app.interview.common import lock_review, lock_session_row
 from app.interview.content import content_from_structure, photo_ids, snapshot_from_content
 from app.interview.flow import (
@@ -84,7 +85,9 @@ def _question_execute(ctx: TaskContext) -> GeneratedQuestion:
 
 def _question_apply(db: Session, ctx: TaskContext, result: GeneratedQuestion) -> None:
     session = _waiting_session(db, ctx)
-    write_question(db, session, ctx.payload, result.text, result.meta.config_version)
+    cards = normalize_question_cards(result.guidance_cards, ctx.payload["request"].get("previous_cards", ()))
+    write_question(db, session, ctx.payload, result.text, result.meta.config_version,
+                   guidance=result.guidance, guidance_cards=cards)
 
 
 def _question_fail(db: Session, ctx: TaskContext, _error: Exception) -> None:

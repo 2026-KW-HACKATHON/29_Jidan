@@ -82,3 +82,58 @@ def interview_case(real_db, base_url):
     with httpx.Client(base_url=base_url, timeout=10, trust_env=False,
                       headers={"Cookie": f"{auth.SESSION_COOKIE_NAME}={issued.token}"}) as client:
         yield InterviewCase(client, real_db, store_id, owner_id)
+
+
+@contextmanager
+def scenario_server(tmp_path, provider_factory="e2e.interview_server:default_provider"):
+    """Dedicated real server; only its external AI response boundary is scripted."""
+    import os
+    import subprocess
+    import sys
+
+    from app.db import get_engine
+    from app.db.models import BackgroundTask
+    from app.tasks import cancel_tasks
+
+    assert os.getenv("TASK_RUNNER_MODE") == "manual", "shared E2E server must not claim scripted tasks"
+    with Session(get_engine()) as db:
+        existing_tasks = set(db.scalars(select(BackgroundTask.id)))
+
+    from e2e.review_helpers import local_env
+
+    env, origin, port, _ = local_env()
+    env.update(BACKGROUND_JOBS="on", TASK_RUNNER_MODE="background",
+               INTERVIEW_GUIDANCE_RESPONSES="on", TASK_RUNNER_POLL_SECONDS="0.1")
+    with (tmp_path / "interview-uvicorn.log").open("w+") as log:
+        process = subprocess.Popen([sys.executable, "-m", "e2e.interview_server", "--provider",
+                                    provider_factory, "--port", str(port)], env=env,
+                                   stdout=log, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + 20
+            with httpx.Client(base_url=origin, trust_env=False, timeout=1) as client:
+                while True:
+                    assert process.poll() is None, "server stopped; inspect interview-uvicorn.log"
+                    try:
+                        if client.get("/api/health").status_code == 200:
+                            break
+                    except httpx.TransportError:
+                        pass
+                    assert time.monotonic() < deadline, "server did not become healthy"
+                    time.sleep(0.1)
+            yield origin
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            # Join the server before removing unfinished fixture work, so the next
+            # scenario can never execute it through a different provider.
+            with Session(get_engine()) as db:
+                pending = list(db.scalars(select(BackgroundTask).where(
+                    BackgroundTask.status.in_(("QUEUED", "RUNNING")))))
+                for task in pending:
+                    if task.id not in existing_tasks:
+                        cancel_tasks(db, task.kind, task.subject_id)
+                db.commit()

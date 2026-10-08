@@ -303,7 +303,7 @@ def check_section_identity(current: StructureSnapshot, revised: StructureSnapsho
     if after - before:
         raise invalid("revision_replaced_section_id")
     command = clean_text(instruction)
-    verb = r"(?:삭제(?:해\s*주세요|해줘|해요|하세요)|없애\s*주세요|지워\s*주세요)"
+    verb = r"(?:삭제(?:해\s*주세요|해줘|해요|하세요)|없애\s*주세요|지워\s*주세요|빼\s*주세요)"
     suffix = r"(?:\s*(?:업무|섹션))?(?:을|를|은|는)?\s*"
     authorized = set()
     for section in current.sections:

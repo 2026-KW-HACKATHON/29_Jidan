@@ -67,6 +67,8 @@ services:
       DB_HOST: e2e-mysql
       DB_NAME: jidan_e2e_test
       ALLOWED_ORIGINS: http://e2e-api:8000
+      # Interview HTTP tests own dedicated provider servers; this runner must not steal their tasks.
+      TASK_RUNNER_MODE: manual
     depends_on:
       e2e-mysql: {condition: service_healthy}
   e2e:
