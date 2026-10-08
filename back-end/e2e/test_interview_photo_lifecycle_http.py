@@ -483,7 +483,7 @@ def test_completion_and_photo_link_race_freezes_one_consistent_snapshot(lifecycl
         assert db.get(ManualMedia, expected[0]["mediaId"]).deleted_at is None
 
 
-def build_generation_failure_provider():
+def build_generation_failure_provider(mutation="section_id"):
     from app.ai.fake import _default_draft
 
     provider = build_lifecycle_provider()
@@ -494,16 +494,31 @@ def build_generation_failure_provider():
         attempts += 1
         raw = _default_draft(data)
         if attempts <= 3:
-            # Valid raw schema but illegal replacement: dropping a reviewed ID would lose photos.
-            raw["structure"]["sections"][0]["ref"] = "new-999"
+            # Valid schema, but composition cannot change the frozen review's facts.
+            if mutation == "section_id":
+                raw["structure"]["sections"][0]["ref"] = "new-999"
+            elif mutation == "category":
+                raw["structure"]["sections"][0]["category"] = "EQUIPMENT"
+            else:
+                raw["structure"]["shifts"][0]["start_time"] = "08:00"
         return raw
 
     return provider.on("compose_draft", generate)
 
 
-def test_generation_rejects_replaced_section_ids_and_retry_preserves_frozen_photo_snapshot(real_db, tmp_path):
+def build_generation_category_failure_provider():
+    return build_generation_failure_provider("category")
+
+
+def build_generation_time_failure_provider():
+    return build_generation_failure_provider("time")
+
+
+@pytest.mark.parametrize("factory", ["build_generation_failure_provider", "build_generation_category_failure_provider",
+                                     "build_generation_time_failure_provider"])
+def test_generation_rejects_replaced_section_ids_and_retry_preserves_frozen_photo_snapshot(real_db, tmp_path, factory):
     with (
-        scenario_server(tmp_path, "e2e.test_interview_photo_lifecycle_http:build_generation_failure_provider") as origin,
+        scenario_server(tmp_path, f"e2e.test_interview_photo_lifecycle_http:{factory}") as origin,
         interview_case(real_db, origin) as case,
     ):
         sid, listing = finish_answers(case)
@@ -537,7 +552,13 @@ def test_generation_rejects_replaced_section_ids_and_retry_preserves_frozen_phot
         assert section(draft, section_id)["photos"] == expected
         assert_draft_photos_commit(case, version_id, section_id, expected)
         with Session(case.engine) as db:
-            assert db.get(ManualVersion, version_id).generation_input_snapshot == frozen
+            saved = db.get(ManualVersion, version_id)
+            assert saved.generation_input_snapshot == frozen
+            assert saved.status == "DRAFT" and saved.generation_status == "READY"
+        frozen_sections = [section for review in frozen["reviews"] for section in review["content"]["sections"]]
+        assert draft["content"]["sections"] == frozen_sections
+        assert draft["content"]["shifts"] == [shift for review in frozen["reviews"]
+                                               for shift in review["content"]["shifts"]]
 
 
 def test_section_deletion_and_photo_link_race_does_not_move_or_delete_media(lifecycle):

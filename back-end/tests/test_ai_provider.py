@@ -473,6 +473,34 @@ def test_timeout_settings_accept_boundaries_and_default(monkeypatch, name, defau
     assert _seconds(name, default) == (default if expected is None else expected)
 
 
+@pytest.mark.parametrize("mutation", ["known_time", "unknown_time", "category"])
+def test_draft_cannot_change_frozen_review_facts(fake_ai, mutation):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    if mutation == "known_time":
+        raw["shifts"][0]["start_time"] = "08:00"
+    elif mutation == "unknown_time":
+        raw["shifts"][1].update(end_time="07:00", ends_next_day=True)
+    elif mutation == "category":
+        raw["sections"][1]["category"] = "EQUIPMENT"
+    fake_ai.script("compose_draft", FakeOutcome.ok({"structure": raw}))
+    with expect_error(AiErrorCode.INVALID_OUTPUT) as caught:
+        fake_ai.compose_draft(DraftRequest(reviews=(review(current),)))
+    assert caught.value.detail == "draft_changed_reviewed_fact"
+
+
+def test_draft_can_polish_wording_and_reorder_without_resolving_gaps(fake_ai):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    raw["sections"].reverse()
+    raw["sections"][0]["title"] = "근무 복장"
+    raw["sections"][0]["steps"][0]["instruction"] = "앞치마를 착용해요."
+    fake_ai.script("compose_draft", FakeOutcome.ok({"structure": raw}))
+    result = fake_ai.compose_draft(DraftRequest(reviews=(review(current),))).structure
+    assert [s.id for s in result.sections] == [s.id for s in reversed(current.sections)]
+    assert result.missing_information == current.missing_information
+
+
 def test_targeted_correction_preserves_unrelated_missing_description(fake_ai):
     current = snapshot()
     raw = structure_to_raw(current)
@@ -480,6 +508,28 @@ def test_targeted_correction_preserves_unrelated_missing_description(fake_ai):
     with expect_error(AiErrorCode.INVALID_OUTPUT) as caught:
         revise(fake_ai, current, raw, "SECTION", current.sections[0].id)
     assert caught.value.detail == "revision_outside_target"
+
+
+
+def test_draft_can_reword_missing_description_without_resolving_gap(fake_ai):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    raw["missing_information"][0]["description"] = "종료 시간이 아직 정해지지 않았어요."
+    fake_ai.script("compose_draft", FakeOutcome.ok({"structure": raw}))
+    result = fake_ai.compose_draft(DraftRequest(reviews=(review(current),))).structure
+    assert result.shifts == current.shifts
+    assert result.missing_information[0].id == current.missing_information[0].id
+    assert result.missing_information[0].description == "종료 시간이 아직 정해지지 않았어요."
+
+
+def test_draft_cannot_drop_missing_entry_for_an_unknown_value(fake_ai):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    raw["missing_information"].pop(0)
+    fake_ai.script("compose_draft", FakeOutcome.ok({"structure": raw}))
+    with expect_error(AiErrorCode.INVALID_OUTPUT) as caught:
+        fake_ai.compose_draft(DraftRequest(reviews=(review(current),)))
+    assert caught.value.detail == "unknown_value_without_missing_information"
 
 
 def test_targeted_correction_can_add_new_section_with_missing_steps(fake_ai):
@@ -494,3 +544,31 @@ def test_targeted_correction_can_add_new_section_with_missing_steps(fake_ai):
     assert result.structure.sections[:-1] == current.sections
     assert result.structure.missing_information[:-1] == current.missing_information
     assert result.structure.missing_information[-1].target_id == result.structure.sections[-1].id
+
+
+
+def test_draft_can_restructure_steps_without_changing_section_identity(fake_ai):
+    current = snapshot()
+    raw = structure_to_raw(current)
+    raw["sections"][0]["steps"][0]["ref"] = "new-1"
+    fake_ai.script("compose_draft", FakeOutcome.ok({"structure": raw}))
+    result = fake_ai.compose_draft(DraftRequest(reviews=(review(current),))).structure
+    assert result.sections[0].id == current.sections[0].id
+    assert result.sections[0].steps[0].instruction == current.sections[0].steps[0].instruction
+    assert result.sections[0].steps[0].id != current.sections[0].steps[0].id
+
+
+def test_draft_cannot_fill_unknown_steps_without_owner_input(fake_ai):
+    original = snapshot()
+    empty = original.sections[1].model_copy(update={"steps": ()})
+    current = original.model_copy(update={
+        "sections": (original.sections[0], empty),
+        "missing_information": (*original.missing_information, MissingItem(
+            id=uid(), target="SECTION", target_id=empty.id, field="steps", description="절차 미확정")),
+    })
+    raw = structure_to_raw(current)
+    raw["sections"][1]["steps"] = [{"ref": "new-1", "instruction": "추측한 절차", "checklist_item": False}]
+    fake_ai.script("compose_draft", FakeOutcome.ok({"structure": raw}))
+    with expect_error(AiErrorCode.INVALID_OUTPUT) as caught:
+        fake_ai.compose_draft(DraftRequest(reviews=(review(current),)))
+    assert caught.value.detail == "draft_changed_reviewed_fact"

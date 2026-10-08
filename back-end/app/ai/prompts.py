@@ -14,7 +14,7 @@ Bump PROMPT_VERSION whenever any text here changes; it is part of the stored con
 import json
 from typing import Any
 
-PROMPT_VERSION = "2026-10-08.4-t4"  # Atomic operation integration snapshot.
+PROMPT_VERSION = "2026-10-08.4"  # Missing aspects stay confined to genuinely unanswered details.
 
 _COMMON = """\
 너는 한국 소상공인 매장의 업무 매뉴얼 작성을 돕는 시스템 구성 요소다.
@@ -161,7 +161,10 @@ current 내용에 점주의 정정 지시(instruction)를 반영한다.
 모든 인텐트 검토(reviews)를 합쳐 하나의 매뉴얼 구조를 만든다.
 - 입력에 있는 모든 근무조·섹션은 같은 id(ref)로 정확히 한 번씩 포함한다. 삭제하거나 합치지 않는다.
   표현을 다듬거나 순서를 근무 흐름에 맞게 정리할 수 있다. 새 섹션이 꼭 필요하면 new-1 같은 ref로 추가한다.
-- 검토에 없는 사실을 추가하지 않는다. 미확정 값은 그대로 미확정으로 유지하고 missing_information을 넣는다.
+- 검토에 없는 사실을 추가하지 않는다. 근무 시간·익일 여부, 섹션 유형·근무조 연결은 그대로 유지한다.
+  절차와 체크리스트는 검토에서 확인한 의미를 보존하며 표현을 다듬을 수 있다.
+  미확정 값은 그대로 미확정으로 유지하고 missing_information의 부족 사실·대상·필드를 보존한다.
+  부족 정보 설명의 표현은 의미를 바꾸지 않는 범위에서 다듬을 수 있다.
 - 근무조가 하나도 없거나 섹션이 하나도 없으면 MANUAL 대상(shifts/sections) 미확정 항목을 넣는다.
 """,
     "suggest_review_photos": _COMMON + """

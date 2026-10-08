@@ -60,6 +60,7 @@ from app.ai.schemas import (
 )
 from app.ai.validation import (
     build_citations,
+    check_draft_facts,
     check_revision_scope,
     dangling_shift_references,
     invalid,
@@ -276,6 +277,7 @@ class AiProvider(ABC):
             s.id for s in structure.sections
         }:
             raise invalid("draft_dropped_reviewed_item")
+        check_draft_facts((review.structure for review in request.reviews), structure)
         return DraftComposition(structure=structure, meta=self.meta())
 
     def answer_question(self, request: QaRequest) -> QaAnswer:
