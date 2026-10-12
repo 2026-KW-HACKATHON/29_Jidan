@@ -43,3 +43,15 @@ env 사본이 있으므로 상위 디렉터리 700과 파일 600을 유지한다
 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/tests -p 'test_demo_*.py' -v`
 에서 env 재사용·회전 거부, 포트 경계와 성공/실패/이미지 불일치/복구 실패·재개를 확인한다.
 스크립트 테스트의 Docker·curl은 fixture이며 실제 배포 검증과 구분한다.
+
+## Actions
+
+`.github/workflows/demo.yml`은 데모 dev push와 demo/main 대상 PR에서 GitHub-hosted ARM64
+검사·이미지 build를 수행한다. backend는 일회용 MySQL에서 세션·인증 회귀와 실제 HTTP
+E2E를 실행한다. 두 앱의 데모 진입 코드가 준비된 demo/main push에서만 GHCR 게시와
+RPi4 Compose 배포를 실행한다. 기존 RPi4 runner의 build/rpi4 label을 재사용하지만
+해당 job에서 build 명령은 실행하지 않는다. PR은 self-hosted runner를 사용하지 않는다.
+
+수동 복구는 검증한 과거 digest를 배포 스크립트에 전달하거나 demo/main의 해당 Actions
+run을 재실행한다. workflow_dispatch의 사용 가능 여부는 GitHub 기본 브랜치 등록 규칙을
+따르며, demo/main push와 기존 run 재실행에는 기본 브랜치 변경이 필요 없다.
