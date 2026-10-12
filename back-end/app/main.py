@@ -9,6 +9,9 @@ from app.admin_password_config import parse_password_hash
 from app.auth import validate_cookie_settings
 from app.auth_views import router as auth_views_router
 from app.database import database_status
+from app.demo import DemoBoundary
+from app.demo import configuration as demo_configuration
+from app.demo import router as demo_router
 from app.design_docs import install_design_docs
 from app.errors import UnstructuredHTTPException, install_error_handlers
 from app.favorite_stores import router as favorite_stores_router
@@ -36,9 +39,12 @@ from app.worker_profile import router as worker_profile_router
 from app.worker_stores import router as worker_stores_router
 
 validate_cookie_settings()  # a bad COOKIE_SECURE stops the process before it serves anything
+demo_configuration()
 app = FastAPI(title="Jidan API", version="0.1.0", lifespan=lifespan)
 install_error_handlers(app)
+app.add_middleware(DemoBoundary)
 install_middleware(app)
+app.include_router(demo_router)
 app.include_router(auth_views_router)
 app.include_router(oauth_router)
 app.include_router(registration_router)

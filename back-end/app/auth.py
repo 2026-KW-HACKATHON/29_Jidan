@@ -343,6 +343,13 @@ def _resolve_member(request: Request, db: Session) -> MemberPrincipal | None:
     if row is None:
         return None
     auth_session, user = row
+    # Public demo sessions are accepted only by the matching isolated demo deployment.
+    from app.demo import PREFIX, configuration
+
+    demo = configuration()
+    is_visitor = user.google_sub.startswith(PREFIX)
+    if (demo is not None and (not is_visitor or user.role != demo.role)) or (demo is None and is_visitor):
+        return None
     now = utcnow()
     if (
         auth_session.revoked_at is not None
