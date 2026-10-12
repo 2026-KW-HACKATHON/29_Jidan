@@ -24,6 +24,7 @@ from app.csrf import CsrfMember, require_allowed_origin
 from app.db import SessionDep, utcnow
 from app.db.models import AuthSession, Store, StoreAccessGrant, StoreInvitation, User
 from app.errors import ApiError, ErrorCode
+from app.request_id import current_request_id
 
 PREFIX = "demo-visitor:"
 LIFETIME = timedelta(hours=2)
@@ -197,7 +198,7 @@ class DemoBoundary:
             if not self.consume("global", 1000, hour) or not self.consume("visitor:" + key, 150, hour):
                 status, code, message = 429, ErrorCode.RATE_LIMITED, "체험 요청이 많아요. 잠시 후 다시 시도해 주세요."
         if status is not None:
-            response = JSONResponse({"code": code, "message": message, "requestId": "demo-boundary",
+            response = JSONResponse({"code": code, "message": message, "requestId": current_request_id(),
                                      "fieldErrors": []}, status_code=status,
                                     headers={"Cache-Control": "no-store"})
             return await response(scope, receive, send)

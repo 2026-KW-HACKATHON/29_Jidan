@@ -226,10 +226,19 @@ def test_worker_sample_and_role_host_scope(public_demo):
     result = worker.get(f"/api/stores/{visitor['storeId']}/manual/published")
     assert result.status_code == 200
     assert len(result.json()["sections"]) == 5
+    request_ids = set()
     for path in ("/api/home", "/api/stores", "/api/auth/google", "/api/auth/session", "/docs", "/openapi.json"):
-        assert worker.get(path).status_code == 403
+        rejected = worker.get(path, headers={"X-Request-ID": "client-forged"})
+        assert rejected.status_code == 403
+        request_id = rejected.headers["X-Request-ID"]
+        assert request_id == rejected.json()["requestId"] and request_id.startswith("req_")
+        assert request_id not in request_ids
+        request_ids.add(request_id)
+        assert rejected.headers["Cache-Control"] == "no-store"
     assert worker.post(f"/api/stores/{visitor['storeId']}/manual/interviews").status_code == 403
-    assert worker.get("/api/auth/csrf", headers={"Host": "evil.test"}).status_code == 403
+    rejected = worker.get("/api/auth/csrf", headers={"Host": "evil.test"})
+    assert rejected.status_code == 403
+    assert rejected.headers["X-Request-ID"] == rejected.json()["requestId"]
     owner.cookies.set(auth.SESSION_COOKIE_NAME, worker.cookies[auth.SESSION_COOKIE_NAME])
     assert owner.get(f"/api/stores/{visitor['storeId']}/manual").status_code == 401
     with Session(engine) as db:

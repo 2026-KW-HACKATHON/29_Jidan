@@ -70,7 +70,11 @@ def test_role_host_scope_and_origin_are_fixed(demo_client, db_engine, monkeypatc
     response = demo_client.post("/api/demo/session", json={"role": "WORKER"}, headers={"Origin": ORIGIN})
     assert response.json() == first
     for path in ("/api/home", "/api/auth/session", "/api/auth/google", "/api/stores", "/docs", "/openapi.json"):
-        assert demo_client.get(path).status_code == 403
+        rejected = demo_client.get(path, headers={"X-Request-ID": "client-forged"})
+        assert rejected.status_code == 403
+        assert rejected.headers["X-Request-ID"] == rejected.json()["requestId"]
+        assert rejected.headers["X-Request-ID"].startswith("req_")
+        assert rejected.headers["Cache-Control"] == "no-store"
     assert demo_client.post("/api/demo/session", headers={"Origin": ORIGIN, "Host": "evil.test"}).status_code == 403
     assert demo_client.get(f"/api/stores/{first['storeId']}/manual/qa/conversations").status_code == 403
     assert demo_client.get(f"/api/stores/{first['storeId']}/manual").status_code == 200
@@ -177,4 +181,7 @@ def test_cookie_contract_and_http_quota(demo_client):
             break
     assert response.status_code == 429
     assert response.json()["code"] == "RATE_LIMITED"
+    assert response.headers["X-Request-ID"] == response.json()["requestId"]
+    assert response.headers["X-Request-ID"].startswith("req_")
+    assert response.headers["Cache-Control"] == "no-store"
     assert demo_client.get("/api/auth/csrf").status_code == 200
