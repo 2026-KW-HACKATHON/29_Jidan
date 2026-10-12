@@ -45,8 +45,17 @@ OWNER는 본인 매뉴얼 API와 게시본 읽기만, WORKER는 고정 샘플 �
 프로세스 재시작 시 카운터는 초기화되며 금액 한도는 아니다. 작업 동시 실행은
 `TASK_RUNNER_WORKERS`로 제한한다. 유료 실제 AI의 응답 품질은 별도 검증 대상이다.
 
+`python -m app.demo_retention`은 만료 후 30분 유예가 지난 방문자만 정리한다.
+진행 중 작업 결과의 저장을 막기 위해 작업 행을 먼저 삭제하고, 매뉴얼·대화·세션·계정은
+같은 DB 트랜잭션으로 제거한다. commit 이후 사진·녹음 파일을 삭제하며 실패한 파일은
+orphan sweep이 재시도한다. 고정 샘플과 유효 방문자는 보존한다. Compose의 별도
+retention 서비스에서 5분마다 실행한다. 초기화로 폐기된 공간도 폐기 후 30분의
+유예가 지나면 제거한다. 사용자 생성 시각 대신 세션의 실제 만료·폐기 시각을 기준으로 한다.
+
 ## 검증
 
 - `tests/test_public_demo.py`: SQLite·MySQL 세션/설정/권한/초기화/요청 제한 회귀.
 - `e2e/test_public_demo_http.py`: 실제 두 역할 TCP 서버, 전용 MySQL, 독립 DB 조회.
+- `e2e/test_public_demo_retention_http.py`: 파일·작업 제거, 후속 enqueue 경합, 실패 롤백,
+  유효 세션 보존, 유예 경계와 동시 정리.
 - AI는 fake, background 작업은 manual이다. 실제 음성·AI 의미 품질·공개 배포 검증과 구분한다.
