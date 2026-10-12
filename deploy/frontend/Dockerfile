@@ -12,6 +12,8 @@ FROM dependencies AS build
 # Preview is opt-in for dev only. Never embed secrets in VITE_* variables.
 ARG VITE_ENABLE_PREVIEW=false
 ENV VITE_ENABLE_PREVIEW=$VITE_ENABLE_PREVIEW
+ARG VITE_ENABLE_DEMO=false
+ENV VITE_ENABLE_DEMO=$VITE_ENABLE_DEMO
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:stable-alpine AS runtime
