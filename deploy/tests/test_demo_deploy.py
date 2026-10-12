@@ -63,6 +63,10 @@ class DemoDeploymentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         release = (self.root / "current").resolve()
         self.assertTrue((release / "runtime.env").is_file())
+        self.assertEqual(release.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((release / "proxy.conf").stat().st_mode & 0o777, 0o644)
+        for private in ("runtime.env", "mysql.env", "images.env", "compose.yml"):
+            self.assertEqual((release / private).stat().st_mode & 0o777, 0o600, private)
         self.assertFalse((self.root / "pending").exists())
         calls = (self.mock / "calls").read_text()
         self.assertIn("run --rm --no-deps owner", calls)

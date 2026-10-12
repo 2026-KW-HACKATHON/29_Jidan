@@ -49,6 +49,9 @@ fi
 test -f "$root/runtime.env" && test -f "$root/mysql.env"
 release=$(mktemp -d "$root/releases/$revision.XXXXXX")
 cp "$script_dir/compose.yml" "$script_dir/proxy.conf" "$release/"
+# The unprivileged Nginx container reads this bind mount as uid 101.
+# Only the public proxy configuration is readable; env and release remain private.
+chmod 644 "$release/proxy.conf"
 cp "$root/runtime.env" "$root/mysql.env" "$release/"
 printf 'FRONTEND_IMAGE=%s\nBACKEND_IMAGE=%s\n' "$frontend" "$backend" > "$release/images.env"
 compose "$release" config --quiet
