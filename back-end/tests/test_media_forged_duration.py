@@ -46,6 +46,8 @@ def mp4_sample_table(sample_seconds: int, *, mdhd_duration: int, elst_ms: int | 
 
 
 FORGED_TOO_LONG = {
+    "webm_120001ms_timestamps_zero_duration": samples.webm((0, 120001), duration_ms=0),
+    "webm_121s_timestamps_zero_duration": samples.webm((0, 121000), duration_ms=0),
     "webm_121s_timestamps_1s_duration": samples.webm((0, 121000), duration_ms=1000),
     "mp4_121s_fragments_1s_mdhd": mp4_with_mdhd(samples.mp4(fragments=[(121, 1000)], scale=1000), 1000),
     "mp4_121s_stts_1s_mdhd": mp4_sample_table(121, mdhd_duration=1000),
@@ -59,7 +61,8 @@ DAMAGED = {
     "webm_nan_duration": samples.webm((0, 1000), duration_ms=float("nan")),
     "webm_negative_infinite_duration": samples.webm((0, 1000), duration_ms=float("-inf")),
     "webm_negative_duration": samples.webm((0, 1000), duration_ms=-5.0),
-    "webm_zero_duration": samples.webm((0, 1000), duration_ms=0.0),
+    "webm_zero_duration_no_blocks": samples.webm((), duration_ms=0.0),
+    "webm_zero_duration_zero_timestamp": samples.webm((0,), duration_ms=0.0),
     "mp4_empty_mvhd_last_box": box(b"ftyp", b"M4A \0\0\0\0isom") + box(b"mdat", b"x") + box(b"moov", box(b"mvhd")),
     "mp4_mvhd_unknown_version": box(b"ftyp", b"M4A \0\0\0\0isom") + box(b"mdat", b"x")
     + box(b"moov", full_box(b"mvhd", 7, 0, b"\x00" * 96)),
@@ -100,6 +103,14 @@ def test_longer_declared_duration_still_counts():
     assert inspect_media(samples.webm((0, 1000), duration_ms=5000), "AUDIO").duration_ms == 5000
     with pytest.raises(MediaTooLarge):
         inspect_media(samples.webm((0, 1000), duration_ms=120_001), "AUDIO")
+
+
+@pytest.mark.parametrize("duration", [0.0, -0.0])
+@pytest.mark.parametrize("unknown_sizes", [False, True])
+@pytest.mark.parametrize("timestamps", [(0, 1), (0, 1000, 2000), (0, 120000)])
+def test_firefox_zero_duration_uses_block_timestamps(duration, unknown_sizes, timestamps):
+    recording = samples.webm(timestamps, duration_ms=duration, unknown_sizes=unknown_sizes)
+    assert inspect_media(recording, "AUDIO").duration_ms == timestamps[-1]
 
 
 def test_boundary_and_encoder_delay_trim_are_kept():
