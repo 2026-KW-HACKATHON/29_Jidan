@@ -463,12 +463,13 @@ def webm_duration(data: bytes) -> Fraction:
     if scale <= 0:
         raise MediaInvalid("ebml_scale")
     if declared is not None:
-        # A present Duration must be a positive finite length (NaN, +-inf, 0 or negative is a
-        # damaged header, rejected rather than silently ignored). It may lengthen what the block
-        # timestamps show, never shorten it.
-        if not math.isfinite(declared) or declared <= 0:
+        # Firefox MediaRecorder writes Duration=0 for a streaming recording. Measure those
+        # recordings from their blocks, just as when Duration is absent. Negative/nonfinite
+        # values remain damaged headers; a positive value may lengthen, never shorten, audio.
+        if not math.isfinite(declared) or declared < 0:
             raise MediaInvalid("ebml_duration")
-        return max(Fraction(declared), Fraction(max(latest or 0, 0))) * scale / 1_000_000_000
+        if declared > 0:
+            return max(Fraction(declared), Fraction(max(latest or 0, 0))) * scale / 1_000_000_000
     if latest is None or latest <= 0:
         raise MediaInvalid("webm_empty")
     return Fraction(latest * scale, 1_000_000_000)

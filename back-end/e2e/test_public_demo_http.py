@@ -13,6 +13,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
+from pathlib import Path
 
 import httpx
 import pytest
@@ -20,17 +21,22 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app import auth
+from app.ai import set_ai_provider
 from app.db import get_engine, reset_engine
 from app.db.models import (
     AuthSession,
+    InterviewTurn,
+    ManualMedia,
     ManualQa,
     ManualQaConversation,
+    MediaTranscription,
     Store,
     StoreAccessGrant,
     StoreInvitation,
     User,
 )
 from e2e.conftest import require_local_test_database
+from tests import media_samples
 
 
 @pytest.fixture
@@ -43,12 +49,16 @@ def public_demo(tmp_path, monkeypatch):
         assert connection.scalar(text("SELECT DATABASE()")) == "jidan_e2e_test"
     monkeypatch.setenv("DEMO_ROLE", "WORKER")
     monkeypatch.setenv("MEDIA_ROOT", str(tmp_path / "media"))
+    # Operator task drains run in this process as well as in the HTTP subprocesses.
+    monkeypatch.setenv("AI_PROVIDER", "fake")
+    set_ai_provider(None)
     from app.demo_seed_public import seed
 
     with Session(engine) as db:
         seed(db)
         db.commit()
     with ExitStack() as stack:
+        stack.callback(set_ai_provider, None)
         clients = {}
         for role in ("OWNER", "WORKER"):
             with socket.socket() as sock:
@@ -95,6 +105,102 @@ def start(client):
 
 def headers(client, session):
     return {"Origin": str(client.base_url).rstrip("/"), "X-CSRF-Token": session["csrfToken"]}
+
+
+def test_owner_firefox_recording_upload_transcription_and_answer(public_demo):
+    """Mozilla-style Duration=0 reaches VOICE submission; external STT alone is fake.
+
+    Container samples have synthetic block payloads. Real provider/codec verification is
+    separate from this HTTP/MySQL regression, which must fail on the old zero-header parser.
+    """
+    import app.tasks.handlers  # noqa: F401 - real task handlers, using the configured fake AI
+    from app.media.storage import set_media_storage
+    from app.tasks import drain
+
+    clients, engine = public_demo
+    owner = clients["OWNER"]
+    visitor = start(owner)
+    path = f"/api/stores/{visitor['storeId']}/manual"
+    root = Path(os.environ["MEDIA_ROOT"])
+    recording = media_samples.webm((0, 1000, 2000), duration_ms=0)
+    upload_headers = {**headers(owner, visitor), "Idempotency-Key": str(uuid.uuid4())}
+
+    def upload(data, request_headers=None):
+        return owner.post(path + "/media", data={"purpose": "INTERVIEW_AUDIO"},
+                          files={"file": ("answer.webm", data, "audio/webm;codecs=opus")},
+                          headers=request_headers or {
+                              **headers(owner, visitor), "Idempotency-Key": str(uuid.uuid4())})
+
+    accepted = upload(recording, upload_headers)
+    assert accepted.status_code == 201, accepted.text
+    media = accepted.json()
+    assert media["mimeType"] == "audio/webm" and media["sizeBytes"] == len(recording)
+    assert upload(recording, upload_headers).json() == media
+    with Session(engine) as db:
+        saved = db.get(ManualMedia, media["id"])
+        assert saved.store_id == visitor["storeId"] and saved.duration_ms == 2000
+        location = root / saved.object_key
+        assert location.read_bytes() == recording
+        assert db.scalar(select(func.count()).select_from(ManualMedia).where(
+            ManualMedia.store_id == visitor["storeId"])) == 1
+    before_files = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    rejected = [
+        (media_samples.webm((), duration_ms=0), 422, "MEDIA_INVALID"),
+        (media_samples.webm((0,), duration_ms=0), 422, "MEDIA_INVALID"),
+        (media_samples.webm((0, 1000), duration_ms=-1), 422, "MEDIA_INVALID"),
+        (media_samples.webm((0, 1000), duration_ms=float("nan")), 422, "MEDIA_INVALID"),
+        (media_samples.webm((0, 1000), duration_ms=float("inf")), 422, "MEDIA_INVALID"),
+        (media_samples.webm((0, 120001), duration_ms=0), 413, "MEDIA_TOO_LARGE"),
+        (media_samples.webm((0, 1000), duration_ms=0, video=True), 415, "UNSUPPORTED_MEDIA_TYPE"),
+        (recording[:-1], 422, "MEDIA_INVALID"),
+    ]
+    for data, status, code in rejected:
+        response = upload(data)
+        assert response.status_code == status, response.text
+        assert response.json()["code"] == code
+        with Session(engine) as db:
+            assert db.scalar(select(func.count()).select_from(ManualMedia).where(
+                ManualMedia.store_id == visitor["storeId"])) == 1
+            assert db.get(ManualMedia, media["id"]).duration_ms == 2000
+        assert {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()} == before_files
+
+    response = owner.post(path + "/transcriptions", json={"mediaId": media["id"]},
+                          headers={**headers(owner, visitor), "Idempotency-Key": str(uuid.uuid4())})
+    assert response.status_code == 202, response.text
+    transcription_id = response.json()["id"]
+    set_media_storage(None)  # the operator runner reads the same directory as the HTTP processes
+    try:
+        assert drain(kinds=("TRANSCRIPTION",))
+    finally:
+        set_media_storage(None)
+    transcript = owner.get(path + f"/transcriptions/{transcription_id}")
+    assert transcript.status_code == 200
+    transcript = transcript.json()
+    assert transcript["status"] == "READY" and transcript["text"]
+    with Session(engine) as db:
+        saved = db.get(MediaTranscription, transcription_id)
+        assert saved.manual_media_id == media["id"]
+        assert saved.status == "READY" and saved.text == transcript["text"]
+
+    response = owner.post(path + "/interviews", json={},
+                          headers={**headers(owner, visitor), "Idempotency-Key": str(uuid.uuid4())})
+    assert response.status_code == 201, response.text
+    interview_path = path + f"/interviews/{response.json()['id']}"
+    assert drain(kinds=("INITIAL_QUESTION",))
+    state = owner.get(interview_path).json()
+    assert state["phase"] == "COLLECTING", state
+    question = next(q for q in state["questions"] if not q["answered"])
+    response = owner.post(interview_path + "/answers", json={
+        "expectedRevision": state["revision"], "questionId": question["id"],
+        "input": {"method": "VOICE", "transcriptionId": transcription_id}},
+        headers={**headers(owner, visitor), "Idempotency-Key": str(uuid.uuid4())})
+    assert response.status_code == 202, response.text
+    assert owner.get(interview_path).json()["lastAnsweredQuestion"]["id"] == question["id"]
+    with Session(engine) as db:
+        answer = db.scalar(select(InterviewTurn).where(
+            InterviewTurn.session_id == state["id"], InterviewTurn.turn_kind == "ANSWER"))
+        assert answer.input_method == "VOICE" and answer.transcription_id == transcription_id
+        assert answer.content == transcript["text"] and answer.reply_to_question_turn_id == question["id"]
 
 
 def test_owner_resume_isolation_reset_and_concurrent_reset(public_demo):
