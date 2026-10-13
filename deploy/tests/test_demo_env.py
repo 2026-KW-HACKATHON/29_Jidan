@@ -28,6 +28,7 @@ class DemoEnvironmentTests(unittest.TestCase):
         self.assertEqual(runtime["DB_PASSWORD"], mysql["MYSQL_PASSWORD"])
         self.assertEqual(runtime["OPENAI_API_KEY"], "test-only")
         self.assertEqual(runtime["OPENAI_MODEL"], "existing-model")
+        self.assertEqual(runtime["OPENAI_JUDGE_BACKEND"], "responses")
         self.assertNotIn("MYSQL_ROOT_PASSWORD", runtime)
         module.prepare(self.base, self.destination)
         self.assertEqual(module.raw_values(self.destination / "mysql.env")["MYSQL_ROOT_PASSWORD"], mysql["MYSQL_ROOT_PASSWORD"])
@@ -55,6 +56,24 @@ class DemoEnvironmentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.prepare(self.base, self.destination)
         self.assertEqual(module.raw_values(self.base)["DB_NAME"], "jidan_dev")
+
+
+    def test_model_settings_never_copy_credentials_or_invalid_identifiers(self):
+        original = self.base.read_text()
+        for value in ("sk-test-secret-only", "test-only", "not a model", ""):
+            self.base.write_text(original + f"OPENAI_FALLBACK_MODEL={value}\n")
+            module.prepare(self.base, self.destination)
+            self.assertNotIn(value, [v for k, v in module.raw_values(self.destination / "runtime.env").items()
+                                    if k == "OPENAI_FALLBACK_MODEL" and v])
+        self.base.write_text(original + "OPENAI_FALLBACK_MODEL=valid-model\n")
+        module.prepare(self.base, self.destination)
+        self.assertEqual(module.raw_values(self.destination / "runtime.env")["OPENAI_FALLBACK_MODEL"], "valid-model")
+        for key in ("OPENAI_MODEL", "OPENAI_TRANSCRIBE_MODEL"):
+            for value in ("sk-test-secret-only", "test-only", "not a model"):
+                self.base.write_text(original + f"{key}={value}\n")
+                with self.assertRaises(ValueError) as error:
+                    module.prepare(self.base, self.destination)
+                self.assertNotIn(value, str(error.exception))
 
 
 if __name__ == "__main__":

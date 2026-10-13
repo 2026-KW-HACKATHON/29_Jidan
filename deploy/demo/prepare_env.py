@@ -5,6 +5,7 @@ the initialization root secret separately from the API environment. Existing fil
 reused so rerunning preparation cannot silently rotate a populated database password.
 """
 import os
+import re
 import secrets
 import sys
 from pathlib import Path
@@ -35,6 +36,15 @@ def prepare(source: Path, destination: Path) -> None:
         raise ValueError("dev environment is missing required settings")
     if base["DB_USER"] == "root":
         raise ValueError("demo API must use a non-root MySQL account")
+    for key in ("OPENAI_MODEL", "OPENAI_TRANSCRIBE_MODEL", "OPENAI_FALLBACK_MODEL"):
+        model = base.get(key, "").strip()
+        if model and (model == base["OPENAI_API_KEY"].strip() or model.startswith("sk-")
+                      or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}", model) is None):
+            if key == "OPENAI_FALLBACK_MODEL":
+                # Optional fallback can be disabled without copying a credential into model logs.
+                base.pop(key)
+            else:
+                raise ValueError(f"{key} must contain a model identifier")
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     mysql_path = destination / "mysql.env"
     if mysql_path.exists():
@@ -48,6 +58,7 @@ def prepare(source: Path, destination: Path) -> None:
                       "MYSQL_PASSWORD": base["DB_PASSWORD"], "MYSQL_ROOT_PASSWORD": root_password})
     base.update({"APP_ENV": "dev", "DB_HOST": "mysql", "DB_PORT": "3306", "DB_NAME": "jidan_demo",
                  "MEDIA_ROOT": "/var/lib/jidan/media", "AI_PROVIDER": "openai", "COOKIE_SECURE": "true",
+                 "OPENAI_JUDGE_BACKEND": "responses",
                  "TASK_RUNNER_WORKERS": "1", "TASK_RUNNER_MODE": "background", "BACKGROUND_JOBS": "on"})
     save(destination / "runtime.env", base)
 
