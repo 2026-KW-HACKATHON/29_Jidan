@@ -10,7 +10,9 @@
 
 기존 dev env를 기준으로 RPi4 `/home/ubuntu/apps/jidan/demo/runtime.env`를 구성한다.
 AI/STT·연동 값은 재사용하고 `DB_HOST`, `DB_NAME`, `DB_PORT`, `MEDIA_ROOT`, cookie와
-Origin만 데모에 맞춰 지정한다. `jidan_demo` MySQL·데모 media volume을 새로 만들어
+Origin을 데모에 맞춰 지정한다. Jev는 같은 모델의 Responses backend로 실행한다.
+모델 항목에 키·잘못된 형식이 있으면 필수 모델은 거부하고 선택 fallback은 제거한다.
+`jidan_demo` MySQL·데모 media volume을 새로 만들어
 기존 dev DB·파일과 분리한다. env는 권한 600으로 보관하고 Git에 추가하지 않는다.
 
 2026-10-13 RPi4의 실행·정지 컨테이너와 listening port를 확인했다. 데모는
